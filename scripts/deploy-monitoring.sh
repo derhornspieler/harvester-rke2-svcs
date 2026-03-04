@@ -173,9 +173,11 @@ fi
 # Phase 5: Gateways + HTTPRoutes + basic-auth
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   start_phase "Phase 5: Gateways + HTTPRoutes + Basic Auth"
-  # Create basic-auth secrets
-  create_basic_auth_secret monitoring basic-auth-prometheus admin admin
-  create_basic_auth_secret monitoring basic-auth-alertmanager admin admin
+  # Create basic-auth secrets (credentials from environment or defaults)
+  create_basic_auth_secret monitoring basic-auth-prometheus \
+    "${PROM_BASIC_AUTH_USER:-admin}" "${PROM_BASIC_AUTH_PASS:?Set PROM_BASIC_AUTH_PASS in .env}"
+  create_basic_auth_secret monitoring basic-auth-alertmanager \
+    "${AM_BASIC_AUTH_USER:-admin}" "${AM_BASIC_AUTH_PASS:?Set AM_BASIC_AUTH_PASS in .env}"
   # Apply gateways and routes (need domain substitution)
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/prometheus/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/prometheus/httproute.yaml"
