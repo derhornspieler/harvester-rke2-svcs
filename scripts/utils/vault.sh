@@ -33,7 +33,7 @@ vault_unseal_replica() {
   for k in 0 1 2; do
     local key
     key=$(jq -r "(.unseal_keys_hex // .keys)[${k}]" "$init_file")
-    kubectl exec -n vault "vault-${replica}" -- vault operator unseal "$key" >/dev/null
+    echo "$key" | kubectl exec -i -n vault "vault-${replica}" -- vault operator unseal - >/dev/null
   done
 }
 
