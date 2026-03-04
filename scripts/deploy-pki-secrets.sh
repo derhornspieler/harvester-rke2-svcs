@@ -114,7 +114,7 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: cert-manager"
   helm_repo_add jetstack https://charts.jetstack.io
   helm_install_if_needed cert-manager jetstack/cert-manager cert-manager \
-    --version v1.19.3 \
+    --version v1.19.4 \
     --set crds.enabled=true \
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
     --set config.kind=ControllerConfiguration \
@@ -130,7 +130,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   start_phase "Phase 2: Vault"
   helm_repo_add hashicorp https://helm.releases.hashicorp.com
   helm_install_if_needed vault hashicorp/vault vault \
-    --version 0.29.1 \
+    --version 0.32.0 \
     -f "${REPO_ROOT}/services/vault/vault-values.yaml" \
     --wait --timeout 5m
   wait_for_pods_ready vault "app.kubernetes.io/name=vault" 300
@@ -273,7 +273,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: External Secrets Operator"
   helm_repo_add external-secrets https://charts.external-secrets.io
   helm_install_if_needed external-secrets external-secrets/external-secrets external-secrets \
-    --version 0.17.0 \
+    --version 2.0.1 \
     --set installCRDs=true \
     --set serviceMonitor.enabled=true \
     --set resources.requests.cpu=100m \
