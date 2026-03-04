@@ -58,9 +58,6 @@ server:
     requests:
       cpu: 250m
       memory: 256Mi
-    limits:
-      cpu: 1
-      memory: 512Mi
 
   dataStorage:
     enabled: true
