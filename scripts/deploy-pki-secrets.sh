@@ -33,6 +33,14 @@ ORG="${ORG:-My Organization}"
 ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
 ROOT_CA_KEY="${ROOT_CA_KEY:-}"
 
+# Helm chart sources (override with oci:// paths for Harbor or private registries)
+HELM_CHART_CERTMANAGER="${HELM_CHART_CERTMANAGER:-jetstack/cert-manager}"
+HELM_CHART_VAULT="${HELM_CHART_VAULT:-hashicorp/vault}"
+HELM_CHART_ESO="${HELM_CHART_ESO:-external-secrets/external-secrets}"
+HELM_REPO_CERTMANAGER="${HELM_REPO_CERTMANAGER:-https://charts.jetstack.io}"
+HELM_REPO_VAULT="${HELM_REPO_VAULT:-https://helm.releases.hashicorp.com}"
+HELM_REPO_ESO="${HELM_REPO_ESO:-https://charts.external-secrets.io}"
+
 # CLI Parsing
 PHASE_FROM=1
 PHASE_TO=7
@@ -112,8 +120,8 @@ fi
 # Phase 1: cert-manager
 if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: cert-manager"
-  helm_repo_add jetstack https://charts.jetstack.io
-  helm_install_if_needed cert-manager jetstack/cert-manager cert-manager \
+  helm_repo_add jetstack "$HELM_REPO_CERTMANAGER"
+  helm_install_if_needed cert-manager "$HELM_CHART_CERTMANAGER" cert-manager \
     --version v1.19.4 \
     --set crds.enabled=true \
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
@@ -128,8 +136,8 @@ fi
 # Phase 2: Vault
 if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   start_phase "Phase 2: Vault"
-  helm_repo_add hashicorp https://helm.releases.hashicorp.com
-  helm_install_if_needed vault hashicorp/vault vault \
+  helm_repo_add hashicorp "$HELM_REPO_VAULT"
+  helm_install_if_needed vault "$HELM_CHART_VAULT" vault \
     --version 0.32.0 \
     -f "${REPO_ROOT}/services/vault/vault-values.yaml" \
     --wait --timeout 5m
@@ -271,8 +279,8 @@ fi
 # Phase 6: External Secrets Operator
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: External Secrets Operator"
-  helm_repo_add external-secrets https://charts.external-secrets.io
-  helm_install_if_needed external-secrets external-secrets/external-secrets external-secrets \
+  helm_repo_add external-secrets "$HELM_REPO_ESO"
+  helm_install_if_needed external-secrets "$HELM_CHART_ESO" external-secrets \
     --version 2.0.1 \
     --set installCRDs=true \
     --set serviceMonitor.enabled=true \
