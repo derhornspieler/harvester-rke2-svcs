@@ -1,0 +1,34 @@
+# Vault Service — Bill of Materials
+# All Helm charts, container images, and Kustomize resources required.
+
+helm:
+  chart: hashicorp/vault
+  version: "0.32.0"
+  repository: https://helm.releases.hashicorp.com
+  values: vault-values.yaml
+
+images:
+  - name: hashicorp/vault
+    tag: "1.21.2"
+    registry: docker.io
+    # Override for Harbor: harbor.example.com/dockerhub/hashicorp/vault:1.21.2
+
+manifests:
+  kustomize: kustomization.yaml
+  resources:
+    - namespace.yaml
+    - gateway.yaml
+    - httproute.yaml
+  monitoring:
+    - monitoring/service-monitor.yaml
+    - monitoring/vault-alerts.yaml
+    - monitoring/configmap-dashboard-vault.yaml
+
+deploy:
+  script: scripts/deploy-pki-secrets.sh
+  phases: [2, 3, 4, 7]
+  description: |
+    Phase 2: Helm install, init, unseal, Raft join
+    Phase 3: PKI — import Root CA, generate intermediate, sign, import chain
+    Phase 4: Kubernetes auth, cert-manager role, PKI policy, KV v2
+    Phase 7: Apply gateway, httproute, monitoring via Kustomize
