@@ -1,0 +1,129 @@
+# Keycloak Service Manifest
+# Tracks container images, Kustomize resources, and deploy phases.
+---
+service: keycloak
+version: "26.0"
+
+helm: null  # No Helm chart — manual Kustomize deployment
+
+images:
+  # Keycloak identity provider
+  - name: keycloak
+    image: quay.io/keycloak/keycloak
+    tag: "26.0"
+
+  # PostgreSQL (CNPG-managed)
+  - name: postgresql
+    image: ghcr.io/cloudnative-pg/postgresql
+    tag: "16.6"
+
+  # OAuth2-proxy (OIDC sidecar for Prometheus, Alertmanager, Hubble)
+  - name: oauth2-proxy
+    image: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.8.1
+
+resources:
+  # Namespace
+  - namespace.yaml
+
+  # Keycloak core
+  - keycloak/rbac.yaml
+  - keycloak/external-secret.yaml
+  - keycloak/service.yaml
+  - keycloak/service-headless.yaml
+  - keycloak/deployment.yaml
+  - keycloak/hpa.yaml
+
+  # PostgreSQL CNPG
+  - postgres/external-secret.yaml
+  - postgres/keycloak-pg-cluster.yaml
+  - postgres/keycloak-pg-scheduled-backup.yaml
+
+  # Ingress (Gateway API)
+  - gateway.yaml
+  - httproute.yaml
+
+  # OAuth2-proxy instances
+  - oauth2-proxy/external-secret-prometheus.yaml
+  - oauth2-proxy/prometheus.yaml
+  - oauth2-proxy/middleware-prometheus.yaml
+  - oauth2-proxy/external-secret-alertmanager.yaml
+  - oauth2-proxy/alertmanager.yaml
+  - oauth2-proxy/middleware-alertmanager.yaml
+  - oauth2-proxy/external-secret-hubble.yaml
+  - oauth2-proxy/hubble.yaml
+  - oauth2-proxy/middleware-hubble.yaml
+
+  # Monitoring
+  - monitoring/configmap-dashboard-keycloak.yaml
+  - monitoring/keycloak-alerts.yaml
+  - monitoring/service-monitor.yaml
+
+deploy:
+  script: scripts/deploy-keycloak.sh
+  phases:
+    - phase: 1
+      description: Create keycloak namespace
+      resources:
+        - namespace.yaml
+
+    - phase: 2
+      description: Deploy ExternalSecrets (Vault-synced credentials)
+      resources:
+        - keycloak/external-secret.yaml
+        - postgres/external-secret.yaml
+        - oauth2-proxy/external-secret-prometheus.yaml
+        - oauth2-proxy/external-secret-alertmanager.yaml
+        - oauth2-proxy/external-secret-hubble.yaml
+
+    - phase: 3
+      description: Deploy PostgreSQL HA cluster (CNPG) and scheduled backup
+      resources:
+        - postgres/keycloak-pg-cluster.yaml
+        - postgres/keycloak-pg-scheduled-backup.yaml
+
+    - phase: 4
+      description: Deploy Keycloak core (RBAC, Services, Deployment, HPA)
+      resources:
+        - keycloak/rbac.yaml
+        - keycloak/service.yaml
+        - keycloak/service-headless.yaml
+        - keycloak/deployment.yaml
+        - keycloak/hpa.yaml
+
+    - phase: 5
+      description: Deploy Gateway and HTTPRoute for keycloak ingress
+      resources:
+        - gateway.yaml
+        - httproute.yaml
+
+    - phase: 6
+      description: >-
+        Deploy OAuth2-proxy instances and Traefik
+        ForwardAuth middleware
+      resources:
+        - oauth2-proxy/prometheus.yaml
+        - oauth2-proxy/middleware-prometheus.yaml
+        - oauth2-proxy/alertmanager.yaml
+        - oauth2-proxy/middleware-alertmanager.yaml
+        - oauth2-proxy/hubble.yaml
+        - oauth2-proxy/middleware-hubble.yaml
+
+    - phase: 7
+      description: Deploy monitoring (ServiceMonitor, alerts, Grafana dashboard)
+      resources:
+        - monitoring/configmap-dashboard-keycloak.yaml
+        - monitoring/keycloak-alerts.yaml
+        - monitoring/service-monitor.yaml
+
+  post_deploy:
+    script: scripts/setup-keycloak.sh
+    description: |
+      Phase 1: Create realm (platform)
+      Phase 2: Create OIDC client scopes (groups, audience)
+      Phase 3: Create OIDC clients
+        (prometheus, alertmanager, hubble, grafana, harbor)
+      Phase 4: Create groups
+        (platform-admins, infra-engineers, network-engineers)
+      Phase 5: Create admin-breakglass user with temporary password
+      Phase 6: Verify realm configuration
