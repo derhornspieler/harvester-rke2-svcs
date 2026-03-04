@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  # Loki (not managed by kube-prometheus-stack)
+  - loki/rbac.yaml
+  - loki/configmap.yaml
+  - loki/statefulset.yaml
+  - loki/service.yaml
+  # Alloy (not managed by kube-prometheus-stack)
+  - alloy/rbac.yaml
+  - alloy/configmap.yaml
+  - alloy/daemonset.yaml
+  - alloy/service.yaml
+  # Prometheus Gateway + basic-auth
+  - prometheus/gateway.yaml
+  - prometheus/httproute.yaml
+  - prometheus/basic-auth-middleware.yaml
+  # Alertmanager Gateway + basic-auth
+  - alertmanager/gateway.yaml
+  - alertmanager/httproute.yaml
+  - alertmanager/basic-auth-middleware.yaml
+  # Grafana Gateway
+  - grafana/gateway.yaml
+  - grafana/httproute.yaml
+  # Grafana dashboards (15 ConfigMaps)
+  - grafana/dashboards/configmap-dashboard-home.yaml
+  - grafana/dashboards/configmap-dashboard-firing-alerts.yaml
+  - grafana/dashboards/configmap-dashboard-etcd.yaml
+  - grafana/dashboards/configmap-dashboard-apiserver.yaml
+  - grafana/dashboards/configmap-dashboard-node-detail.yaml
+  - grafana/dashboards/configmap-dashboard-traefik.yaml
+  - grafana/dashboards/configmap-dashboard-coredns.yaml
+  - grafana/dashboards/configmap-dashboard-cilium.yaml
+  - grafana/dashboards/configmap-dashboard-cnpg.yaml
+  - grafana/dashboards/configmap-dashboard-redis.yaml
+  - grafana/dashboards/configmap-dashboard-loki.yaml
+  - grafana/dashboards/configmap-dashboard-loki-stack.yaml
+  - grafana/dashboards/configmap-dashboard-alloy.yaml
+  - grafana/dashboards/configmap-dashboard-oauth2-proxy.yaml
+  - grafana/dashboards/configmap-dashboard-cluster-autoscaler.yaml
+  # ServiceMonitor for cluster autoscaler (runs in kube-system)
+  - grafana/service-monitor-cluster-autoscaler.yaml
+  # Service aliases (backwards-compat for HTTPRoutes, datasources, AnalysisTemplates)
+  - prometheus-service-alias.yaml
+  - alertmanager-service-alias.yaml
+  # PrometheusRules + ServiceMonitors
+  - prometheus-rules/
+  - service-monitors/
