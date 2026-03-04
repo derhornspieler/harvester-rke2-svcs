@@ -144,34 +144,49 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   # Vault pods won't be Ready until initialized+unsealed; wait for Running first
   wait_for_pods_running vault "app.kubernetes.io/name=vault" 3 300
 
+  fresh_init=false
   if ! vault_is_initialized; then
     vault_init "$VAULT_INIT_FILE"
     log_warn "IMPORTANT: Back up ${VAULT_INIT_FILE} securely. It contains unseal keys and root token."
+    fresh_init=true
   else
     log_info "Vault already initialized"
   fi
 
-  if vault_is_sealed; then
-    [[ -f "$VAULT_INIT_FILE" ]] || die "Vault is sealed but init file not found: ${VAULT_INIT_FILE}"
+  [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
+
+  # After fresh init, vault status can be unreliable — always unseal vault-0.
+  # On re-runs, check seal status to avoid redundant unseal attempts.
+  if [[ "$fresh_init" == "true" ]] || vault_is_sealed; then
     vault_unseal_replica 0 "$VAULT_INIT_FILE"
   else
     log_info "Vault-0 already unsealed"
   fi
 
+  # Wait for vault-0 to become Raft leader before joining replicas
+  log_info "Waiting for vault-0 to become Raft leader..."
+  leader_ready=false
+  for _attempt in $(seq 1 30); do
+    if kubectl exec -n vault vault-0 -- \
+      env VAULT_ADDR=http://127.0.0.1:8200 \
+          VAULT_TOKEN="$(jq -r '.root_token' "$VAULT_INIT_FILE")" \
+      vault operator raft list-peers -format=json &>/dev/null; then
+      leader_ready=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$leader_ready" != "true" ]]; then
+    die "vault-0 did not become Raft leader within 60s"
+  fi
+  log_ok "vault-0 is Raft leader"
+
   # Join replicas to Raft cluster and unseal them
   for i in 1 2; do
-    joined=$(kubectl exec -n vault "vault-${i}" -- vault status -format=json 2>/dev/null \
-      | jq -r '.storage_type' || echo "")
-    if [[ "$joined" != "raft" ]]; then
-      log_info "Joining vault-${i} to Raft cluster..."
-      kubectl exec -n vault "vault-${i}" -- vault operator raft join http://vault-0.vault-internal:8200
-    fi
-    if kubectl exec -n vault "vault-${i}" -- vault status -format=json 2>/dev/null \
-      | jq -e '.sealed == true' >/dev/null 2>&1; then
-      vault_unseal_replica "$i" "$VAULT_INIT_FILE"
-    else
-      log_info "vault-${i} already unsealed"
-    fi
+    log_info "Joining vault-${i} to Raft cluster..."
+    kubectl exec -n vault "vault-${i}" -- \
+      vault operator raft join http://vault-0.vault-internal:8200
+    vault_unseal_replica "$i" "$VAULT_INIT_FILE"
   done
 
   # Now wait for all pods to pass readiness probes
@@ -234,7 +249,9 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     allowed_domains="${DOMAIN}" \
     allowed_domains="cluster.local" \
     allow_subdomains=true \
+    allow_bare_domains=true \
     max_ttl=720h \
+    require_cn=false \
     generate_lease=true
 
   # Clean up temp files
@@ -260,7 +277,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
     ttl=1h
 
   # cert-manager PKI policy
-  vault_exec "$root_token" policy write cert-manager-pki - <<POLICY
+  cat > /tmp/cert-manager-pki.hcl <<POLICY
 path "pki_int/sign/${DOMAIN_DOT}" {
   capabilities = ["create", "update"]
 }
@@ -268,6 +285,9 @@ path "pki_int/issue/${DOMAIN_DOT}" {
   capabilities = ["create"]
 }
 POLICY
+  kubectl cp /tmp/cert-manager-pki.hcl vault/vault-0:/tmp/cert-manager-pki.hcl
+  vault_exec "$root_token" policy write cert-manager-pki /tmp/cert-manager-pki.hcl
+  rm -f /tmp/cert-manager-pki.hcl
 
   # Enable KV v2 for application secrets
   vault_exec "$root_token" secrets enable -version=2 -path=kv kv 2>/dev/null || log_info "kv engine already enabled"
@@ -308,9 +328,16 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: Kustomize Overlays"
   kube_apply_subst "${REPO_ROOT}/services/vault/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/vault/httproute.yaml"
-  kubectl apply -k "${REPO_ROOT}/services/vault/monitoring/"
-  kubectl apply -k "${REPO_ROOT}/services/cert-manager/monitoring/"
-  kubectl apply -k "${REPO_ROOT}/services/external-secrets/monitoring/"
+  # Monitoring overlays require Bundle 2 (Prometheus CRDs + monitoring namespace).
+  # Apply them if available; skip gracefully if not yet deployed.
+  if kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null \
+     && kubectl get ns monitoring &>/dev/null; then
+    kubectl apply -k "${REPO_ROOT}/services/vault/monitoring/"
+    kubectl apply -k "${REPO_ROOT}/services/cert-manager/monitoring/"
+    kubectl apply -k "${REPO_ROOT}/services/external-secrets/monitoring/"
+  else
+    log_warn "Skipping monitoring overlays (Bundle 2 not yet deployed)"
+  fi
   wait_for_tls_secret vault "vault-${DOMAIN_DASHED}-tls" 300
   log_ok "All Kustomize overlays applied"
   end_phase "Phase 7: Kustomize Overlays"
