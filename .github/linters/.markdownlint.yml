@@ -26,9 +26,8 @@ MD024:
 MD031: false
 MD032: false
 
-# Code fence style
-MD046:
-  style: fenced
+# Code fence style - disabled (indented blocks used in service READMEs)
+MD046: false
 
 # Code block language - not required
 MD040: false
