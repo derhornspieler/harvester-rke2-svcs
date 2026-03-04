@@ -117,7 +117,7 @@ Future bundles add their own OIDC clients to this realm:
 | keycloak-admin-secret | keycloak | services/keycloak/admin-secret |
 | keycloak-postgres-secret | keycloak | services/keycloak/postgres-secret |
 | keycloak-pg-credentials | database | services/database/keycloak-pg |
-| oauth2-proxy-*-oidc | monitoring | oidc/<service>-oidc |
+| oauth2-proxy-*-oidc | monitoring | oidc/`<service>`-oidc |
 
 ## CHANGEME Tokens
 
