@@ -12,6 +12,11 @@ _subst_changeme() {
     -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_KC_REALM|${KC_REALM:-master}|g" \
     -e "s|CHANGEME_VAULT_ADDR|http://vault.vault.svc.cluster.local:8200|g" \
+    -e "s|CHANGEME_HARBOR_ADMIN_PASSWORD|${HARBOR_ADMIN_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_DB_PASSWORD|${HARBOR_DB_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_REDIS_PASSWORD|${HARBOR_REDIS_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_MINIO_SECRET_KEY|${HARBOR_MINIO_SECRET_KEY:-}|g" \
+    -e "s|CHANGEME_MINIO_ENDPOINT|http://minio.minio.svc.cluster.local:9000|g" \
     -e "s|CHANGEME_DOMAIN_DOT|${DOMAIN_DOT}|g" \
     -e "s|CHANGEME_DOMAIN_DASHED|${DOMAIN_DASHED}|g" \
     -e "s|CHANGEME_DOMAIN|${DOMAIN}|g"
