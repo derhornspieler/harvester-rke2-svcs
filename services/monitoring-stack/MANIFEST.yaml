@@ -1,0 +1,71 @@
+# Monitoring Stack — Bill of Materials
+
+helm:
+  chart: prometheus-community/kube-prometheus-stack
+  version: "72.6.2"
+  repository: https://prometheus-community.github.io/helm-charts
+  values: helm/kube-prometheus-stack-values.yaml
+
+images:
+  # Helm chart managed (versions from chart defaults)
+  - name: prometheus/prometheus
+    registry: quay.io
+    note: "Version set by chart"
+  - name: prometheus/alertmanager
+    registry: quay.io
+    note: "Version set by chart"
+  - name: grafana/grafana
+    registry: docker.io
+    note: "Version set by chart"
+  - name: prometheus/node-exporter
+    registry: quay.io
+    note: "Version set by chart"
+  - name: kube-state-metrics/kube-state-metrics
+    registry: registry.k8s.io
+    note: "Version set by chart"
+  - name: prometheus-operator/prometheus-operator
+    registry: quay.io
+    note: "Version set by chart"
+  # Manually deployed (Kustomize)
+  - name: grafana/loki
+    tag: "3.4.6"
+    registry: docker.io
+  - name: grafana/alloy
+    tag: "v1.6.1"
+    registry: docker.io
+
+manifests:
+  kustomize: kustomization.yaml
+  loki:
+    - loki/configmap.yaml
+    - loki/statefulset.yaml
+    - loki/rbac.yaml
+    - loki/service.yaml
+  alloy:
+    - alloy/configmap.yaml
+    - alloy/daemonset.yaml
+    - alloy/rbac.yaml
+    - alloy/service.yaml
+  gateways:
+    - prometheus/gateway.yaml
+    - prometheus/httproute.yaml
+    - prometheus/basic-auth-middleware.yaml
+    - alertmanager/gateway.yaml
+    - alertmanager/httproute.yaml
+    - alertmanager/basic-auth-middleware.yaml
+    - grafana/gateway.yaml
+    - grafana/httproute.yaml
+  dashboards: 15 ConfigMaps in grafana/dashboards/
+  prometheus-rules: 9 alert groups in prometheus-rules/
+  service-monitors: 6 monitors in service-monitors/
+
+deploy:
+  script: scripts/deploy-monitoring.sh
+  phases: [1, 2, 3, 4, 5, 6]
+  description: |
+    Phase 1: Namespace, Loki, Alloy
+    Phase 2: Additional scrape configs Secret
+    Phase 3: kube-prometheus-stack Helm install
+    Phase 4: PrometheusRules + ServiceMonitors
+    Phase 5: Gateways, HTTPRoutes, basic-auth, dashboards
+    Phase 6: Verify
