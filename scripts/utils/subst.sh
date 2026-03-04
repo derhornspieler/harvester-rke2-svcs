@@ -9,6 +9,7 @@ _subst_changeme() {
   [[ -n "${DOMAIN_DASHED:-}" ]] || die "DOMAIN_DASHED must be set"
   [[ -n "${DOMAIN_DOT:-}" ]] || die "DOMAIN_DOT must be set"
   sed \
+    -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_VAULT_ADDR|http://vault.vault.svc.cluster.local:8200|g" \
     -e "s|CHANGEME_DOMAIN_DOT|${DOMAIN_DOT}|g" \
     -e "s|CHANGEME_DOMAIN_DASHED|${DOMAIN_DASHED}|g" \
