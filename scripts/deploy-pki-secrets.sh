@@ -140,8 +140,9 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   helm_install_if_needed vault "$HELM_CHART_VAULT" vault \
     --version 0.32.0 \
     -f "${REPO_ROOT}/services/vault/vault-values.yaml" \
-    --wait --timeout 5m
-  wait_for_pods_ready vault "app.kubernetes.io/name=vault" 300
+    --timeout 5m
+  # Vault pods won't be Ready until initialized+unsealed; wait for Running first
+  wait_for_pods_running vault "app.kubernetes.io/name=vault" 3 300
 
   if ! vault_is_initialized; then
     vault_init "$VAULT_INIT_FILE"
@@ -152,22 +153,29 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
 
   if vault_is_sealed; then
     [[ -f "$VAULT_INIT_FILE" ]] || die "Vault is sealed but init file not found: ${VAULT_INIT_FILE}"
-    vault_unseal_all "$VAULT_INIT_FILE"
+    vault_unseal_replica 0 "$VAULT_INIT_FILE"
   else
-    log_info "Vault already unsealed"
+    log_info "Vault-0 already unsealed"
   fi
 
-  # Join replicas to Raft cluster
-  root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+  # Join replicas to Raft cluster and unseal them
   for i in 1 2; do
     joined=$(kubectl exec -n vault "vault-${i}" -- vault status -format=json 2>/dev/null \
       | jq -r '.storage_type' || echo "")
     if [[ "$joined" != "raft" ]]; then
       log_info "Joining vault-${i} to Raft cluster..."
       kubectl exec -n vault "vault-${i}" -- vault operator raft join http://vault-0.vault-internal:8200
+    fi
+    if kubectl exec -n vault "vault-${i}" -- vault status -format=json 2>/dev/null \
+      | jq -e '.sealed == true' >/dev/null 2>&1; then
       vault_unseal_replica "$i" "$VAULT_INIT_FILE"
+    else
+      log_info "vault-${i} already unsealed"
     fi
   done
+
+  # Now wait for all pods to pass readiness probes
+  wait_for_pods_ready vault "app.kubernetes.io/name=vault" 300
   end_phase "Phase 2: Vault"
 fi
 
