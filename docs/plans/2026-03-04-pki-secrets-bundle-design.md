@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-04
 **Status:** Approved
-**Author:** derhornspieler + Claude Opus 4.6
+**Author:** Project Author + Claude Opus 4.6
 
 ## Overview
 
@@ -21,7 +21,7 @@ Offline Root CA (30yr, RSA 4096, nameConstraints)
 - Root CA key stays offline, only used to sign Vault intermediate
 - Vault intermediate has `pathlen:0` — leaf certs only, no sub-intermediates
 - cert-manager is a consumer (not a CA) — calls Vault `pki_int/sign/<role>` endpoint
-- nameConstraints at Root level: `aegisgroup.ch`, `cluster.local`, RFC 1918 ranges
+- nameConstraints at Root level: `example.com`, `cluster.local`, RFC 1918 ranges
 - TLS terminated at Traefik (Gateway API), not at Vault
 
 ## Directory Structure
@@ -34,7 +34,7 @@ harvester-rke2-svcs/
 │   │   ├── README.md
 │   │   ├── .gitignore              # Ignores *-key.pem
 │   │   ├── roots/
-│   │   │   └── aegis-group-root-ca.pem
+│   │   │   └── root-ca.pem
 │   │   └── intermediates/
 │   │       └── vault/
 │   │           └── README.md
@@ -130,7 +130,7 @@ Each module is small (~30-50 lines), `set -euo pipefail`, ShellCheck clean.
 
 ## Key Conventions
 
-- All images via Harbor pull-through cache (`harbor.aegisgroup.ch`)
+- All images via Harbor pull-through cache (`harbor.example.com`)
 - No `latest` tags — pin to semver
 - `CHANGEME_DOMAIN` placeholder in manifests, substituted at deploy time
 - Vault listens on HTTP internally, TLS terminated at Traefik Gateway

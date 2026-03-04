@@ -28,9 +28,26 @@ cover.out
 # Cache
 .kube/
 
-# OS-specific
+# OS & editor artifacts
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+.project
+.settings/
+.nfs*
 
-# Claude Code local settings
-.claude/settings.local.json
-.claude/agent-memory-local/
+# Environment files (general catch)
+.env
+.env.*
+!.env.example
+
+# Claude Code (agents, memory, settings — local dev tools)
+.claude/
+
+# Project memory (local context)
+memory/

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bash (ShellCheck clean), Kustomize, Helm (hashicorp/vault 0.32.0, jetstack/cert-manager v1.19.3, external-secrets v0.17.0), Vault 1.19.0, Gateway API v1, Prometheus Operator CRDs.
 
-**Source reference:** `/home/rocky/code/rke2-cluster-via-rancher/` for manifest patterns, `/home/rocky/code/PKI/` for CA tooling.
+**Source reference:** `../rke2-cluster-via-rancher/` for manifest patterns, `../PKI/` for CA tooling.
 
 ---
 
@@ -317,8 +317,8 @@ git commit -m "feat: add script utility modules (log, helm, wait, vault, subst)"
 
 **Files:**
 - Create: `services/pki/.gitignore`
-- Copy: `services/pki/generate-ca.sh` (from `/home/rocky/code/PKI/generate-ca.sh`)
-- Copy: `services/pki/roots/aegis-group-root-ca.pem` (from `/home/rocky/code/PKI/roots/`)
+- Copy: `services/pki/generate-ca.sh` (from `../PKI/generate-ca.sh`)
+- Copy: `services/pki/roots/root-ca.pem` (from `../PKI/roots/`)
 - Create: `services/pki/intermediates/vault/README.md`
 - Create: `services/pki/README.md`
 
@@ -326,8 +326,8 @@ git commit -m "feat: add script utility modules (log, helm, wait, vault, subst)"
 
 ```bash
 mkdir -p services/pki/roots services/pki/intermediates/vault
-cp /home/rocky/code/PKI/generate-ca.sh services/pki/
-cp /home/rocky/code/PKI/roots/aegis-group-root-ca.pem services/pki/roots/
+cp ../PKI/generate-ca.sh services/pki/
+cp ../PKI/roots/root-ca.pem services/pki/roots/
 chmod +x services/pki/generate-ca.sh
 ```
 
@@ -362,7 +362,7 @@ To inspect the intermediate certificate:
 ```markdown
 # PKI Service
 
-Offline Root CA and certificate generation tooling for the Aegis Group PKI hierarchy.
+Offline Root CA and certificate generation tooling for the PKI hierarchy.
 
 ## Hierarchy
 
@@ -375,8 +375,8 @@ Offline Root CA and certificate generation tooling for the Aegis Group PKI hiera
 Generate a new intermediate for Vault (only needed during initial bootstrap):
 
     ./generate-ca.sh intermediate -n vault-int \
-        --root-cert roots/aegis-group-root-ca.pem \
-        --root-key roots/aegis-group-root-ca-key.pem \
+        --root-cert roots/root-ca.pem \
+        --root-key roots/root-ca-key.pem \
         -d intermediates/vault/
 
 Verify a certificate chain:
@@ -387,7 +387,7 @@ Verify a certificate chain:
 
 - Root CA key (`*-key.pem`) is gitignored and stored offline
 - Vault intermediate key lives inside Vault only
-- nameConstraints restrict all certs to: aegisgroup.ch, cluster.local, RFC 1918
+- nameConstraints restrict all certs to: example.com, cluster.local, RFC 1918
 ```
 
 ### Step 5: Validate
@@ -415,7 +415,7 @@ git commit -m "feat: add PKI service with generate-ca.sh and root CA cert"
 - Create: `services/vault/httproute.yaml`
 - Create: `services/vault/kustomization.yaml`
 
-**Source reference:** `/home/rocky/code/rke2-cluster-via-rancher/services/vault/`
+**Source reference:** `../rke2-cluster-via-rancher/services/vault/`
 
 ### Step 1: Create `services/vault/namespace.yaml`
 
@@ -430,7 +430,7 @@ metadata:
 
 ### Step 2: Create `services/vault/vault-values.yaml`
 
-Adapt from source (`/home/rocky/code/rke2-cluster-via-rancher/services/vault/vault-values.yaml`). Key settings:
+Adapt from source (`../rke2-cluster-via-rancher/services/vault/vault-values.yaml`). Key settings:
 - 3 replicas, HA Raft storage
 - `tls_disable = 1` (TLS at Traefik, not Vault)
 - `unauthenticated_metrics_access = true` for Prometheus
@@ -441,7 +441,7 @@ Adapt from source (`/home/rocky/code/rke2-cluster-via-rancher/services/vault/vau
 
 Copy the file verbatim from source:
 ```bash
-cp /home/rocky/code/rke2-cluster-via-rancher/services/vault/vault-values.yaml services/vault/
+cp ../rke2-cluster-via-rancher/services/vault/vault-values.yaml services/vault/
 ```
 
 ### Step 3: Create `services/vault/gateway.yaml`
@@ -533,7 +533,7 @@ git commit -m "feat: add Vault service manifests (namespace, helm values, gatewa
 - Create: `services/vault/monitoring/vault-alerts.yaml`
 - Create: `services/vault/monitoring/configmap-dashboard-vault.yaml`
 
-**Source reference:** `/home/rocky/code/rke2-cluster-via-rancher/services/vault/monitoring/`
+**Source reference:** `../rke2-cluster-via-rancher/services/vault/monitoring/`
 
 ### Step 1: Create `services/vault/monitoring/kustomization.yaml`
 
@@ -550,11 +550,11 @@ resources:
 
 ```bash
 mkdir -p services/vault/monitoring
-cp /home/rocky/code/rke2-cluster-via-rancher/services/vault/monitoring/service-monitor.yaml \
+cp ../rke2-cluster-via-rancher/services/vault/monitoring/service-monitor.yaml \
    services/vault/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/vault/monitoring/vault-alerts.yaml \
+cp ../rke2-cluster-via-rancher/services/vault/monitoring/vault-alerts.yaml \
    services/vault/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/vault/monitoring/configmap-dashboard-vault.yaml \
+cp ../rke2-cluster-via-rancher/services/vault/monitoring/configmap-dashboard-vault.yaml \
    services/vault/monitoring/
 ```
 
@@ -582,7 +582,7 @@ git commit -m "feat: add Vault monitoring (ServiceMonitor, alerts, Grafana dashb
 - Create: `services/cert-manager/cluster-issuer.yaml`
 - Create: `services/cert-manager/kustomization.yaml`
 
-**Source reference:** `/home/rocky/code/rke2-cluster-via-rancher/services/cert-manager/`
+**Source reference:** `../rke2-cluster-via-rancher/services/cert-manager/`
 
 ### Step 1: Create `services/cert-manager/namespace.yaml`
 
@@ -682,11 +682,11 @@ git commit -m "feat: add cert-manager service manifests (namespace, RBAC, Cluste
 
 ```bash
 mkdir -p services/cert-manager/monitoring
-cp /home/rocky/code/rke2-cluster-via-rancher/services/cert-manager/monitoring/service-monitor.yaml \
+cp ../rke2-cluster-via-rancher/services/cert-manager/monitoring/service-monitor.yaml \
    services/cert-manager/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/cert-manager/monitoring/certmanager-alerts.yaml \
+cp ../rke2-cluster-via-rancher/services/cert-manager/monitoring/certmanager-alerts.yaml \
    services/cert-manager/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/cert-manager/monitoring/configmap-dashboard-cert-manager.yaml \
+cp ../rke2-cluster-via-rancher/services/cert-manager/monitoring/configmap-dashboard-cert-manager.yaml \
    services/cert-manager/monitoring/
 ```
 
@@ -723,7 +723,7 @@ git commit -m "feat: add cert-manager monitoring (ServiceMonitor, alerts, Grafan
 - Create: `services/external-secrets/namespace.yaml`
 - Create: `services/external-secrets/kustomization.yaml`
 
-**Source reference:** `/home/rocky/code/rke2-cluster-via-rancher/services/external-secrets/`
+**Source reference:** `../rke2-cluster-via-rancher/services/external-secrets/`
 
 ### Step 1: Create `services/external-secrets/namespace.yaml`
 
@@ -765,11 +765,11 @@ git commit -m "feat: add external-secrets service manifests (namespace)"
 
 ```bash
 mkdir -p services/external-secrets/monitoring
-cp /home/rocky/code/rke2-cluster-via-rancher/services/external-secrets/monitoring/servicemonitor.yaml \
+cp ../rke2-cluster-via-rancher/services/external-secrets/monitoring/servicemonitor.yaml \
    services/external-secrets/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/external-secrets/monitoring/external-secrets-alerts.yaml \
+cp ../rke2-cluster-via-rancher/services/external-secrets/monitoring/external-secrets-alerts.yaml \
    services/external-secrets/monitoring/
-cp /home/rocky/code/rke2-cluster-via-rancher/services/external-secrets/monitoring/configmap-dashboard-external-secrets.yaml \
+cp ../rke2-cluster-via-rancher/services/external-secrets/monitoring/configmap-dashboard-external-secrets.yaml \
    services/external-secrets/monitoring/
 ```
 
@@ -812,16 +812,16 @@ git commit -m "feat: add external-secrets monitoring (ServiceMonitor, alerts, Gr
 # Copy to .env and fill in values before running.
 
 # Domain configuration (required)
-DOMAIN="aegisgroup.ch"
+DOMAIN="example.com"
 # Auto-derived (override if needed):
-# DOMAIN_DASHED="aegisgroup-ch"
-# DOMAIN_DOT="aegisgroup-dot-ch"
+# DOMAIN_DASHED="example-com"
+# DOMAIN_DOT="example-dot-com"
 
 # Vault init output file (created during Phase 2)
 VAULT_INIT_FILE="${SCRIPT_DIR}/../vault-init.json"
 
 # Root CA paths (required for Phase 3: PKI setup)
-ROOT_CA_CERT="${SCRIPT_DIR}/../services/pki/roots/aegis-group-root-ca.pem"
+ROOT_CA_CERT="${SCRIPT_DIR}/../services/pki/roots/root-ca.pem"
 ROOT_CA_KEY=""  # Path to offline Root CA key — NOT committed to git
 
 # Kubeconfig (optional — uses current context if not set)
@@ -876,7 +876,7 @@ export DOMAIN DOMAIN_DASHED DOMAIN_DOT
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
 
 # Root CA paths
-ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/aegis-group-root-ca.pem}"
+ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
 ROOT_CA_KEY="${ROOT_CA_KEY:-}"
 
 # ---------------------------------------------------------------------------
@@ -1049,8 +1049,8 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   log_info "Generating intermediate CSR inside Vault..."
   vault_exec "$root_token" write -format=json \
     pki_int/intermediate/generate/internal \
-    common_name="Aegis Group Vault Intermediate CA" \
-    organization="Aegis Group" \
+    common_name="${ORG} Vault Intermediate CA" \
+    organization="${ORG}" \
     key_type=rsa \
     key_bits=4096 \
     | jq -r '.data.csr' > /tmp/vault-intermediate.csr

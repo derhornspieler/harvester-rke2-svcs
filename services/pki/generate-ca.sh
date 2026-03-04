@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # generate-ca.sh — Root CA, intermediate CA, and leaf certificate generation
-#                   for Aegis Group PKI
 #
 # Usage:
 #   ./generate-ca.sh root          [-o ORG] [-d DIR] [-r DAYS] [-f]
@@ -20,7 +19,7 @@ set -euo pipefail
 #   verify        Verify a certificate chain file
 #
 # Options:
-#   -o ORG        Organization name (default: "Aegis Group")
+#   -o ORG        Organization name (default: "My Organization")
 #   -d DIR        Output directory (default: current directory)
 #   -r DAYS       Root CA validity in days (default: 10950 = ~30 years)
 #   -i DAYS       Intermediate CA validity in days (default: 5475 = ~15 years)
@@ -49,7 +48,7 @@ usage() {
 }
 
 # Default values
-ORG="Aegis Group"
+ORG="My Organization"
 OUTPUT_DIR="."
 ROOT_DAYS=10950
 INTERMEDIATE_DAYS=5475
@@ -112,8 +111,8 @@ check_file_exists() {
 # Command: root
 # =============================================================================
 cmd_root() {
-    local cert_path="${OUTPUT_DIR}/aegis-group-root-ca.pem"
-    local key_path="${OUTPUT_DIR}/aegis-group-root-ca-key.pem"
+    local cert_path="${OUTPUT_DIR}/root-ca.pem"
+    local key_path="${OUTPUT_DIR}/root-ca-key.pem"
 
     mkdir -p "$OUTPUT_DIR"
     check_file_exists "$cert_path"
@@ -127,6 +126,10 @@ cmd_root() {
     # Generate RSA 4096-bit key
     openssl genrsa -out "$key_path" 4096 2>/dev/null
     chmod 600 "$key_path"
+
+    # Derive the DNS constraint domain from ORG (lowercase, spaces to hyphens, append .ch)
+    # Override with NAME_CONSTRAINT_DNS env var if needed
+    local dns_domain="${NAME_CONSTRAINT_DNS:-example.com}"
 
     # Create OpenSSL config for root CA with nameConstraints
     local conf_file
@@ -148,7 +151,7 @@ subjectKeyIdentifier   = hash
 nameConstraints        = critical, @name_constraints
 
 [name_constraints]
-permitted;DNS.0  = aegisgroup.ch
+permitted;DNS.0  = ${dns_domain}
 permitted;DNS.1  = cluster.local
 permitted;IP.0   = 10.0.0.0/255.0.0.0
 permitted;IP.1   = 172.16.0.0/255.240.0.0
