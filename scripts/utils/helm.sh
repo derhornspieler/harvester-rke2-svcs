@@ -7,6 +7,11 @@ set -euo pipefail
 helm_repo_add() {
   local name="$1"
   local url="$2"
+  # OCI registries don't use helm repo add
+  if [[ "$url" == oci://* ]]; then
+    log_info "Helm repo '${name}' is OCI-based, skipping repo add"
+    return 0
+  fi
   if helm repo list 2>/dev/null | grep -q "^${name}"; then
     log_info "Helm repo '${name}' already exists, updating..."
     helm repo update "$name"
