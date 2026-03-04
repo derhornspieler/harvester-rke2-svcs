@@ -26,8 +26,11 @@ export DOMAIN DOMAIN_DASHED DOMAIN_DOT
 # Vault init file
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
 
+# Organization name (used in Vault intermediate CA CN)
+ORG="${ORG:-My Organization}"
+
 # Root CA paths
-ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/aegis-group-root-ca.pem}"
+ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
 ROOT_CA_KEY="${ROOT_CA_KEY:-}"
 
 # CLI Parsing
@@ -184,8 +187,8 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   log_info "Generating intermediate CSR inside Vault..."
   vault_exec "$root_token" write -format=json \
     pki_int/intermediate/generate/internal \
-    common_name="Example Org Vault Intermediate CA" \
-    organization="Example Org" \
+    common_name="${ORG} Vault Intermediate CA" \
+    organization="${ORG}" \
     key_type=rsa \
     key_bits=4096 \
     | jq -r '.data.csr' > /tmp/vault-intermediate.csr

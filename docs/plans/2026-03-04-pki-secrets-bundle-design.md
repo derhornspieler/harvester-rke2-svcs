@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-04
 **Status:** Approved
-**Author:** derhornspieler + Claude Opus 4.6
+**Author:** Project Author + Claude Opus 4.6
 
 ## Overview
 
@@ -34,7 +34,7 @@ harvester-rke2-svcs/
 │   │   ├── README.md
 │   │   ├── .gitignore              # Ignores *-key.pem
 │   │   ├── roots/
-│   │   │   └── aegis-group-root-ca.pem
+│   │   │   └── root-ca.pem
 │   │   └── intermediates/
 │   │       └── vault/
 │   │           └── README.md

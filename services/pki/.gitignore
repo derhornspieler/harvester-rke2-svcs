@@ -1,3 +1,6 @@
 # Private keys NEVER committed
 *-key.pem
 *.key.pem
+
+# Certificates — users generate their own
+*.pem
