@@ -138,7 +138,7 @@ API after deployment. For each upstream registry you want to cache:
 Example API call to create a registry endpoint:
 
 ```bash
-curl -u "admin:<password>" -X POST \
+curl -H "Authorization: Basic $(echo -n admin:YOUR_PASSWORD | base64)" -X POST \
   "https://harbor.example.com/api/v2.0/registries" \
   -H "Content-Type: application/json" \
   -d '{
