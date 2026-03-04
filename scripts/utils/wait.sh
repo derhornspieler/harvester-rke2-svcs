@@ -45,6 +45,32 @@ wait_for_pods_ready() {
   return 1
 }
 
+wait_for_pods_running() {
+  local namespace="$1"
+  local label="$2"
+  local expected="${3:-1}"
+  local timeout="${4:-600}"
+  local interval=5
+  local elapsed=0
+
+  log_info "Waiting for ${expected} pod(s) (${label}) in ${namespace} to be Running (timeout: ${timeout}s)..."
+  while [[ $elapsed -lt $timeout ]]; do
+    local running
+    running=$(kubectl -n "$namespace" get pods -l "$label" \
+      --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+    if [[ "$running" -ge "$expected" ]]; then
+      log_ok "${running} pod(s) with label ${label} are Running"
+      return 0
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+  log_error "Timeout waiting for ${expected} Running pods (${label}) in ${namespace}"
+  kubectl -n "$namespace" get pods -l "$label" 2>/dev/null || true
+  return 1
+}
+
 wait_for_clusterissuer() {
   local name="$1"
   local timeout="${2:-600}"
