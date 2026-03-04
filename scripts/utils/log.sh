@@ -24,6 +24,10 @@ start_phase() {
 
 end_phase() {
   local phase_name="$1"
+  if [[ -z "$PHASE_START_TIME" ]]; then
+    log_warn "end_phase called without start_phase"
+    return
+  fi
   local elapsed=$(( $(date +%s) - PHASE_START_TIME ))
   local mins=$(( elapsed / 60 ))
   local secs=$(( elapsed % 60 ))

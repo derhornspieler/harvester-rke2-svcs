@@ -29,10 +29,12 @@ wait_for_pods_ready() {
   while [[ $elapsed -lt $timeout ]]; do
     local total ready
     total=$(kubectl -n "$namespace" get pods -l "$label" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-    ready=$(kubectl -n "$namespace" get pods -l "$label" --no-headers 2>/dev/null | grep -c "Running" || true)
+    ready=$(kubectl -n "$namespace" get pods -l "$label" \
+      -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
+      2>/dev/null | grep -c "True" || true)
 
     if [[ "$total" -gt 0 && "$total" -eq "$ready" ]]; then
-      log_ok "All ${total} pod(s) with label ${label} are Running"
+      log_ok "All ${total} pod(s) with label ${label} are Ready"
       return 0
     fi
     sleep "$interval"
