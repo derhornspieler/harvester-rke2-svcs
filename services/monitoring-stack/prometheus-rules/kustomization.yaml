@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cilium-alerts.yaml
+  - kubernetes-alerts.yaml
+  - loki-alerts.yaml
+  - monitoring-self-alerts.yaml
+  - node-alerts.yaml
+  - oauth2-proxy-alerts.yaml
+  - postgresql-alerts.yaml
+  - redis-alerts.yaml
+  - traefik-alerts.yaml
