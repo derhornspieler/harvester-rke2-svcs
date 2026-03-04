@@ -10,6 +10,9 @@
 - Secrets via ESO + Vault KV v2
 - Each bundle has a deploy script for bootstrap, ArgoCD manages steady-state later
 - GitLab SSH uses TCP Gateway listener (port 22 passthrough)
+- **Resource requests only, no limits** — allows bursting, prevents artificial OOM kills
+- **HPA enabled** on stateless workloads (Grafana, OAuth2-proxy, ArgoCD server, GitLab Webservice, etc.)
+- **Storage autoscaler** on PVCs that grow (Prometheus TSDB, Loki, Gitaly, MinIO, CNPG WAL)
 
 ---
 
