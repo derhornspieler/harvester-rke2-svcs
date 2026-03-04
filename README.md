@@ -1,6 +1,6 @@
 # harvester-rke2-svcs
 
-![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 PKI and secrets management bundle for RKE2 clusters. Deploys
 [HashiCorp Vault](https://www.vaultproject.io/),
