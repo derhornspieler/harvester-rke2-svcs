@@ -13,6 +13,8 @@
 - **Resource requests only, no limits** — allows bursting, prevents artificial OOM kills
 - **HPA enabled** on stateless workloads (Grafana, OAuth2-proxy, ArgoCD server, GitLab Webservice, etc.)
 - **Storage autoscaler** on PVCs that grow (Prometheus TSDB, Loki, Gitaly, MinIO, CNPG WAL)
+- **Pod anti-affinity** on all replicated workloads — spread across nodes (`topologyKey: kubernetes.io/hostname`)
+- **Node selectors** — stateful on `workload-type: database`, general on `workload-type: general`
 
 ---
 
