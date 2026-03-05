@@ -19,5 +19,7 @@ resources:
   - analysis-templates/success-rate.yaml
   - analysis-templates/latency-check.yaml
   - analysis-templates/error-rate.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscalers.yaml
   # Monitoring
   - monitoring/

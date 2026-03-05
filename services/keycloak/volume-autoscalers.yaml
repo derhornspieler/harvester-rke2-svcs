@@ -1,16 +1,17 @@
+---
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
-  name: loki
-  namespace: monitoring
+  name: keycloak-pg
+  namespace: database
 spec:
   target:
     selector:
       matchLabels:
-        app: loki
+        cnpg.io/cluster: keycloak-pg
   thresholdPercent: 80
-  increasePercent: 20
+  maxSize: 50Gi
+  increasePercent: 25
   increaseMinimum: 5Gi
-  maxSize: 200Gi
+  pollInterval: 120s
   cooldownPeriod: 10m
-  prometheusURL: http://prometheus.monitoring.svc:9090
