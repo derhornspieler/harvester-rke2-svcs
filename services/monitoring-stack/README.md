@@ -4,15 +4,32 @@ Full observability stack: metrics (Prometheus), dashboards (Grafana), logs (Loki
 
 ## Architecture
 
-- **Prometheus** — metrics collection, 30-day retention, 50Gi PVC
-- **Grafana** — 18 dashboards (15 platform + 3 from Bundle 1), native OIDC (Bundle 4)
-- **Alertmanager** — alert routing (critical/warning/default receivers)
-- **Loki** — log aggregation, 7-day retention, TSDB v13
+- **Prometheus** — metrics collection, 30-day retention, 50Gi PVC, auto-scaling via VolumeAutoscaler
+- **Grafana** — 18 dashboards (15 platform + 3 from Bundle 1), HPA 2-4 replicas, native OIDC (Bundle 4)
+- **Alertmanager** — alert routing (critical/warning/default receivers), HTTP listener on port 9093
+- **Loki** — log aggregation, 30-day retention (720h), TSDB v13, auto-scaling via VolumeAutoscaler, startupProbe for graceful initialization, hardened securityContext (non-root, read-only filesystem)
 - **Alloy** — DaemonSet log collector (pod logs, journal, K8s events)
 
 ## Deployment
 
     ./scripts/deploy-monitoring.sh
+
+### Required Environment Variables
+
+Set these in `scripts/.env` before deployment:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `DOMAIN` | Cluster domain for all URLs | `example.com` |
+| `GRAFANA_ADMIN_PASSWORD` | Initial admin login password | `SecurePassword123!` |
+| `PROM_BASIC_AUTH_PASS` | Prometheus HTTP basic-auth password | `admin-secret` |
+| `AM_BASIC_AUTH_PASS` | Alertmanager HTTP basic-auth password | `admin-secret` |
+| `PROM_BASIC_AUTH_USER` | Prometheus username (optional, default: `admin`) | `prometheus-user` |
+| `AM_BASIC_AUTH_USER` | Alertmanager username (optional, default: `admin`) | `alertmanager-user` |
+
+Optional Helm chart overrides:
+- `HELM_CHART_PROMETHEUS_STACK` — Override chart source (e.g., for Harbor OCI registry)
+- `HELM_REPO_PROMETHEUS_STACK` — Override Helm repository URL
 
 ## Ingress
 
