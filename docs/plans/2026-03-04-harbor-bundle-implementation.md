@@ -360,7 +360,7 @@ git commit -m "docs: add Harbor MANIFEST.yaml and README"
 ### Step 1: Scan for org-specific info
 
 ```bash
-grep -rn "aegis\|/home/rocky\|derhornspieler" services/harbor/ scripts/deploy-harbor.sh
+grep -rn "<ORG_NAME>\|/home/<USER>\|<GITHUB_USER>" services/harbor/ scripts/deploy-harbor.sh
 ```
 Expected: zero matches.
 
