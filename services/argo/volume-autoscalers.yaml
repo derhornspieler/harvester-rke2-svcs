@@ -9,6 +9,7 @@ spec:
     selector:
       matchLabels:
         app.kubernetes.io/name: redis-ha
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   thresholdPercent: 80
   maxSize: 30Gi
   increasePercent: 25
