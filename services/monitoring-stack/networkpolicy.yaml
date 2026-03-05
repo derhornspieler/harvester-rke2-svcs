@@ -18,11 +18,15 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Traefik to Grafana (3000), Prometheus (9090), Alertmanager (9093)
+    # Traefik to Grafana (3000), Prometheus (9090), Alertmanager (9093),
+    # and oauth2-proxy ForwardAuth (4180) for Prometheus/Alertmanager SSO
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: traefik
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rke2-traefik
       ports:
         - protocol: TCP
           port: 3000
@@ -30,6 +34,8 @@ spec:
           port: 9090
         - protocol: TCP
           port: 9093
+        - protocol: TCP
+          port: 4180
     # Intra-namespace communication (Prometheus <-> Alertmanager, Grafana -> Loki, etc.)
     - from:
         - podSelector: {}
