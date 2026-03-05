@@ -99,9 +99,9 @@ Adapted from source. Run manually after Keycloak is healthy:
 6. Update Grafana Helm values to enable OIDC (uncomment Bundle 4 sections)
 
 Future bundles add their own OIDC clients to this realm:
-- Bundle 3: (Monitoring) uses pre-configured Grafana OIDC from Bundle 2 setup
-- Bundle 5: argocd, argo-rollouts
-- Bundle 6: gitlab
+- Bundle 3 (Monitoring): Grafana uses native OIDC (configured in setup-keycloak.sh Phase 3)
+- Bundle 5 (GitOps): ArgoCD, Argo Rollouts
+- Bundle 6 (Git & CI): GitLab
 
 ## Resource Conventions
 

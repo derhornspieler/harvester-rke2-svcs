@@ -136,6 +136,93 @@ graph TB
 
 ---
 
+## Network Security
+
+### Network Policy Strategy
+
+All service namespaces implement a default-deny-ingress policy with explicit allow rules. This ensures microsegmentation at the network layer:
+
+- **Default-deny**: Every namespace with `NetworkPolicy` blocks ingress unless explicitly allowed
+- **Traefik ingress**: RKE2's Traefik in `kube-system` namespace routes external traffic to services via Gateway API
+- **Service-to-service**: Allowed only for declared dependencies (Prometheus scraping, Keycloak OIDC, etc.)
+- **Pod anti-affinity**: All replicated workloads spread across nodes to improve resilience
+
+```mermaid
+graph TB
+    subgraph "kube-system"
+        Traefik["RKE2 Traefik<br/>(Gateway listener)"]
+    end
+
+    subgraph "Default-Deny Namespaces"
+        vault["vault"]
+        cm["cert-manager"]
+        eso["external-secrets"]
+        monitoring["monitoring"]
+        keycloak["keycloak"]
+        database["database"]
+        minio["minio"]
+        harbor["harbor"]
+        argocd["argocd"]
+        rollouts["argo-rollouts"]
+        workflows["argo-workflows"]
+        gitlab["gitlab"]
+        runners["gitlab-runners"]
+    end
+
+    Traefik -->|"8200"| vault
+    Traefik -->|"3000,9090,9093"| monitoring
+    Traefik -->|"8080"| keycloak
+    Traefik -->|"80,443"| harbor
+    Traefik -->|"8080"| argocd
+    Traefik -->|"8181,8080,8443,22"| gitlab
+
+    monitoring -->|"scrapes all"| vault
+    monitoring -->|"9402"| cm
+    monitoring -->|"8080"| eso
+    monitoring -->|"9000"| keycloak
+    monitoring -->|"9090,9121"| harbor
+    monitoring -->|"8082-8084"| argocd
+    monitoring -->|"9121,9168"| gitlab
+    monitoring -->|"9187"| database
+    monitoring -->|"9000"| minio
+
+    style Traefik fill:#ef6c00,color:#fff
+    style vault fill:#f57c00,color:#fff
+    style cm fill:#1565c0,color:#fff
+    style eso fill:#1565c0,color:#fff
+    style monitoring fill:#e65100,color:#fff
+    style keycloak fill:#7b1fa2,color:#fff
+    style database fill:#388e3c,color:#fff
+    style minio fill:#f57c00,color:#fff
+    style harbor fill:#1565c0,color:#fff
+    style argocd fill:#ef6c00,color:#fff
+    style rollouts fill:#ef6c00,color:#fff
+    style workflows fill:#ef6c00,color:#fff
+    style gitlab fill:#e65100,color:#fff
+    style runners fill:#e65100,color:#fff
+```
+
+### Network Policy Files
+
+Each bundle includes NetworkPolicy resources applied during its respective deployment phase:
+
+| Bundle | Namespace(s) | NetworkPolicy File | Phase |
+|--------|-------------|--------------------|-------|
+| 1 | vault, cert-manager, external-secrets | `services/{vault,cert-manager,external-secrets}/networkpolicy.yaml` | 7 |
+| 2 | keycloak, database | `services/keycloak/{,postgres}/networkpolicy.yaml` | 8 |
+| 3 | monitoring | `services/monitoring-stack/networkpolicy.yaml` | 6 |
+| 4 | harbor, minio, database | `services/harbor/{,minio}/networkpolicy.yaml` | 8 |
+| 5 | argocd, argo-rollouts, argo-workflows | `services/argo/{argocd,argo-rollouts,argo-workflows}/networkpolicy.yaml` | 7 |
+| 6 | gitlab, gitlab-runners, database | `services/gitlab/{,runners}/networkpolicy.yaml` | 9 |
+
+All NetworkPolicy rules default-deny ingress and explicitly allow:
+- Traefik ingress (from `kube-system` namespace)
+- Service-to-service traffic (e.g., Keycloak PostgreSQL access)
+- Prometheus scraping (from `monitoring` namespace)
+- Required inter-component communication
+
+---
+
 ## Bundle 1: PKI & Secrets
 
 ### PKI Hierarchy
@@ -734,7 +821,7 @@ The bundles are deployed in order, each building on the previous:
 ```mermaid
 flowchart LR
     B1["Bundle 1<br/>PKI &amp; Secrets<br/>(7 phases)"]
-    B2["Bundle 2<br/>Identity<br/>(7+6 phases)"]
+    B2["Bundle 2<br/>Identity<br/>(8+6 phases)"]
     B3["Bundle 3<br/>Monitoring<br/>(6 phases)"]
     B4["Bundle 4<br/>Harbor<br/>(8 phases)"]
     B5["Bundle 5<br/>GitOps<br/>(7 phases)"]
@@ -789,21 +876,22 @@ flowchart LR
 needs the key. After Phase 3 completes, the Root CA key can be returned to
 offline storage.
 
-### Bundle 2: Identity (7 + 6 Phases)
+### Bundle 2: Identity (8 + 6 Phases)
 
 Scripts: `scripts/deploy-keycloak.sh` + `scripts/setup-keycloak.sh`
 
-**deploy-keycloak.sh (7 phases):**
+**deploy-keycloak.sh (8 phases):**
 
 | Phase | Component | What happens |
 |-------|-----------|--------------|
-| 1 | Namespaces | Create `keycloak`, `database` namespaces |
-| 2 | ESO ExternalSecrets | Apply ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
-| 3 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
-| 4 | Keycloak | Deploy RBAC, services, Keycloak deployment, verify health endpoint |
-| 5 | Gateway + HPA | Apply Gateway, HTTPRoute, HPA, verify TLS certificate |
-| 6 | OAuth2-proxy | Deploy OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; apply ForwardAuth middleware |
-| 7 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for Keycloak |
+| 1 | Shared Data Services | Install CNPG operator, deploy shared MinIO (skip if exists) |
+| 2 | Namespaces | Create `keycloak`, `database` namespaces |
+| 3 | ESO ExternalSecrets | Apply ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
+| 4 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
+| 5 | Keycloak | Deploy RBAC, services, Keycloak deployment, verify health endpoint |
+| 6 | Gateway + HPA | Apply Gateway, HTTPRoute, HPA, verify TLS certificate |
+| 7 | OAuth2-proxy | Deploy OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; apply ForwardAuth middleware |
+| 8 | Monitoring + NetworkPolicies | Apply dashboards, alerts, ServiceMonitors, and NetworkPolicies for Keycloak |
 
 **setup-keycloak.sh (6 phases, post-deploy):**
 
@@ -1103,10 +1191,10 @@ harvester-rke2-svcs/
 │       └── monitoring/             # Dashboards, alerts, ServiceMonitors
 ├── scripts/
 │   ├── deploy-pki-secrets.sh       # Bundle 1 orchestrator (7 phases)
-│   ├── deploy-monitoring.sh        # Bundle 2 orchestrator (6 phases)
-│   ├── deploy-harbor.sh            # Bundle 3 orchestrator (8 phases)
-│   ├── deploy-keycloak.sh          # Bundle 4 orchestrator (7 phases)
+│   ├── deploy-keycloak.sh          # Bundle 2 orchestrator (8 phases)
 │   ├── setup-keycloak.sh           # Keycloak Admin API setup (6 phases)
+│   ├── deploy-monitoring.sh        # Bundle 3 orchestrator (6 phases)
+│   ├── deploy-harbor.sh            # Bundle 4 orchestrator (8 phases)
 │   ├── deploy-argo.sh              # Bundle 5 orchestrator (7 phases)
 │   ├── deploy-gitlab.sh            # Bundle 6 orchestrator (9 phases)
 │   ├── .env.example                # Environment variable template

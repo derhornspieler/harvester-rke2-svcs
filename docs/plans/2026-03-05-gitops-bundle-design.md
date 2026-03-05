@@ -127,8 +127,8 @@ Used by Argo Rollouts for automated blue/green pre-promotion analysis. Queries P
 ## Dependencies
 
 - Bundle 1 (PKI & Secrets): TLS, Vault, ESO
-- Bundle 2 (Monitoring): Prometheus for AnalysisTemplates and ServiceMonitors
-- Bundle 4 (Identity): Keycloak for ArgoCD OIDC (must have `argocd` client created)
+- Bundle 2 (Identity): Keycloak for ArgoCD OIDC (must have `argocd` client created)
+- Bundle 3 (Monitoring): Prometheus for AnalysisTemplates and ServiceMonitors
 
 ## Out of Scope (Future)
 

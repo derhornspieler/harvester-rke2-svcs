@@ -106,7 +106,7 @@ graph LR
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed diagrams
-covering the PKI hierarchy, deployment phases, and data flows.
+covering the PKI hierarchy, network security policies, deployment phases, and data flows.
 
 ## Quick Start
 
@@ -206,7 +206,7 @@ scripts/                     # Deploy scripts and utility modules
   deploy-monitoring.sh       # Bundle 3 orchestrator (6 phases)
   deploy-harbor.sh           # Bundle 4 orchestrator (8 phases)
   deploy-argo.sh             # Bundle 5 orchestrator (7 phases)
-  deploy-gitlab.sh           # Bundle 6 orchestrator (9 phases)
+  deploy-gitlab.sh           # Bundle 6 orchestrator (9 phases, includes NetworkPolicies)
   .env.example               # Environment variable template
   utils/                     # Shell utility modules
     log.sh                   # Colored logging + phase timing
@@ -254,8 +254,9 @@ docs/                        # Architecture and getting started guides
 - RKE2 cluster with kubeconfig access
 - `kubectl`, `helm`, `jq`, `openssl`, `htpasswd`
 - Root CA key (offline, for initial PKI setup only)
-- CNPG operator installed (for Harbor, Keycloak, and GitLab PostgreSQL clusters)
-- Redis operator installed (for Valkey Sentinel and GitLab Redis Sentinel)
+- CNPG operator (auto-installed in Bundle 2, Phase 1 for Keycloak, Harbor, and GitLab PostgreSQL)
+- Redis operators (Spotahome for Harbor, OpsTree for GitLab — must be pre-installed)
+- NetworkPolicy support (included in Cilium, Calico, and other CNI implementations)
 
 ## License
 
