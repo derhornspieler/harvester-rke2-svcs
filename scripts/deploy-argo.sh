@@ -32,9 +32,10 @@ HELM_CHART_ARGOCD="${HELM_CHART_ARGOCD:-oci://ghcr.io/argoproj/argo-helm/argo-cd
 HELM_CHART_ROLLOUTS="${HELM_CHART_ROLLOUTS:-oci://ghcr.io/argoproj/argo-helm/argo-rollouts}"
 HELM_CHART_WORKFLOWS="${HELM_CHART_WORKFLOWS:-oci://ghcr.io/argoproj/argo-helm/argo-workflows}"
 
-# Basic-auth passwords (required for rollouts + workflows)
-ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:?Set ARGO_BASIC_AUTH_PASS in .env}"
-WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:?Set WORKFLOWS_BASIC_AUTH_PASS in .env}"
+# Basic-auth passwords (auto-generate if not set)
+ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-$(openssl rand -base64 24)}"
+WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-$(openssl rand -base64 24)}"
+export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
 
 # CLI Parsing
 PHASE_FROM=1
@@ -152,7 +153,11 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       "policies=eso-${ns}" \
       ttl=1h
 
-    vault_exec "$root_token" policy write "eso-${ns}" - <<POLICY
+    # Write policy via kubectl exec with stdin (vault_exec doesn't support stdin)
+    kubectl exec -i -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="$root_token" \
+      vault policy write "eso-${ns}" - <<POLICY
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
 }
