@@ -47,9 +47,7 @@ resources:
   # Grafana HPA
   - grafana/hpa.yaml
   # Volume autoscalers (PVC expansion)
-  - volume-autoscaler-loki.yaml
-  - volume-autoscaler-prometheus.yaml
-  - volume-autoscaler-alertmanager.yaml
+  - volume-autoscalers.yaml
   # PrometheusRules + ServiceMonitors
   - prometheus-rules/
   - service-monitors/

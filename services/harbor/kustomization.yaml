@@ -24,5 +24,7 @@ resources:
   - hpa-core.yaml
   - hpa-registry.yaml
   - hpa-trivy.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscalers.yaml
   # Monitoring
   - monitoring/
