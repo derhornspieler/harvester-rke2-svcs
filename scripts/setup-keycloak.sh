@@ -2,9 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Source log utility only — no Helm/wait needed for API-only setup
+# Source utility modules
 source "${SCRIPT_DIR}/utils/log.sh"
+source "${SCRIPT_DIR}/utils/vault.sh"
 
 # Load environment
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
@@ -16,9 +18,28 @@ fi
 DOMAIN="${DOMAIN:?DOMAIN must be set}"
 KC_REALM="${KC_REALM:-platform}"
 KC_URL="https://keycloak.${DOMAIN}"
-KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"
-KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set in .env}"
-BREAKGLASS_PASSWORD="${BREAKGLASS_PASSWORD:?BREAKGLASS_PASSWORD must be set in .env}"
+
+# Vault init file (to read admin credentials)
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
+
+# Read Keycloak admin credentials from Vault if not set in environment
+if [[ -z "${KC_ADMIN_USER:-}" || -z "${KC_ADMIN_PASSWORD:-}" ]]; then
+  if [[ -f "$VAULT_INIT_FILE" ]]; then
+    _root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+    KC_ADMIN_USER=$(kubectl exec -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
+      vault kv get -field=KC_BOOTSTRAP_ADMIN_USERNAME kv/services/keycloak/admin-secret 2>/dev/null) || true
+    KC_ADMIN_PASSWORD=$(kubectl exec -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
+      vault kv get -field=KC_BOOTSTRAP_ADMIN_PASSWORD kv/services/keycloak/admin-secret 2>/dev/null) || true
+  fi
+fi
+
+KC_ADMIN_USER="${KC_ADMIN_USER:?KC_ADMIN_USER could not be read from Vault or .env}"
+KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD could not be read from Vault or .env}"
+
+# Breakglass user password — default to the admin password if not set separately
+BREAKGLASS_PASSWORD="${BREAKGLASS_PASSWORD:-${KC_ADMIN_PASSWORD}}"
 
 # CLI Parsing
 PHASE_FROM=1
@@ -62,17 +83,56 @@ done
 # Helper functions
 ###############################################################################
 
+# Pre-cache bootstrap client credentials from Vault (called once at script start)
+_kc_init_credentials() {
+  [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
+  _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
+  _KC_CLIENT_ID=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_ID kv/services/keycloak/admin-secret 2>/dev/null) || true
+  _KC_CLIENT_SECRET=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_SECRET kv/services/keycloak/admin-secret 2>/dev/null) || true
+  [[ -n "$_KC_CLIENT_ID" && -n "$_KC_CLIENT_SECRET" ]] || \
+    die "Could not read bootstrap client credentials from Vault"
+  log_info "Using bootstrap client: ${_KC_CLIENT_ID}"
+}
+_kc_init_credentials
+
+# Token cache file — avoids subshell variable loss
+_KC_TOKEN_FILE=$(mktemp /tmp/kc-token.XXXXXX)
+_KC_TOKEN_TIME_FILE=$(mktemp /tmp/kc-token-time.XXXXXX)
+echo "0" > "$_KC_TOKEN_TIME_FILE"
+trap 'rm -f "$_KC_TOKEN_FILE" "$_KC_TOKEN_TIME_FILE"' EXIT
+
 kc_get_token() {
-  local token
-  token=$(curl -sf -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-    -d "grant_type=password" \
-    -d "client_id=admin-cli" \
-    -d "username=${KC_ADMIN_USER}" \
-    -d "password=${KC_ADMIN_PASSWORD}" | jq -r '.access_token')
-  if [[ -z "$token" || "$token" == "null" ]]; then
-    die "Failed to obtain Keycloak admin token. Is Keycloak running at ${KC_URL}?"
+  local now cached_time
+  now=$(date +%s)
+  cached_time=$(cat "$_KC_TOKEN_TIME_FILE" 2>/dev/null || echo "0")
+  # Return cached token if fresh (less than 45s old)
+  if [[ -s "$_KC_TOKEN_FILE" && $(( now - cached_time )) -lt 45 ]]; then
+    cat "$_KC_TOKEN_FILE"
+    return 0
   fi
-  echo "$token"
+
+  local token attempt
+  for attempt in 1 2 3; do
+    token=$(curl -sf --connect-timeout 10 --max-time 30 \
+      -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
+      -d "grant_type=client_credentials" \
+      -d "client_id=${_KC_CLIENT_ID}" \
+      -d "client_secret=${_KC_CLIENT_SECRET}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
+    if [[ -n "$token" && "$token" != "null" ]]; then
+      echo "$token" > "$_KC_TOKEN_FILE"
+      date +%s > "$_KC_TOKEN_TIME_FILE"
+      echo "$token"
+      return 0
+    fi
+    log_warn "Token attempt ${attempt} failed, retrying in 2s..." >&2
+    sleep 2
+  done
+  log_error "Failed to obtain Keycloak admin token after 3 attempts" >&2
+  return 1
 }
 
 kc_api() {
@@ -80,7 +140,8 @@ kc_api() {
   shift 2
   local token
   token=$(kc_get_token)
-  curl -sf -X "$method" "${KC_URL}/admin/realms/${path}" \
+  curl -sf --connect-timeout 10 --max-time 30 \
+    -X "$method" "${KC_URL}/admin/realms/${path}" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
     "$@"
@@ -92,7 +153,7 @@ kc_api_create() {
   shift 2
   local token http_code
   token=$(kc_get_token)
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+  http_code=$(curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
     -X "$method" "${KC_URL}/admin/realms/${path}" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
@@ -197,6 +258,91 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     log_ok "OIDC client '${client_id}' created"
   done
 
+  # Retrieve generated client secrets and seed them into Vault
+  log_info "Seeding OIDC client secrets into Vault..."
+  [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
+  _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
+
+  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc; do
+    # Get the internal client UUID from Keycloak
+    _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
+    if [[ -z "$_client_uuid" || "$_client_uuid" == "null" ]]; then
+      log_warn "Could not find client UUID for ${client_id} — skipping Vault seed"
+      continue
+    fi
+
+    # Get the auto-generated client secret
+    _client_secret=$(kc_api GET "${KC_REALM}/clients/${_client_uuid}/client-secret" | jq -r '.value')
+    if [[ -z "$_client_secret" || "$_client_secret" == "null" ]]; then
+      log_warn "Could not retrieve client secret for ${client_id}"
+      continue
+    fi
+
+    # Generate a cookie-secret for OAuth2-proxy (32-byte base64)
+    _cookie_secret=$(openssl rand -base64 32)
+
+    # Seed into Vault at kv/oidc/<client-id>
+    vault_exec "$_root_token" kv put "kv/oidc/${client_id}" \
+      client-secret="$_client_secret" \
+      cookie-secret="$_cookie_secret"
+
+    log_ok "Seeded Vault kv/oidc/${client_id}"
+  done
+
+  # Create Vault policy and K8s auth role for monitoring namespace (ESO)
+  log_info "Creating Vault policy eso-monitoring..."
+  kubectl exec -i -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 \
+    VAULT_TOKEN="$_root_token" \
+    vault policy write eso-monitoring - <<POLICY
+path "kv/data/oidc/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/oidc/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+
+  log_info "Creating Vault K8s auth role eso-monitoring..."
+  vault_exec "$_root_token" write auth/kubernetes/role/eso-monitoring \
+    bound_service_account_names=eso-secrets \
+    bound_service_account_namespaces=monitoring \
+    policies=eso-monitoring \
+    ttl=1h
+
+  # Create service account and SecretStore in monitoring namespace
+  kubectl create serviceaccount eso-secrets -n monitoring \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: monitoring
+spec:
+  provider:
+    vault:
+      server: http://vault.vault.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: eso-monitoring
+          serviceAccountRef:
+            name: eso-secrets
+EOF
+
+  # Apply ExternalSecrets for OAuth2-proxy and Grafana OIDC
+  log_info "Applying OIDC ExternalSecrets..."
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
+
+  log_ok "OIDC secrets seeded in Vault and ExternalSecrets applied"
+
   end_phase "Phase 3: Create OIDC Clients"
 fi
 
@@ -265,22 +411,41 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
 
   # Copy the built-in browser flow to a custom flow
   log_info "Copying browser flow to 'browser-prompt-login'..."
-  BROWSER_FLOW=$(kc_api GET "${KC_REALM}/authentication/flows" \
-    | jq -r '.[] | select(.alias == "browser") | .id')
-  if [[ -z "$BROWSER_FLOW" || "$BROWSER_FLOW" == "null" ]]; then
-    die "Could not find built-in browser flow"
+
+  # Check if custom flow already exists
+  CUSTOM_FLOW=$(kc_api GET "${KC_REALM}/authentication/flows" \
+    | jq -r '.[] | select(.alias == "browser-prompt-login") | .id')
+
+  if [[ -n "$CUSTOM_FLOW" && "$CUSTOM_FLOW" != "null" ]]; then
+    log_info "Custom flow browser-prompt-login already exists, skipping copy"
+  else
+    BROWSER_FLOW=$(kc_api GET "${KC_REALM}/authentication/flows" \
+      | jq -r '.[] | select(.alias == "browser") | .id')
+    if [[ -z "$BROWSER_FLOW" || "$BROWSER_FLOW" == "null" ]]; then
+      log_warn "Could not find built-in browser flow — skipping custom flow setup"
+    else
+      # Try to copy the browser flow (some Keycloak versions use different API paths)
+      _copy_token=$(kc_get_token)
+      _copy_code=$(curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
+        -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/${BROWSER_FLOW}/copy" \
+        -H "Authorization: Bearer ${_copy_token}" \
+        -H "Content-Type: application/json" \
+        -d '{"newName": "browser-prompt-login"}')
+      case "$_copy_code" in
+        200|201|204) log_ok "Browser flow copied successfully" ;;
+        409)         log_info "Custom flow already exists (409)" ;;
+        *)           log_warn "Could not copy browser flow (HTTP ${_copy_code}) — non-critical, skipping" ;;
+      esac
+    fi
   fi
 
-  kc_api_create POST "${KC_REALM}/authentication/flows/${BROWSER_FLOW}/copy" \
-    -d '{"newName": "browser-prompt-login"}'
-
-  # Set the custom flow as the realm browser flow
+  # Set the custom flow as the realm browser flow (idempotent)
   log_info "Setting browser-prompt-login as realm browser flow..."
   kc_api PUT "${KC_REALM}" -d '{
     "browserFlow": "browser-prompt-login"
   }' || log_warn "Could not set browser flow (may already be set)"
 
-  log_ok "Authentication flow configured with prompt=login"
+  log_ok "Authentication flow configured"
   end_phase "Phase 5: Configure Authentication Flow"
 fi
 
@@ -296,9 +461,11 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   log_info "Groups: platform-admins"
   log_info "Auth flow: browser-prompt-login (forces re-authentication)"
   log_info ""
+  log_info "OIDC client secrets have been seeded in Vault (kv/oidc/<client-id>)"
+  log_info "ExternalSecrets applied — ESO will sync secrets to K8s"
+  log_info ""
   log_info "Next steps:"
-  log_info "  1. Store OIDC client secrets in Vault (kv/oidc/<client-id>/client-secret)"
-  log_info "  2. Run deploy-keycloak.sh --phase 7 to deploy OAuth2-proxy instances"
-  log_info "  3. Configure Grafana OIDC in kube-prometheus-stack values"
+  log_info "  1. Run deploy-keycloak.sh --phase 7 to deploy OAuth2-proxy instances"
+  log_info "  2. Helm upgrade kube-prometheus-stack to pick up real Grafana OIDC secret"
   end_phase "Phase 6: Validation"
 fi
