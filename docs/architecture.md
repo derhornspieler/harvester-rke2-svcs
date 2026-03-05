@@ -1,19 +1,100 @@
 # Architecture Overview
 
-This document describes the architecture of the PKI & Secrets bundle deployed
-onto RKE2 clusters. The bundle provides TLS certificate management and secrets
-synchronization as a foundation for all other cluster services.
+This document describes the architecture of all four service bundles deployed
+onto RKE2 clusters. The bundles build on each other to provide a complete
+platform foundation: PKI/secrets management, monitoring, container registry,
+and identity/SSO.
+
+## Bundle Overview
+
+```mermaid
+graph TB
+    subgraph "Bundle 1: PKI &amp; Secrets"
+        Vault["Vault"]
+        CM["cert-manager"]
+        ESO["ESO"]
+    end
+
+    subgraph "Bundle 2: Monitoring"
+        Prom["Prometheus"]
+        Graf["Grafana"]
+        AM["Alertmanager"]
+        Loki["Loki"]
+        Alloy["Alloy"]
+    end
+
+    subgraph "Bundle 3: Harbor"
+        Harbor["Harbor"]
+        MinIO["MinIO"]
+        CNPG1["CNPG PostgreSQL"]
+        Valkey["Valkey Sentinel"]
+    end
+
+    subgraph "Bundle 4: Identity"
+        KC["Keycloak"]
+        OAuth["OAuth2-proxy"]
+        CNPG2["CNPG PostgreSQL"]
+    end
+
+    Vault -->|TLS certs| CM
+    Vault -->|secrets| ESO
+    ESO -->|credentials| Harbor
+    ESO -->|credentials| KC
+    CM -->|TLS| Graf
+    CM -->|TLS| Harbor
+    CM -->|TLS| KC
+    CM -->|TLS| Prom
+    Alloy -->|logs| Loki
+    Prom -->|scrapes all| Vault
+    Prom -->|scrapes all| Harbor
+    Prom -->|scrapes all| KC
+    KC -->|OIDC| OAuth
+    OAuth -->|protects| Prom
+    OAuth -->|protects| AM
+
+    style Vault fill:#f57c00,color:#fff
+    style CM fill:#1565c0,color:#fff
+    style ESO fill:#1565c0,color:#fff
+    style Prom fill:#e65100,color:#fff
+    style Graf fill:#f57c00,color:#fff
+    style AM fill:#e65100,color:#fff
+    style Loki fill:#f57c00,color:#fff
+    style Alloy fill:#f57c00,color:#fff
+    style Harbor fill:#1565c0,color:#fff
+    style MinIO fill:#1565c0,color:#fff
+    style CNPG1 fill:#1565c0,color:#fff
+    style Valkey fill:#1565c0,color:#fff
+    style KC fill:#7b1fa2,color:#fff
+    style OAuth fill:#7b1fa2,color:#fff
+    style CNPG2 fill:#7b1fa2,color:#fff
+```
 
 ## Components
 
-| Component | Role | Namespace |
-|-----------|------|-----------|
-| **Vault** | Secrets engine, intermediate CA, KV v2 store | `vault` |
-| **cert-manager** | Requests and renews TLS leaf certificates from Vault | `cert-manager` |
-| **External Secrets Operator (ESO)** | Syncs Vault KV v2 secrets to Kubernetes Secrets | `external-secrets` |
-| **PKI tooling** | Offline Root CA generation and chain verification | Local (not deployed) |
+| Component | Role | Namespace | Bundle |
+|-----------|------|-----------|--------|
+| **Vault** | Secrets engine, intermediate CA, KV v2 store | `vault` | 1 |
+| **cert-manager** | Requests and renews TLS leaf certificates from Vault | `cert-manager` | 1 |
+| **External Secrets Operator (ESO)** | Syncs Vault KV v2 secrets to Kubernetes Secrets | `external-secrets` | 1 |
+| **PKI tooling** | Offline Root CA generation and chain verification | Local (not deployed) | 1 |
+| **Prometheus** | Metrics collection, alerting rules evaluation | `monitoring` | 2 |
+| **Grafana** | Metrics and log visualization, dashboards | `monitoring` | 2 |
+| **Alertmanager** | Alert routing, deduplication, notification | `monitoring` | 2 |
+| **Loki** | Log aggregation (single-binary mode) | `monitoring` | 2 |
+| **Alloy** | Log collection agent (DaemonSet) | `monitoring` | 2 |
+| **Harbor** | Container image registry with vulnerability scanning | `harbor` | 3 |
+| **MinIO** | S3-compatible object storage for Harbor | `minio` | 3 |
+| **CNPG PostgreSQL (Harbor)** | HA PostgreSQL cluster for Harbor metadata | `database` | 3 |
+| **Valkey Sentinel** | Redis-compatible cache with HA sentinel | `harbor` | 3 |
+| **Keycloak** | OIDC identity provider, realm/user/client management | `keycloak` | 4 |
+| **OAuth2-proxy** | OIDC authentication proxy for Prometheus, Alertmanager, Hubble | `keycloak` | 4 |
+| **CNPG PostgreSQL (Keycloak)** | HA PostgreSQL cluster for Keycloak | `database` | 4 |
 
-## PKI Hierarchy
+---
+
+## Bundle 1: PKI & Secrets
+
+### PKI Hierarchy
 
 The PKI follows a two-tier model. The Root CA is generated offline and never
 enters the cluster. Vault holds the intermediate CA whose private key is
@@ -49,11 +130,363 @@ graph TD
 - cert-manager is a **requestor**, not a CA. It calls Vault's
   `pki_int/sign/<role>` endpoint and never holds any CA key material.
 
-## Deployment Flow (7 Phases)
+### Vault Architecture
 
-The bootstrap script (`scripts/deploy-pki-secrets.sh`) orchestrates the full
-deployment in seven ordered phases. Each phase is idempotent and can be run
-individually using `--phase N` or as a range with `--from N --to M`.
+Vault runs as a 3-replica StatefulSet with integrated Raft storage:
+
+- **Unsealing:** Shamir's Secret Sharing with 5 key shares, threshold of 3.
+  After any pod restart, Vault must be unsealed before it serves requests.
+- **Storage:** Integrated Raft (no external Consul or etcd dependency).
+  Data stored on PersistentVolumeClaims (10Gi each).
+- **TLS:** Vault listens on HTTP internally (`tls_disable = 1`). TLS is
+  terminated at the Traefik Gateway, which holds a cert-manager-issued
+  certificate.
+- **UI:** Enabled and accessible through the Gateway at
+  `https://vault.example.com`.
+
+### Data Flow: Certificate Issuance
+
+```mermaid
+sequenceDiagram
+    participant GW as Gateway (Traefik)
+    participant CM as cert-manager
+    participant VI as ClusterIssuer<br/>(vault-issuer)
+    participant V as Vault<br/>(pki_int)
+    participant K as Kubernetes<br/>Secret
+
+    GW->>CM: Gateway annotation triggers<br/>Certificate resource
+    CM->>VI: Certificate request
+    VI->>V: POST pki_int/sign/&lt;role&gt;<br/>(K8s auth via ServiceAccount)
+    V-->>VI: Signed leaf cert + chain
+    VI-->>CM: Certificate issued
+    CM->>K: Create/update TLS Secret
+    K-->>GW: Mount TLS Secret
+```
+
+### Data Flow: Secret Synchronization
+
+```mermaid
+sequenceDiagram
+    participant ES as ExternalSecret
+    participant SS as SecretStore
+    participant V as Vault<br/>(KV v2)
+    participant K as Kubernetes<br/>Secret
+
+    ES->>SS: Reference secret path
+    SS->>V: GET kv/data/&lt;path&gt;<br/>(K8s auth via ServiceAccount)
+    V-->>SS: Secret data
+    SS-->>ES: Reconcile
+    ES->>K: Create/update Secret
+    Note over ES,K: Refresh interval: 15 minutes
+```
+
+---
+
+## Bundle 2: Monitoring
+
+### Monitoring Architecture
+
+The monitoring stack provides metrics collection, log aggregation, alerting,
+and visualization across all bundles.
+
+```mermaid
+graph TB
+    subgraph "Data Collection"
+        Alloy["Alloy DaemonSet<br/>(log collection)"]
+        Prom["Prometheus<br/>(metrics scrape)"]
+    end
+
+    subgraph "Storage &amp; Processing"
+        Loki["Loki<br/>(log storage,<br/>single-binary)"]
+        TSDB["Prometheus TSDB<br/>(metrics storage)"]
+    end
+
+    subgraph "Alerting"
+        Rules["PrometheusRules<br/>(alert definitions)"]
+        AM["Alertmanager<br/>(routing + notification)"]
+    end
+
+    subgraph "Visualization"
+        Graf["Grafana<br/>(dashboards)"]
+    end
+
+    subgraph "Scrape Targets"
+        SMs["ServiceMonitors"]
+        VaultM["Vault metrics"]
+        CMM["cert-manager metrics"]
+        ESOM["ESO metrics"]
+        HarborM["Harbor metrics"]
+        KCM["Keycloak metrics"]
+        LokiM["Loki metrics"]
+        AlloyM["Alloy metrics"]
+    end
+
+    Alloy -->|push logs| Loki
+    Prom -->|store| TSDB
+    Prom -->|evaluate| Rules
+    Rules -->|fire| AM
+    Graf -->|query| Loki
+    Graf -->|query| TSDB
+
+    SMs -->|define targets| Prom
+    VaultM --> SMs
+    CMM --> SMs
+    ESOM --> SMs
+    HarborM --> SMs
+    KCM --> SMs
+    LokiM --> SMs
+    AlloyM --> SMs
+
+    style Alloy fill:#f57c00,color:#fff
+    style Prom fill:#e65100,color:#fff
+    style Loki fill:#f57c00,color:#fff
+    style Graf fill:#f57c00,color:#fff
+    style AM fill:#e65100,color:#fff
+```
+
+**Key design decisions:**
+
+- **Loki** runs in single-binary mode as a StatefulSet. Logs are stored
+  locally on PersistentVolumeClaims.
+- **Alloy** replaces Promtail as the log collection agent. Runs as a
+  DaemonSet on every node, scraping pod logs and forwarding to Loki.
+- **kube-prometheus-stack** Helm chart provides Prometheus, Grafana,
+  Alertmanager, and the Prometheus operator (including CRDs for
+  ServiceMonitor, PrometheusRule, etc.).
+- **Basic-auth** protects Prometheus and Alertmanager ingress endpoints
+  via Traefik middleware. Grafana has its own authentication.
+- **Dashboards** are deployed as ConfigMaps with the
+  `grafana_dashboard: "1"` label for auto-discovery by the Grafana sidecar.
+
+### Monitoring Coverage
+
+Every service includes ServiceMonitors, PrometheusRules, and Grafana dashboards:
+
+| Service | ServiceMonitor | PrometheusRules | Grafana Dashboard |
+|---------|---------------|-----------------|-------------------|
+| Vault | `/v1/sys/metrics` (30s) | VaultSealed, VaultDown, VaultLeaderLost | Seal status, Raft health, barrier ops |
+| cert-manager | controller metrics (30s) | CertExpiringSoon, CertNotReady, CertManagerDown | Cert expiry timeline, readiness, sync rate |
+| ESO | controller metrics (30s) | ESODown, SyncFailure, ReconcileErrors | Sync status, reconcile rate, errors |
+| Harbor | core + registry metrics | HarborCoreDown, RegistryDown | Registry health, storage, request rates |
+| MinIO | MinIO metrics | MinIODown, MinIODiskOffline | Disk usage, request rates, errors |
+| Keycloak | Keycloak metrics | KeycloakDown, LoginFailureSpike | Login rates, session counts, realm health |
+| Loki | Loki metrics | LokiDown, IngestionErrors | Ingestion rate, query latency, storage |
+| Alloy | Alloy metrics | AlloyDown | Collection rate, pipeline health |
+| CNPG | CNPG controller metrics | PostgreSQLDown, ReplicationLag | Replication lag, connections, WAL |
+| Valkey | Redis exporter metrics | RedisDown, RedisMemoryHigh | Memory usage, hit ratio, connections |
+
+---
+
+## Bundle 3: Harbor
+
+### Harbor Architecture
+
+Harbor provides a secure container image registry with vulnerability scanning,
+backed by MinIO for S3-compatible object storage, CNPG PostgreSQL for metadata,
+and Valkey (Redis-compatible) for caching and job queues.
+
+```mermaid
+graph TB
+    subgraph "harbor namespace"
+        Core["Harbor Core<br/>(API + UI)"]
+        Reg["Harbor Registry<br/>(image storage)"]
+        Job["Harbor Jobservice<br/>(async tasks)"]
+        Trivy["Trivy<br/>(vulnerability scan)"]
+        Valkey["Valkey Sentinel<br/>(cache + session)"]
+        GW1["Gateway<br/>(Traefik)"]
+        HR1["HTTPRoute"]
+    end
+
+    subgraph "minio namespace"
+        MinIO["MinIO<br/>(S3 object storage)"]
+        Buckets["Buckets:<br/>harbor-registry<br/>harbor-chartmuseum<br/>harbor-trivy"]
+    end
+
+    subgraph "database namespace"
+        PG["CNPG PostgreSQL<br/>(3-instance HA)"]
+        PGBackup["Scheduled Backups<br/>(to MinIO)"]
+    end
+
+    GW1 --> HR1 --> Core
+    Core --> Reg
+    Core --> Job
+    Core --> Trivy
+    Core --> PG
+    Core --> Valkey
+    Reg --> MinIO
+    MinIO --> Buckets
+    PG --> PGBackup
+    PGBackup -->|backup to| MinIO
+    Job --> Valkey
+
+    style Core fill:#1565c0,color:#fff
+    style Reg fill:#1565c0,color:#fff
+    style MinIO fill:#f57c00,color:#fff
+    style PG fill:#388e3c,color:#fff
+    style Valkey fill:#d32f2f,color:#fff
+```
+
+**Key design decisions:**
+
+- **MinIO** runs as a single-replica deployment with PVC storage. Provides
+  S3-compatible API for Harbor registry blobs, chart storage, and Trivy
+  vulnerability database.
+- **CNPG PostgreSQL** runs a 3-instance HA cluster in the `database`
+  namespace. Scheduled backups target MinIO for WAL archiving and base backups.
+- **Valkey** runs with Redis Sentinel for HA. Provides session storage,
+  caching, and job queue backend for Harbor.
+- **All credentials** are sourced from Vault via ESO ExternalSecrets. No
+  passwords are stored in manifests or Helm values.
+- **HorizontalPodAutoscalers** are configured for Harbor Core, Registry,
+  and Trivy components.
+- **TLS** is terminated at the Traefik Gateway with cert-manager-issued
+  certificates from the Vault intermediate CA.
+
+### Harbor Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User as Container Client
+    participant GW as Gateway (Traefik)
+    participant Core as Harbor Core
+    participant Reg as Registry
+    participant S3 as MinIO (S3)
+    participant DB as CNPG PostgreSQL
+    participant Cache as Valkey
+
+    User->>GW: docker push harbor.example.com/project/image:tag
+    GW->>Core: Route via HTTPRoute
+    Core->>DB: Validate project/access
+    Core->>Reg: Forward push
+    Reg->>S3: Store image layers
+    Core->>Cache: Update cache
+    Core->>DB: Record image metadata
+
+    Note over Core,Reg: Trivy scans run asynchronously via Jobservice
+```
+
+---
+
+## Bundle 4: Identity
+
+### Identity Architecture
+
+Keycloak provides centralized OIDC identity management. OAuth2-proxy instances
+sit in front of services that lack native OIDC support (Prometheus, Alertmanager,
+Hubble), authenticating users against Keycloak before proxying requests.
+
+```mermaid
+graph TB
+    subgraph "keycloak namespace"
+        KC["Keycloak<br/>(OIDC provider)"]
+        OAuth_P["OAuth2-proxy<br/>(Prometheus)"]
+        OAuth_A["OAuth2-proxy<br/>(Alertmanager)"]
+        OAuth_H["OAuth2-proxy<br/>(Hubble)"]
+        GW2["Gateway<br/>(Traefik)"]
+        HR2["HTTPRoute"]
+    end
+
+    subgraph "database namespace"
+        PG2["CNPG PostgreSQL<br/>(3-instance HA)"]
+    end
+
+    subgraph "monitoring namespace"
+        Prom2["Prometheus"]
+        AM2["Alertmanager"]
+        Graf2["Grafana"]
+    end
+
+    GW2 --> HR2 --> KC
+    KC --> PG2
+
+    OAuth_P -->|forward auth| Prom2
+    OAuth_A -->|forward auth| AM2
+    Graf2 -->|native OIDC| KC
+
+    KC -->|OIDC tokens| OAuth_P
+    KC -->|OIDC tokens| OAuth_A
+    KC -->|OIDC tokens| OAuth_H
+
+    style KC fill:#7b1fa2,color:#fff
+    style OAuth_P fill:#7b1fa2,color:#fff
+    style OAuth_A fill:#7b1fa2,color:#fff
+    style OAuth_H fill:#7b1fa2,color:#fff
+    style PG2 fill:#388e3c,color:#fff
+    style Prom2 fill:#e65100,color:#fff
+    style AM2 fill:#e65100,color:#fff
+    style Graf2 fill:#f57c00,color:#fff
+```
+
+**Key design decisions:**
+
+- **Keycloak** runs as a Deployment (not StatefulSet) with HPA. Session
+  state is externalized to PostgreSQL, enabling horizontal scaling.
+- **CNPG PostgreSQL** runs a 3-instance HA cluster in the shared `database`
+  namespace (same namespace as Harbor's PostgreSQL, different cluster name).
+- **OAuth2-proxy** runs as separate deployments per protected service, each
+  with its own OIDC client credentials stored in Vault and synced via ESO.
+- **Traefik ForwardAuth middleware** integrates OAuth2-proxy into the request
+  path. The middleware checks authentication before forwarding to the upstream.
+- **setup-keycloak.sh** is a post-deploy script that configures Keycloak via
+  the Admin REST API: creates the realm, breakglass user, OIDC clients, groups,
+  and authentication flows.
+- **Grafana** uses native OIDC integration (configured in Helm values) rather
+  than OAuth2-proxy.
+
+### Identity Flow: OAuth2-proxy Authentication
+
+```mermaid
+sequenceDiagram
+    participant User as Browser
+    participant GW as Gateway (Traefik)
+    participant MW as ForwardAuth<br/>Middleware
+    participant OP as OAuth2-proxy
+    participant KC as Keycloak
+    participant Svc as Upstream Service<br/>(Prometheus / Alertmanager)
+
+    User->>GW: GET https://prometheus.example.com
+    GW->>MW: Check ForwardAuth
+    MW->>OP: Forward auth request
+    OP-->>User: 302 Redirect to Keycloak
+    User->>KC: Login (username + password)
+    KC-->>User: 302 Redirect with auth code
+    User->>OP: Callback with auth code
+    OP->>KC: Exchange code for tokens
+    KC-->>OP: ID token + access token
+    OP-->>User: Set session cookie, 302 to original URL
+    User->>GW: GET (with session cookie)
+    GW->>MW: Check ForwardAuth
+    MW->>OP: Validate session
+    OP-->>MW: 200 OK (authenticated)
+    MW-->>GW: Pass through
+    GW->>Svc: Proxy request to upstream
+    Svc-->>User: Response
+```
+
+---
+
+## Deployment Flow (All 4 Bundles)
+
+The bundles are deployed in order, each building on the previous:
+
+```mermaid
+flowchart LR
+    B1["Bundle 1<br/>PKI &amp; Secrets<br/>(7 phases)"]
+    B2["Bundle 2<br/>Monitoring<br/>(6 phases)"]
+    B3["Bundle 3<br/>Harbor<br/>(8 phases)"]
+    B4["Bundle 4<br/>Identity<br/>(7+6 phases)"]
+
+    B1 --> B2 --> B3 --> B4
+
+    style B1 fill:#1565c0,color:#fff
+    style B2 fill:#e65100,color:#fff
+    style B3 fill:#1565c0,color:#fff
+    style B4 fill:#7b1fa2,color:#fff
+```
+
+### Bundle 1: PKI & Secrets (7 Phases)
+
+Script: `scripts/deploy-pki-secrets.sh`
 
 ```mermaid
 flowchart LR
@@ -90,43 +523,62 @@ flowchart LR
 needs the key. After Phase 3 completes, the Root CA key can be returned to
 offline storage.
 
-## Data Flow
+### Bundle 2: Monitoring (6 Phases)
 
-### Certificate Issuance
+Script: `scripts/deploy-monitoring.sh`
 
-```mermaid
-sequenceDiagram
-    participant GW as Gateway (Traefik)
-    participant CM as cert-manager
-    participant VI as ClusterIssuer<br/>(vault-issuer)
-    participant V as Vault<br/>(pki_int)
-    participant K as Kubernetes<br/>Secret
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespace + Loki + Alloy | Create `monitoring` namespace, deploy Loki StatefulSet and Alloy DaemonSet |
+| 2 | Scrape Configs Secret | Create additional Prometheus scrape configs as a Kubernetes Secret |
+| 3 | kube-prometheus-stack | Helm install (Prometheus, Grafana, Alertmanager, operator) |
+| 4 | PrometheusRules + ServiceMonitors | Apply alert rules, service monitors, and per-service monitoring from Bundle 1 |
+| 5 | Gateways + HTTPRoutes + Auth | Create basic-auth secrets, apply ingress routes for Grafana, Prometheus, Alertmanager; deploy dashboards |
+| 6 | Verify | Wait for Grafana, Prometheus, and TLS secrets to become ready |
 
-    GW->>CM: Gateway annotation triggers<br/>Certificate resource
-    CM->>VI: Certificate request
-    VI->>V: POST pki_int/sign/&lt;role&gt;<br/>(K8s auth via ServiceAccount)
-    V-->>VI: Signed leaf cert + chain
-    VI-->>CM: Certificate issued
-    CM->>K: Create/update TLS Secret
-    K-->>GW: Mount TLS Secret
-```
+### Bundle 3: Harbor (8 Phases)
 
-### Secret Synchronization
+Script: `scripts/deploy-harbor.sh`
 
-```mermaid
-sequenceDiagram
-    participant ES as ExternalSecret
-    participant SS as SecretStore
-    participant V as Vault<br/>(KV v2)
-    participant K as Kubernetes<br/>Secret
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespaces | Create `harbor`, `minio`, `database` namespaces |
+| 2 | ESO SecretStores | Create Vault K8s auth roles/policies, SecretStores, and ExternalSecrets for MinIO, PostgreSQL, Valkey |
+| 3 | MinIO | Deploy MinIO with PVC, create S3 buckets for Harbor |
+| 4 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
+| 5 | Valkey Sentinel | Deploy RedisReplication + RedisSentinel for Harbor cache |
+| 6 | Harbor Helm | Helm install Harbor with substituted values |
+| 7 | Ingress + HPAs | Apply Gateway, HTTPRoute, and HorizontalPodAutoscalers |
+| 8 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for Harbor, MinIO, Valkey |
 
-    ES->>SS: Reference secret path
-    SS->>V: GET kv/data/&lt;path&gt;<br/>(K8s auth via ServiceAccount)
-    V-->>SS: Secret data
-    SS-->>ES: Reconcile
-    ES->>K: Create/update Secret
-    Note over ES,K: Refresh interval: 15 minutes
-```
+### Bundle 4: Identity (7 + 6 Phases)
+
+Scripts: `scripts/deploy-keycloak.sh` + `scripts/setup-keycloak.sh`
+
+**deploy-keycloak.sh (7 phases):**
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespaces | Create `keycloak`, `database` namespaces |
+| 2 | ESO ExternalSecrets | Apply ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
+| 3 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
+| 4 | Keycloak | Deploy RBAC, services, Keycloak deployment, verify health endpoint |
+| 5 | Gateway + HPA | Apply Gateway, HTTPRoute, HPA, verify TLS certificate |
+| 6 | OAuth2-proxy | Deploy OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; apply ForwardAuth middleware |
+| 7 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for Keycloak |
+
+**setup-keycloak.sh (6 phases, post-deploy):**
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Create Realm | Create the `platform` realm with brute-force protection |
+| 2 | Breakglass User | Create `admin-breakglass` user with password |
+| 3 | OIDC Clients | Create clients: `grafana`, `prometheus-oidc`, `alertmanager-oidc`, `hubble-oidc` |
+| 4 | Groups | Create `platform-admins` group, assign breakglass user, configure groups mapper |
+| 5 | Auth Flow | Copy browser flow to `browser-prompt-login`, set as realm default |
+| 6 | Validation | Print summary of all created resources |
+
+---
 
 ## Component Relationships
 
@@ -153,7 +605,35 @@ graph TB
         end
 
         subgraph "external-secrets namespace"
-            ESO["ESO controller"]
+            ESOC["ESO controller"]
+        end
+
+        subgraph "monitoring namespace"
+            PromC["Prometheus"]
+            GrafC["Grafana"]
+            AMC["Alertmanager"]
+            LokiC["Loki"]
+            AlloyC["Alloy"]
+        end
+
+        subgraph "harbor namespace"
+            HarborC["Harbor Core"]
+            RegC["Harbor Registry"]
+            ValkeyC["Valkey Sentinel"]
+        end
+
+        subgraph "minio namespace"
+            MinIOC["MinIO"]
+        end
+
+        subgraph "keycloak namespace"
+            KCC["Keycloak"]
+            OAuthC["OAuth2-proxy (x3)"]
+        end
+
+        subgraph "database namespace"
+            PGHarbor["harbor-pg<br/>(CNPG cluster)"]
+            PGKC["keycloak-pg<br/>(CNPG cluster)"]
         end
 
         subgraph "app namespaces"
@@ -166,7 +646,16 @@ graph TB
 
         CI -->|"pki_int/sign"| V0
         SS -->|"kv/data/*"| V0
-        ESO -.->|manages| ESEC
+        ESOC -.->|manages| ESEC
+        PromC -->|scrapes| V0
+        PromC -->|scrapes| HarborC
+        PromC -->|scrapes| KCC
+        AlloyC -->|logs| LokiC
+        HarborC --> PGHarbor
+        HarborC --> MinIOC
+        HarborC --> ValkeyC
+        KCC --> PGKC
+        OAuthC -->|OIDC| KCC
     end
 
     subgraph "Offline"
@@ -180,32 +669,21 @@ graph TB
     style V1 fill:#f57c00,color:#fff
     style V2 fill:#f57c00,color:#fff
     style CM fill:#1565c0,color:#fff
-    style ESO fill:#1565c0,color:#fff
+    style ESOC fill:#1565c0,color:#fff
+    style PromC fill:#e65100,color:#fff
+    style GrafC fill:#f57c00,color:#fff
+    style AMC fill:#e65100,color:#fff
+    style LokiC fill:#f57c00,color:#fff
+    style AlloyC fill:#f57c00,color:#fff
+    style HarborC fill:#1565c0,color:#fff
+    style RegC fill:#1565c0,color:#fff
+    style MinIOC fill:#f57c00,color:#fff
+    style ValkeyC fill:#d32f2f,color:#fff
+    style KCC fill:#7b1fa2,color:#fff
+    style OAuthC fill:#7b1fa2,color:#fff
+    style PGHarbor fill:#388e3c,color:#fff
+    style PGKC fill:#388e3c,color:#fff
 ```
-
-## Vault Architecture
-
-Vault runs as a 3-replica StatefulSet with integrated Raft storage:
-
-- **Unsealing:** Shamir's Secret Sharing with 5 key shares, threshold of 3.
-  After any pod restart, Vault must be unsealed before it serves requests.
-- **Storage:** Integrated Raft (no external Consul or etcd dependency).
-  Data stored on PersistentVolumeClaims (10Gi each).
-- **TLS:** Vault listens on HTTP internally (`tls_disable = 1`). TLS is
-  terminated at the Traefik Gateway, which holds a cert-manager-issued
-  certificate.
-- **UI:** Enabled and accessible through the Gateway at
-  `https://vault.<your-domain>`.
-
-## Monitoring
-
-Every service includes a monitoring overlay applied in Phase 7:
-
-| Service | ServiceMonitor | PrometheusRules | Grafana Dashboard |
-|---------|---------------|-----------------|-------------------|
-| Vault | `/v1/sys/metrics` (30s) | VaultSealed, VaultDown, VaultLeaderLost | Seal status, Raft health, barrier ops |
-| cert-manager | controller metrics (30s) | CertExpiringSoon, CertNotReady, CertManagerDown | Cert expiry timeline, readiness, sync rate |
-| ESO | controller metrics (30s) | ESODown, SyncFailure, ReconcileErrors | Sync status, reconcile rate, errors |
 
 ## Placeholder Substitution
 
@@ -237,17 +715,49 @@ harvester-rke2-svcs/
 │   │   ├── rbac.yaml               # ServiceAccount + Role for vault-issuer
 │   │   ├── cluster-issuer.yaml     # ClusterIssuer -> Vault pki_int
 │   │   └── monitoring/             # ServiceMonitor, alerts, dashboard
-│   └── external-secrets/           # ESO Kustomize overlays
-│       └── monitoring/             # ServiceMonitor, alerts, dashboard
+│   ├── external-secrets/           # ESO Kustomize overlays
+│   │   └── monitoring/             # ServiceMonitor, alerts, dashboard
+│   ├── monitoring-stack/           # Monitoring bundle
+│   │   ├── namespace.yaml          # monitoring namespace
+│   │   ├── kustomization.yaml      # Top-level Kustomize
+│   │   ├── helm/                   # kube-prometheus-stack values + scrape configs
+│   │   ├── loki/                   # Loki StatefulSet, ConfigMap, RBAC, Service
+│   │   ├── alloy/                  # Alloy DaemonSet, ConfigMap, RBAC, Service
+│   │   ├── grafana/                # Dashboards, Gateway, HTTPRoute
+│   │   ├── prometheus/             # Gateway, HTTPRoute, basic-auth middleware
+│   │   ├── alertmanager/           # Gateway, HTTPRoute, basic-auth middleware
+│   │   ├── prometheus-rules/       # PrometheusRules (per-service alerts)
+│   │   └── service-monitors/       # ServiceMonitors (scrape targets)
+│   ├── harbor/                     # Harbor container registry
+│   │   ├── harbor-values.yaml      # Harbor Helm values
+│   │   ├── gateway.yaml            # Gateway API
+│   │   ├── httproute.yaml          # HTTPRoute to Harbor core
+│   │   ├── hpa-*.yaml              # HorizontalPodAutoscalers
+│   │   ├── minio/                  # MinIO deployment, PVC, bucket job
+│   │   ├── postgres/               # CNPG cluster, scheduled backup
+│   │   ├── valkey/                 # RedisReplication + RedisSentinel
+│   │   └── monitoring/             # Dashboards, alerts, ServiceMonitors
+│   └── keycloak/                   # Keycloak identity provider
+│       ├── gateway.yaml            # Gateway API
+│       ├── httproute.yaml          # HTTPRoute to Keycloak
+│       ├── keycloak/               # Deployment, services, HPA, RBAC
+│       ├── postgres/               # CNPG cluster, scheduled backup
+│       ├── oauth2-proxy/           # OAuth2-proxy instances + middleware
+│       └── monitoring/             # Dashboards, alerts, ServiceMonitors
 ├── scripts/
-│   ├── deploy-pki-secrets.sh       # Bootstrap orchestrator (7 phases)
+│   ├── deploy-pki-secrets.sh       # Bundle 1 orchestrator (7 phases)
+│   ├── deploy-monitoring.sh        # Bundle 2 orchestrator (6 phases)
+│   ├── deploy-harbor.sh            # Bundle 3 orchestrator (8 phases)
+│   ├── deploy-keycloak.sh          # Bundle 4 orchestrator (7 phases)
+│   ├── setup-keycloak.sh           # Keycloak Admin API setup (6 phases)
 │   ├── .env.example                # Environment variable template
 │   └── utils/                      # Shell utility modules
 │       ├── log.sh                  # Colored logging + phase timing
 │       ├── helm.sh                 # Idempotent Helm operations
 │       ├── vault.sh                # Vault CLI via kubectl exec
 │       ├── wait.sh                 # K8s readiness polling
-│       └── subst.sh               # CHANGEME_* token substitution
+│       ├── subst.sh                # CHANGEME_* token substitution
+│       └── basic-auth.sh           # htpasswd-based basic-auth secrets
 └── docs/
     └── plans/                      # Design documents
 ```
