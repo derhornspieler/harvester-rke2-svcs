@@ -43,7 +43,7 @@ images:
   - registry.gitlab.com/gitlab-org/gitlab-runner
 
   # PostgreSQL (CloudNativePG operand)
-  - ghcr.io/cloudnative-pg/postgresql:17
+  - ghcr.io/cloudnative-pg/postgresql:17.6
 
   # Redis (OpsTree Redis Operator)
   - quay.io/opstree/redis:v7.0.15
@@ -55,18 +55,18 @@ images:
 
   # CI/CD tool images (used in CI templates)
   - gcr.io/kaniko-project/executor:v1.23.2-debug
-  - aquasec/trivy:latest
-  - semgrep/semgrep:latest
-  - zricethezav/gitleaks:latest
-  - anchore/syft:latest
-  - hadolint/hadolint:latest-alpine
-  - gcr.io/go-containerregistry/crane:debug
+  - aquasec/trivy:0.69.3
+  - semgrep/semgrep:1.153.1
+  - zricethezav/gitleaks:v8.30.0
+  - anchore/syft:v1.38.0
+  - hadolint/hadolint:v2.12.0-alpine
+  - gcr.io/go-containerregistry/crane:v0.21.1
   - argoproj/argocd:v2.14.0
   - hashicorp/vault:1.18
-  - bitnami/kubectl:latest
-  - bitnami/git:latest
-  - cytopia/yamllint:latest
-  - koalaman/shellcheck-alpine:stable
+  - bitnami/kubectl:1.32
+  - bitnami/git:2.47.1
+  - cytopia/yamllint:0.14
+  - koalaman/shellcheck-alpine:v0.10.0
 
 ## ── Kustomize Resources ─────────────────────────────────────────────────────
 kustomize:

@@ -3,7 +3,7 @@
 .promote:tag-image:
   stage: deploy-production
   image:
-    name: gcr.io/go-containerregistry/crane:debug
+    name: gcr.io/go-containerregistry/crane:v0.21.1
     entrypoint: [""]
   variables:
     PROMOTE_TAG: ""

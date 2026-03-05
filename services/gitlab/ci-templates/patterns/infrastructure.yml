@@ -12,7 +12,7 @@ yamllint:
 
 validate-manifests:
   stage: test
-  image: bitnami/kubectl:latest
+  image: bitnami/kubectl:1.32
   script:
     - |
       find . -name '*.yaml' -o -name '*.yml' | while read -r f; do

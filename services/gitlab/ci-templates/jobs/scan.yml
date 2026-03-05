@@ -3,7 +3,7 @@
 .scan:gitleaks:
   stage: pre-check
   image:
-    name: zricethezav/gitleaks:latest
+    name: zricethezav/gitleaks:v8.30.0
     entrypoint: [""]
   script:
     - gitleaks detect --source . --verbose --redact
@@ -13,7 +13,7 @@
 
 .scan:semgrep:
   stage: scan
-  image: semgrep/semgrep:latest
+  image: semgrep/semgrep:1.153.1
   variables:
     SEMGREP_RULES: "auto"
   script:
@@ -30,7 +30,7 @@
 .scan:trivy-fs:
   stage: scan
   image:
-    name: aquasec/trivy:latest
+    name: aquasec/trivy:0.69.3
     entrypoint: [""]
   script:
     - trivy fs --severity HIGH,CRITICAL --exit-code 1 --format table .
@@ -40,20 +40,20 @@
 .scan:trivy-image:
   stage: scan
   image:
-    name: aquasec/trivy:latest
+    name: aquasec/trivy:0.69.3
     entrypoint: [""]
   variables:
     TRIVY_USERNAME: ${HARBOR_CI_USER}
     TRIVY_PASSWORD: ${HARBOR_CI_PASSWORD}
   script:
-    - trivy image --severity HIGH,CRITICAL --exit-code 1 --format table --insecure "${IMAGE_FULL}"
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 --format table "${IMAGE_FULL}"
   rules:
     - if: '$CI_COMMIT_BRANCH'
 
 .scan:sbom:
   stage: scan
   image:
-    name: anchore/syft:latest
+    name: anchore/syft:v1.38.0
     entrypoint: [""]
   script:
     - syft "${IMAGE_FULL}" -o spdx-json=sbom.spdx.json
@@ -66,7 +66,7 @@
 .scan:license:
   stage: scan
   image:
-    name: aquasec/trivy:latest
+    name: aquasec/trivy:0.69.3
     entrypoint: [""]
   script:
     - trivy fs --scanners license --severity HIGH,CRITICAL --exit-code 1 .

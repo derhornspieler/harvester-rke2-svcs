@@ -11,7 +11,7 @@
   script:
     - |
       argocd login "${ARGOCD_SERVER}" \
-        --grpc-web --insecure \
+        --grpc-web \
         --username "${ARGOCD_USERNAME:-ci-bot}" \
         --password "${ARGOCD_PASSWORD}"
     - argocd app set "${APP_NAME}" --parameter image.tag="${IMAGE_TAG}"
@@ -22,7 +22,7 @@
 
 .deploy:kustomize-update:
   stage: deploy-staging
-  image: bitnami/git:latest
+  image: bitnami/git:2.47.1
   variables:
     DEPLOY_REPO: ""
     DEPLOY_BRANCH: deploy

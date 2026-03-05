@@ -9,7 +9,7 @@
 
 .deploy:blue-green:
   stage: deploy-staging
-  image: bitnami/git:latest
+  image: bitnami/git:2.47.1
   variables:
     DEPLOY_REPO: ""
     DEPLOY_BRANCH: deploy
@@ -46,7 +46,7 @@
 
 .deploy:blue-green:promote:
   stage: deploy-production
-  image: bitnami/kubectl:latest
+  image: bitnami/kubectl:1.32
   variables:
     ROLLOUT_NAME: ""
     ROLLOUT_NAMESPACE: ""
