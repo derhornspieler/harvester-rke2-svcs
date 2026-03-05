@@ -148,12 +148,14 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   start_phase "Phase 3: kube-prometheus-stack Helm Install"
   helm_repo_add prometheus-community "$HELM_REPO_PROMETHEUS_STACK"
   # Substitute CHANGEME tokens in values file before passing to helm
-  _subst_changeme < "${REPO_ROOT}/services/monitoring-stack/helm/kube-prometheus-stack-values.yaml" > /tmp/prom-values.yaml
+  _prom_values=$(mktemp /tmp/prom-values.XXXXXX.yaml)
+  trap 'rm -f "$_prom_values"' EXIT
+  _subst_changeme < "${REPO_ROOT}/services/monitoring-stack/helm/kube-prometheus-stack-values.yaml" > "$_prom_values"
   helm_install_if_needed kube-prometheus-stack "$HELM_CHART_PROMETHEUS_STACK" monitoring \
     --version 72.6.2 \
-    -f /tmp/prom-values.yaml \
+    -f "$_prom_values" \
     --wait --timeout 10m
-  rm -f /tmp/prom-values.yaml
+  rm -f "$_prom_values"
   wait_for_deployment monitoring kube-prometheus-stack-operator 300s
   end_phase "Phase 3: kube-prometheus-stack Helm Install"
 fi

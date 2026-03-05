@@ -8,10 +8,8 @@ _subst_changeme() {
   [[ -n "${DOMAIN:-}" ]] || die "DOMAIN must be set before using subst functions"
   [[ -n "${DOMAIN_DASHED:-}" ]] || die "DOMAIN_DASHED must be set"
   [[ -n "${DOMAIN_DOT:-}" ]] || die "DOMAIN_DOT must be set"
-  # Validate critical passwords are non-empty when referenced
-  if [[ -n "${GRAFANA_ADMIN_PASSWORD+set}" && -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
-    die "GRAFANA_ADMIN_PASSWORD is set but empty — refusing to deploy with blank password"
-  fi
+  # Validate critical passwords are non-empty (catches both unset and empty)
+  [[ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]] || die "GRAFANA_ADMIN_PASSWORD must be set and non-empty in .env"
   sed \
     -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_KC_REALM|${KC_REALM:-master}|g" \
