@@ -56,11 +56,13 @@ Kubernetes, Cilium, Loki, Monitoring Self, Node, Traefik, PostgreSQL, Redis, OAu
 A default-deny-ingress NetworkPolicy is applied to the `monitoring` namespace during Phase 6 of Bundle 3 deployment.
 
 ### Allowed Ingress Traffic
+
 - **From kube-system (Traefik)**: Allows traffic to Grafana (port 3000), Prometheus (port 9090), and Alertmanager (port 9093)
 - **From monitoring (Prometheus scraping)**: Allows Prometheus to scrape metrics from Loki (port 3100) and Alloy (port 12345)
 - **From all namespaces (ServiceMonitor scraping)**: Allows Prometheus to scrape all services with ServiceMonitor labels
 
 ### Service Ports
+
 - **Grafana**: 3000 (HTTP)
 - **Prometheus**: 9090 (HTTP)
 - **Alertmanager**: 9093 (HTTP)
