@@ -1,0 +1,50 @@
+# Argo Workflows Helm Values
+# Domain tokens are replaced at deploy time by _subst_changeme()
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-workflows-controller
+            topologyKey: kubernetes.io/hostname
+  metricsConfig:
+    enabled: true
+
+server:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-workflows-server
+            topologyKey: kubernetes.io/hostname
+  extraArgs:
+    - --auth-mode=server
+
+workflow:
+  serviceAccount:
+    create: true
+    name: argo-workflow
+
+  rbac:
+    create: true
