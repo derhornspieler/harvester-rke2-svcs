@@ -146,6 +146,29 @@ fi
 # Phase 3: kube-prometheus-stack Helm install
 if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   start_phase "Phase 3: kube-prometheus-stack Helm Install"
+
+  # Create prerequisites that Grafana needs before helm install
+  # 1. vault-root-ca ConfigMap (Grafana mounts this for OIDC TLS verification)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap..."
+    kubectl create configmap vault-root-ca \
+      --namespace=monitoring \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — Grafana OIDC TLS verification may fail"
+  fi
+
+  # 2. grafana-oidc-secret placeholder (real secret comes from ESO after setup-keycloak.sh)
+  if ! kubectl -n monitoring get secret grafana-oidc-secret &>/dev/null; then
+    log_info "Creating placeholder grafana-oidc-secret (will be replaced by ESO after Keycloak setup)..."
+    kubectl create secret generic grafana-oidc-secret \
+      --namespace=monitoring \
+      --from-literal=client-secret=placeholder-will-be-replaced-by-eso \
+      --dry-run=client -o yaml | kubectl apply -f -
+  fi
+
   helm_repo_add prometheus-community "$HELM_REPO_PROMETHEUS_STACK"
   # Substitute CHANGEME tokens in values file before passing to helm
   _prom_values=$(mktemp /tmp/prom-values.XXXXXX.yaml)
