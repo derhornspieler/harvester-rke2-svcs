@@ -1,0 +1,161 @@
+# Argo GitOps Service Manifest
+# Tracks Helm charts, container images, Kustomize resources, and deploy phases.
+---
+service: argo
+components:
+  - argocd
+  - argo-rollouts
+  - argo-workflows
+
+helm:
+  - name: argo-cd
+    chart: oci://ghcr.io/argoproj/argo-helm/argo-cd
+    namespace: argocd
+    values: argocd/argocd-values.yaml
+    note: "HA mode with redis-ha subchart"
+
+  - name: argo-rollouts
+    chart: oci://ghcr.io/argoproj/argo-helm/argo-rollouts
+    namespace: argo-rollouts
+    values: argo-rollouts/argo-rollouts-values.yaml
+    note: "HA controller + dashboard"
+
+  - name: argo-workflows
+    chart: oci://ghcr.io/argoproj/argo-helm/argo-workflows
+    namespace: argo-workflows
+    values: argo-workflows/argo-workflows-values.yaml
+    note: "Controller + server"
+
+images:
+  # ArgoCD (versions set by Helm chart)
+  - name: argocd
+    image: quay.io/argoproj/argocd
+    note: >-
+      Version set by chart — server, controller,
+      repo-server, applicationset-controller
+
+  # Argo Rollouts
+  - name: argo-rollouts
+    image: quay.io/argoproj/argo-rollouts
+    note: "Version set by chart — controller"
+  - name: argo-rollouts-dashboard
+    image: quay.io/argoproj/kubectl-argo-rollouts
+    note: "Version set by chart — dashboard"
+
+  # Argo Workflows
+  - name: argo-workflows-controller
+    image: quay.io/argoproj/workflow-controller
+    note: "Version set by chart"
+  - name: argo-workflows-server
+    image: quay.io/argoproj/argocli
+    note: "Version set by chart"
+
+  # Redis HA (ArgoCD subchart)
+  - name: valkey
+    image: valkey/valkey
+    tag: "8-alpine"
+    note: "Redis-compatible store for ArgoCD HA"
+  - name: haproxy
+    image: haproxy
+    note: "Version set by redis-ha subchart"
+
+  # OAuth2-proxy (Rollouts OIDC sidecar)
+  - name: oauth2-proxy
+    image: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.8.1
+
+resources:
+  # ArgoCD
+  - argocd/namespace.yaml
+  - argocd/gateway.yaml
+  - argocd/httproute.yaml
+
+  # Argo Rollouts
+  - argo-rollouts/namespace.yaml
+  - argo-rollouts/gateway.yaml
+  - argo-rollouts/httproute.yaml
+  - argo-rollouts/middleware-basic-auth.yaml
+  - argo-rollouts/middleware-oauth2-proxy.yaml
+  - argo-rollouts/oauth2-proxy.yaml
+  - argo-rollouts/external-secret-oauth2-proxy.yaml
+  - argo-rollouts/external-secret-redis.yaml
+
+  # Argo Workflows
+  - argo-workflows/namespace.yaml
+  - argo-workflows/gateway.yaml
+  - argo-workflows/httproute.yaml
+  - argo-workflows/middleware-basic-auth.yaml
+
+  # AnalysisTemplates (cluster-scoped)
+  - analysis-templates/success-rate.yaml
+  - analysis-templates/latency-check.yaml
+  - analysis-templates/error-rate.yaml
+
+  # Monitoring
+  - monitoring/service-monitor-argocd.yaml
+  - monitoring/service-monitor-argo-rollouts.yaml
+  - monitoring/service-monitor-argo-workflows.yaml
+  - monitoring/configmap-dashboard-argocd.yaml
+  - monitoring/configmap-dashboard-argo-rollouts.yaml
+  - monitoring/configmap-dashboard-argo-workflows.yaml
+  - monitoring/argocd-alerts.yaml
+
+deploy:
+  script: scripts/deploy-argo.sh
+  phases:
+    - phase: 1
+      description: Create namespaces (argocd, argo-rollouts, argo-workflows)
+      resources:
+        - argocd/namespace.yaml
+        - argo-rollouts/namespace.yaml
+        - argo-workflows/namespace.yaml
+
+    - phase: 2
+      description: Deploy ExternalSecrets (Vault-synced credentials)
+      resources:
+        - argo-rollouts/external-secret-oauth2-proxy.yaml
+        - argo-rollouts/external-secret-redis.yaml
+
+    - phase: 3
+      description: Helm install ArgoCD (HA with redis-ha subchart)
+      resources:
+        - argocd/argocd-values.yaml
+
+    - phase: 4
+      description: Helm install Argo Rollouts and Argo Workflows
+      resources:
+        - argo-rollouts/argo-rollouts-values.yaml
+        - argo-workflows/argo-workflows-values.yaml
+
+    - phase: 5
+      description: >-
+        Deploy Gateways, HTTPRoutes, basic-auth
+        middleware, OAuth2-proxy
+      resources:
+        - argocd/gateway.yaml
+        - argocd/httproute.yaml
+        - argo-rollouts/gateway.yaml
+        - argo-rollouts/httproute.yaml
+        - argo-rollouts/middleware-basic-auth.yaml
+        - argo-rollouts/middleware-oauth2-proxy.yaml
+        - argo-rollouts/oauth2-proxy.yaml
+        - argo-workflows/gateway.yaml
+        - argo-workflows/httproute.yaml
+        - argo-workflows/middleware-basic-auth.yaml
+
+    - phase: 6
+      description: Deploy ClusterAnalysisTemplates and monitoring
+      resources:
+        - analysis-templates/success-rate.yaml
+        - analysis-templates/latency-check.yaml
+        - analysis-templates/error-rate.yaml
+        - monitoring/service-monitor-argocd.yaml
+        - monitoring/service-monitor-argo-rollouts.yaml
+        - monitoring/service-monitor-argo-workflows.yaml
+        - monitoring/configmap-dashboard-argocd.yaml
+        - monitoring/configmap-dashboard-argo-rollouts.yaml
+        - monitoring/configmap-dashboard-argo-workflows.yaml
+        - monitoring/argocd-alerts.yaml
+
+    - phase: 7
+      description: Verify all components healthy
