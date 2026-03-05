@@ -1,0 +1,34 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-pg
+  namespace: database
+spec:
+  target:
+    selector:
+      matchLabels:
+        cnpg.io/cluster: gitlab-postgresql
+  thresholdPercent: 80
+  maxSize: 200Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-redis
+  namespace: gitlab
+spec:
+  target:
+    selector:
+      matchLabels:
+        app: gitlab-redis
+  thresholdPercent: 80
+  maxSize: 50Gi
+  increasePercent: 25
+  increaseMinimum: 2Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
