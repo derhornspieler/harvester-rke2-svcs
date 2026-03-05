@@ -165,6 +165,10 @@ grafana:
     enabled: false
   # Sidecar discovers ConfigMaps with grafana_dashboard: "1"
   sidecar:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
     dashboards:
       enabled: true
       label: grafana_dashboard
@@ -172,10 +176,6 @@ grafana:
       folderAnnotation: grafana_folder
       provider:
         foldersFromFilesStructure: true
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
     datasources:
       enabled: false
   # Datasources provisioned directly (Prometheus alias, Loki, Alertmanager alias)
