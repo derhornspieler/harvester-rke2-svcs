@@ -4,6 +4,10 @@
 # Requires: log.sh sourced first
 set -euo pipefail
 
+# Disable HTTP/2 for all Helm operations to avoid kube-apiserver stream errors
+# (HTTP/2 multiplexing + many concurrent watches = INTERNAL_ERROR on stream)
+export DISABLE_HTTP2=true
+
 helm_repo_add() {
   local name="$1"
   local url="$2"

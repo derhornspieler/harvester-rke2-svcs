@@ -18,6 +18,10 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # kube-apiserver webhook calls (apiserver runs on host network, not in a namespace)
+    - ports:
+        - protocol: TCP
+          port: 10250
     # Prometheus scraping metrics
     - from:
         - namespaceSelector:
@@ -26,3 +30,6 @@ spec:
       ports:
         - protocol: TCP
           port: 9402
+    # Intra-namespace communication
+    - from:
+        - podSelector: {}
