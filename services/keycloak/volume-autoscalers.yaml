@@ -9,6 +9,7 @@ spec:
     selector:
       matchLabels:
         cnpg.io/cluster: keycloak-pg
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   thresholdPercent: 80
   maxSize: 50Gi
   increasePercent: 25
