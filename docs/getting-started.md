@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through deploying the PKI & Secrets bundle onto an RKE2
+This guide walks through deploying all four service bundles onto an RKE2
 cluster from scratch.
 
 ## Prerequisites
@@ -13,6 +13,7 @@ cluster from scratch.
 | `helm` | 3.14+ | Helm chart management |
 | `jq` | 1.6+ | JSON processing (Vault init output) |
 | `openssl` | 1.1.1+ | Root CA generation and CSR signing |
+| `htpasswd` | any | Basic-auth secret generation (from `httpd-tools` or `apache2-utils`) |
 
 Verify all tools are available:
 
@@ -21,6 +22,7 @@ kubectl version --client
 helm version --short
 jq --version
 openssl version
+htpasswd -V 2>&1 | head -1
 ```
 
 ### Cluster Access
@@ -31,6 +33,15 @@ You need a kubeconfig with cluster-admin privileges on the target RKE2 cluster:
 export KUBECONFIG=/path/to/your/kubeconfig
 kubectl get nodes
 ```
+
+### Cluster Operators
+
+Bundles 3 and 4 require these operators to be pre-installed on the cluster:
+
+| Operator | Required by | Purpose |
+|----------|-------------|---------|
+| CNPG (CloudNativePG) | Harbor, Keycloak | HA PostgreSQL clusters |
+| Redis operator (e.g., Spotahome) | Harbor | Valkey Sentinel HA |
 
 ## Step 1: Clone the Repository
 
@@ -79,23 +90,44 @@ cd ../../  # back to repo root
 cp scripts/.env.example scripts/.env
 ```
 
-Edit `scripts/.env`:
+Edit `scripts/.env` with values for all bundles you plan to deploy:
 
 ```bash
-# Your domain (required)
+# Domain (required for all bundles)
 DOMAIN="example.com"
 
-# Path to Root CA certificate (committed to repo)
+# Root CA paths (required for Bundle 1, Phase 3)
 ROOT_CA_CERT="${SCRIPT_DIR}/../services/pki/roots/root-ca.pem"
-
-# Path to Root CA private key (offline, only needed during initial PKI setup)
 ROOT_CA_KEY="/path/to/offline/root-ca-key.pem"
+
+# Monitoring passwords (required for Bundle 2)
+GRAFANA_ADMIN_PASSWORD="<strong-password>"
+PROM_BASIC_AUTH_PASS="<strong-password>"
+AM_BASIC_AUTH_PASS="<strong-password>"
+
+# Harbor passwords (required for Bundle 3)
+HARBOR_ADMIN_PASSWORD="<strong-password>"
+HARBOR_DB_PASSWORD="<strong-password>"
+HARBOR_REDIS_PASSWORD="<strong-password>"
+HARBOR_MINIO_SECRET_KEY="<strong-password>"
+
+# Keycloak passwords (required for Bundle 4)
+KC_ADMIN_PASSWORD="<strong-password>"
+KEYCLOAK_DB_PASSWORD="<strong-password>"
+BREAKGLASS_PASSWORD="<strong-password>"
 ```
 
-The deploy script derives `DOMAIN_DASHED` and `DOMAIN_DOT` automatically from
+The deploy scripts derive `DOMAIN_DASHED` and `DOMAIN_DOT` automatically from
 `DOMAIN`. Override them in `.env` only if you need custom values.
 
-## Step 4: Run the Deployment
+See `scripts/.env.example` for a complete reference of all available variables,
+including Helm chart source overrides for private registries.
+
+---
+
+## Bundle 1: PKI & Secrets
+
+### Step 4: Deploy Bundle 1
 
 Deploy all seven phases:
 
@@ -114,7 +146,7 @@ re-run. You can also resume from a specific phase:
 ./scripts/deploy-pki-secrets.sh --phase 2
 ```
 
-### What Happens During Deployment
+### What Happens During Bundle 1 Deployment
 
 | Phase | Duration | What it does |
 |-------|----------|--------------|
@@ -142,9 +174,7 @@ It contains 5 unseal keys (threshold 3) and the root token.
 This file is gitignored. Store it in a secure location (password manager,
 hardware security module, or split across trusted parties).
 
-## Step 5: Verify the Deployment
-
-Run the built-in validation check:
+### Verify Bundle 1
 
 ```bash
 ./scripts/deploy-pki-secrets.sh --validate
@@ -155,46 +185,181 @@ This checks:
 - ClusterIssuer `vault-issuer` is Ready
 - ESO controller has ready replicas
 
-### Manual Verification
+**Before deploying Bundles 3 and 4:** seed the required secrets into Vault's
+KV v2 engine at the paths expected by the ExternalSecret manifests. See the
+`services/harbor/*/external-secret.yaml` and
+`services/keycloak/*/external-secret.yaml` files for the expected KV paths.
 
-**Vault status:**
+---
 
-```bash
-kubectl exec -n vault vault-0 -- vault status
-```
+## Bundle 2: Monitoring
 
-Expected output shows `Initialized: true` and `Sealed: false`.
+### Step 5: Deploy Bundle 2
 
-**PKI intermediate certificate:**
+**Required environment variables:**
 
-```bash
-kubectl exec -n vault vault-0 -- env \
-  VAULT_ADDR=http://127.0.0.1:8200 \
-  VAULT_TOKEN="$(jq -r '.root_token' vault-init.json)" \
-  vault read pki_int/ca/pem
-```
+| Variable | Description |
+|----------|-------------|
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin UI password |
+| `PROM_BASIC_AUTH_PASS` | Basic-auth password for Prometheus ingress |
+| `AM_BASIC_AUTH_PASS` | Basic-auth password for Alertmanager ingress |
 
-**ClusterIssuer status:**
-
-```bash
-kubectl get clusterissuer vault-issuer -o wide
-```
-
-The `READY` column should show `True`.
-
-**ESO controller:**
+Deploy the monitoring stack:
 
 ```bash
-kubectl -n external-secrets get deployment external-secrets
+./scripts/deploy-monitoring.sh
 ```
 
-Should show the desired number of ready replicas.
+### What Happens During Bundle 2 Deployment
 
-**Vault UI:**
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~2 min | Creates `monitoring` namespace, deploys Loki StatefulSet and Alloy DaemonSet |
+| 2 | ~10 sec | Creates additional Prometheus scrape configs Secret |
+| 3 | ~5 min | Helm installs kube-prometheus-stack (Prometheus, Grafana, Alertmanager) |
+| 4 | ~30 sec | Applies PrometheusRules, ServiceMonitors, and per-service monitoring from Bundle 1 |
+| 5 | ~1 min | Creates basic-auth secrets, applies Gateways/HTTPRoutes for Grafana, Prometheus, Alertmanager; deploys dashboards |
+| 6 | ~2 min | Waits for Grafana, Prometheus, and TLS secrets to become ready |
 
-After Phase 7, the Vault UI is accessible at `https://vault.<your-domain>`.
-The TLS certificate is automatically issued by cert-manager via the Vault
-intermediate CA.
+### Verify Bundle 2
+
+```bash
+./scripts/deploy-monitoring.sh --validate
+```
+
+After deployment, the following UIs are accessible:
+
+| Service | URL | Authentication |
+|---------|-----|---------------|
+| Grafana | `https://grafana.example.com` | Admin password (OIDC after Bundle 4) |
+| Prometheus | `https://prometheus.example.com` | Basic-auth (OIDC after Bundle 4) |
+| Alertmanager | `https://alertmanager.example.com` | Basic-auth (OIDC after Bundle 4) |
+
+---
+
+## Bundle 3: Harbor
+
+### Step 6: Deploy Bundle 3
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `HARBOR_ADMIN_PASSWORD` | Harbor admin UI password |
+| `HARBOR_DB_PASSWORD` | PostgreSQL database password for Harbor |
+| `HARBOR_REDIS_PASSWORD` | Valkey/Redis password |
+| `HARBOR_MINIO_SECRET_KEY` | MinIO secret key (S3 access) |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Secrets must be seeded in Vault KV v2 at the paths expected by
+  `services/harbor/*/external-secret.yaml`
+- CNPG operator must be installed
+- Redis operator must be installed
+
+Deploy Harbor:
+
+```bash
+./scripts/deploy-harbor.sh
+```
+
+### What Happens During Bundle 3 Deployment
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~10 sec | Creates `harbor`, `minio`, `database` namespaces |
+| 2 | ~1 min | Creates Vault K8s auth roles/policies, SecretStores, and ExternalSecrets |
+| 3 | ~2 min | Deploys MinIO with PVC storage, runs bucket creation job |
+| 4 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
+| 5 | ~2 min | Deploys Valkey RedisReplication + RedisSentinel |
+| 6 | ~5 min | Helm installs Harbor with substituted values |
+| 7 | ~1 min | Applies Gateway, HTTPRoute, HorizontalPodAutoscalers |
+| 8 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors |
+
+### Verify Bundle 3
+
+```bash
+./scripts/deploy-harbor.sh --validate
+```
+
+After deployment, Harbor is accessible at `https://harbor.example.com`.
+Log in with the admin credentials configured in Vault.
+
+---
+
+## Bundle 4: Identity (Keycloak)
+
+### Step 7: Deploy Bundle 4
+
+Bundle 4 has two scripts: `deploy-keycloak.sh` deploys the infrastructure,
+and `setup-keycloak.sh` configures Keycloak via the Admin REST API.
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `KC_ADMIN_PASSWORD` | Keycloak bootstrap admin password |
+| `KEYCLOAK_DB_PASSWORD` | PostgreSQL database password for Keycloak |
+| `BREAKGLASS_PASSWORD` | Password for the `admin-breakglass` user |
+| `KC_REALM` | Realm name (default: `platform`) |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Bundle 2 must be deployed (monitoring namespace exists for OAuth2-proxy targets)
+- Secrets must be seeded in Vault KV v2 at the paths expected by
+  `services/keycloak/*/external-secret.yaml`
+- CNPG operator must be installed
+
+#### Deploy Keycloak Infrastructure
+
+```bash
+./scripts/deploy-keycloak.sh
+```
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~10 sec | Creates `keycloak`, `database` namespaces |
+| 2 | ~30 sec | Applies ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
+| 3 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
+| 4 | ~3 min | Deploys Keycloak (RBAC, services, deployment), verifies health endpoint |
+| 5 | ~1 min | Applies Gateway, HTTPRoute, HPA, verifies TLS certificate |
+| 6 | ~30 sec | Deploys OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; applies ForwardAuth middleware |
+| 7 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors |
+
+#### Configure Keycloak (Post-Deploy)
+
+After Keycloak is running and accessible at `https://keycloak.example.com`,
+run the setup script to configure the realm, users, clients, and groups:
+
+```bash
+./scripts/setup-keycloak.sh
+```
+
+| Phase | What it does |
+|-------|--------------|
+| 1 | Creates the `platform` realm with brute-force protection |
+| 2 | Creates `admin-breakglass` user with the `BREAKGLASS_PASSWORD` |
+| 3 | Creates OIDC clients: `grafana`, `prometheus-oidc`, `alertmanager-oidc`, `hubble-oidc` |
+| 4 | Creates `platform-admins` group, assigns breakglass user, creates groups token mapper |
+| 5 | Copies browser flow to `browser-prompt-login` (forces re-authentication) |
+| 6 | Prints summary of all created resources and next steps |
+
+**After setup-keycloak.sh completes:**
+
+1. Store OIDC client secrets in Vault at `kv/oidc/<client-id>/client-secret`
+2. Re-run `deploy-keycloak.sh --phase 6` to deploy OAuth2-proxy with the
+   real client secrets
+3. Configure Grafana OIDC in the kube-prometheus-stack Helm values
+
+### Verify Bundle 4
+
+```bash
+./scripts/deploy-keycloak.sh --validate
+```
+
+After deployment, Keycloak is accessible at `https://keycloak.example.com`.
+
+---
 
 ## Day-2 Operations
 
@@ -208,6 +373,17 @@ Vault pods lose their unseal state on restart. To re-unseal all replicas:
 
 This reads the unseal keys from `vault-init.json` and unseals all three
 replicas.
+
+### Health Checks
+
+Run validation across all bundles:
+
+```bash
+./scripts/deploy-pki-secrets.sh --validate
+./scripts/deploy-monitoring.sh --validate
+./scripts/deploy-harbor.sh --validate
+./scripts/deploy-keycloak.sh --validate
+```
 
 ### Adding Secrets for a New Application
 
@@ -320,23 +496,79 @@ has already succeeded, you can skip it:
 If you see errors about unreplaced `CHANGEME_*` tokens, add the missing
 token mapping to `scripts/utils/subst.sh` in the `_subst_changeme()` function.
 
-### TLS certificate not issued for Vault UI
+### TLS certificate not issued for a service
 
-1. Check the Certificate resource in the vault namespace:
+1. Check the Certificate resource in the service namespace:
    ```bash
-   kubectl -n vault get certificate
+   kubectl -n <namespace> get certificate
    ```
 
 2. Check the CertificateRequest:
    ```bash
-   kubectl -n vault get certificaterequest
+   kubectl -n <namespace> get certificaterequest
    ```
 
 3. Describe the Certificate for events:
    ```bash
-   kubectl -n vault describe certificate
+   kubectl -n <namespace> describe certificate
    ```
 
 The Gateway annotation `cert-manager.io/cluster-issuer: vault-issuer` tells
 cert-manager to issue a certificate automatically. If the ClusterIssuer is
 not Ready, the certificate will not be issued.
+
+### CNPG PostgreSQL cluster not ready
+
+1. Check CNPG cluster status:
+   ```bash
+   kubectl -n database get cluster <cluster-name> -o wide
+   ```
+
+2. Check pod logs for the primary:
+   ```bash
+   kubectl -n database logs -l "cnpg.io/cluster=<cluster-name>,role=primary" --tail=50
+   ```
+
+3. Verify the ExternalSecret synced the database credentials:
+   ```bash
+   kubectl -n database get externalsecret -o wide
+   ```
+
+### Keycloak health check fails
+
+1. Verify Keycloak is running:
+   ```bash
+   kubectl -n keycloak get deployment keycloak
+   ```
+
+2. Check Keycloak logs:
+   ```bash
+   kubectl -n keycloak logs -l app=keycloak --tail=100
+   ```
+
+3. Verify the CNPG PostgreSQL primary is healthy:
+   ```bash
+   kubectl -n database get pods -l "cnpg.io/cluster=keycloak-pg,role=primary"
+   ```
+
+4. Test the health endpoint from inside the pod:
+   ```bash
+   kubectl exec -n keycloak deploy/keycloak -- curl -sf http://localhost:8080/health/ready
+   ```
+
+### OAuth2-proxy returns 500 or redirect loops
+
+1. Verify the OIDC client exists in Keycloak (run `setup-keycloak.sh --phase 3`
+   if missing).
+
+2. Verify the client secret is stored in Vault and synced via ESO:
+   ```bash
+   kubectl -n keycloak get externalsecret -o wide
+   ```
+
+3. Check OAuth2-proxy logs:
+   ```bash
+   kubectl -n keycloak logs -l app=oauth2-proxy-prometheus --tail=50
+   ```
+
+4. Verify the redirect URI matches exactly what is configured in Keycloak.
