@@ -39,6 +39,7 @@ data:
         cache_location: /loki/tsdb-cache
 
     limits_config:
+      retention_period: 720h
       ingestion_rate_mb: 20
       ingestion_burst_size_mb: 40
       max_streams_per_user: 50000

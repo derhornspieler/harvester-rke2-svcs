@@ -1,0 +1,16 @@
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  target:
+    selector:
+      matchLabels:
+        app: loki
+  thresholdPercent: 80
+  increasePercent: 20
+  increaseMinimum: 5Gi
+  maxSize: 200Gi
+  cooldownPeriod: 10m
+  prometheusURL: http://prometheus.monitoring.svc:9090

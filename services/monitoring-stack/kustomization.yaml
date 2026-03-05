@@ -44,6 +44,12 @@ resources:
   # Service aliases (backwards-compat for HTTPRoutes, datasources, AnalysisTemplates)
   - prometheus-service-alias.yaml
   - alertmanager-service-alias.yaml
+  # Grafana HPA
+  - grafana/hpa.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscaler-loki.yaml
+  - volume-autoscaler-prometheus.yaml
+  - volume-autoscaler-alertmanager.yaml
   # PrometheusRules + ServiceMonitors
   - prometheus-rules/
   - service-monitors/
