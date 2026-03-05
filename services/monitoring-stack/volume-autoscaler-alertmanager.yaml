@@ -1,0 +1,16 @@
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  target:
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: alertmanager
+  thresholdPercent: 80
+  increasePercent: 20
+  increaseMinimum: 2Gi
+  maxSize: 20Gi
+  cooldownPeriod: 10m
+  prometheusURL: http://prometheus.monitoring.svc:9090
