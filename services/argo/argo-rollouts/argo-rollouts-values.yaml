@@ -1,0 +1,67 @@
+# Argo Rollouts Helm values for RKE2 cluster (HA)
+# Chart: argo/argo-rollouts
+#
+# Deploy:
+#   kubectl apply -f services/argo/argo-rollouts/namespace.yaml
+#   helm install argo-rollouts argo/argo-rollouts -n argo-rollouts \
+#     -f services/argo/argo-rollouts/argo-rollouts-values.yaml --wait
+#
+# Post-deploy (Gateway API + oauth2-proxy ForwardAuth):
+#   kubectl apply -f services/argo/argo-rollouts/gateway.yaml \
+#                 -f services/argo/argo-rollouts/oauth2-proxy.yaml \
+#                 -f services/argo/argo-rollouts/middleware-oauth2-proxy.yaml \
+#                 -f services/argo/argo-rollouts/httproute.yaml
+
+controller:
+  replicas: 2
+
+  nodeSelector:
+    workload-type: general
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-rollouts
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+# Gateway API traffic router plugin for progressive delivery
+trafficRouterPlugins:
+  - name: "argoproj-labs/gatewayAPI"
+    location: "CHANGEME_ARGO_ROLLOUTS_PLUGIN_URL"
+
+dashboard:
+  enabled: true
+
+  replicas: 1
+
+  nodeSelector:
+    workload-type: general
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-rollouts-dashboard
+            topologyKey: kubernetes.io/hostname
