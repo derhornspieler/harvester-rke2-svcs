@@ -17,24 +17,24 @@ graph LR
         ESO["ESO"]
     end
 
-    subgraph "Bundle 2: Monitoring"
+    subgraph "Bundle 2: Identity"
+        KC["Keycloak"]
+        OAuth["OAuth2-proxy"]
+        CNPG2["CNPG (Keycloak)"]
+    end
+
+    subgraph "Bundle 3: Monitoring"
         Prom["Prometheus"]
         Graf["Grafana"]
         Loki["Loki"]
         Alloy["Alloy"]
     end
 
-    subgraph "Bundle 3: Harbor"
+    subgraph "Bundle 4: Harbor"
         Harbor["Harbor"]
         MinIO["MinIO"]
         CNPG1["CNPG (Harbor)"]
         Valkey["Valkey"]
-    end
-
-    subgraph "Bundle 4: Identity"
-        KC["Keycloak"]
-        OAuth["OAuth2-proxy"]
-        CNPG2["CNPG (Keycloak)"]
     end
 
     subgraph "Bundle 5: GitOps"
@@ -126,15 +126,15 @@ cp scripts/.env.example scripts/.env
 # 3. Deploy Bundle 1 -- PKI & Secrets
 ./scripts/deploy-pki-secrets.sh
 
-# 4. Deploy Bundle 2 -- Monitoring
-./scripts/deploy-monitoring.sh
-
-# 5. Deploy Bundle 3 -- Harbor
-./scripts/deploy-harbor.sh
-
-# 6. Deploy Bundle 4 -- Identity (Keycloak + OAuth2-proxy)
+# 4. Deploy Bundle 2 -- Identity (Keycloak + OAuth2-proxy)
 ./scripts/deploy-keycloak.sh
 ./scripts/setup-keycloak.sh    # Realm, OIDC clients, groups (post-deploy)
+
+# 5. Deploy Bundle 3 -- Monitoring
+./scripts/deploy-monitoring.sh
+
+# 6. Deploy Bundle 4 -- Harbor
+./scripts/deploy-harbor.sh
 
 # 7. Deploy Bundle 5 -- GitOps (ArgoCD + Rollouts + Workflows)
 ./scripts/deploy-argo.sh
@@ -152,9 +152,9 @@ guide including verification and troubleshooting.
 | Bundle | Services | Status |
 |--------|----------|--------|
 | PKI & Secrets | Vault, cert-manager, ESO, PKI tooling | Active |
+| Identity | Keycloak, OAuth2-proxy, CNPG PostgreSQL | Active |
 | Monitoring | Prometheus, Grafana, Alertmanager, Loki, Alloy | Active |
 | Harbor | Harbor registry, MinIO, CNPG PostgreSQL, Valkey Sentinel | Active |
-| Identity | Keycloak, OAuth2-proxy, CNPG PostgreSQL | Active |
 | GitOps | ArgoCD, Argo Rollouts, Argo Workflows, AnalysisTemplates | Active |
 | Git & CI | GitLab EE, Praefect/Gitaly, CNPG PostgreSQL, Redis Sentinel, Runners, CI Templates | Active |
 
@@ -201,10 +201,10 @@ services/                    # One directory per service (Kustomize + Helm value
     monitoring/              # Dashboards, alerts, ServiceMonitors
 scripts/                     # Deploy scripts and utility modules
   deploy-pki-secrets.sh      # Bundle 1 orchestrator (7 phases)
-  deploy-monitoring.sh       # Bundle 2 orchestrator (6 phases)
-  deploy-harbor.sh           # Bundle 3 orchestrator (8 phases)
-  deploy-keycloak.sh         # Bundle 4 orchestrator (7 phases)
+  deploy-keycloak.sh         # Bundle 2 orchestrator (8 phases)
   setup-keycloak.sh          # Post-deploy Keycloak config via Admin API (6 phases)
+  deploy-monitoring.sh       # Bundle 3 orchestrator (6 phases)
+  deploy-harbor.sh           # Bundle 4 orchestrator (8 phases)
   deploy-argo.sh             # Bundle 5 orchestrator (7 phases)
   deploy-gitlab.sh           # Bundle 6 orchestrator (9 phases)
   .env.example               # Environment variable template

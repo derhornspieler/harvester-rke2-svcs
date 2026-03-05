@@ -5,3 +5,4 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - external-secret-harbor-push.yaml
+  - networkpolicy.yaml

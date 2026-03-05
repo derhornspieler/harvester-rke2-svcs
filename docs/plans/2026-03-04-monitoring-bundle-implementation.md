@@ -4,7 +4,7 @@
 
 **Goal:** Deploy a full observability stack (Prometheus, Grafana, Loki, Alloy) with 18 dashboards, 9 alert groups, 6 service monitors, and Gateway API ingress with basic-auth.
 
-**Architecture:** kube-prometheus-stack Helm chart for Prometheus/Grafana/Alertmanager. Loki (monolithic initially, upgrade to SimpleScalable later) and Alloy deployed via Kustomize. All ingress via Gateway API + Traefik. Basic-auth on Prometheus/Alertmanager as placeholder until Bundle 4 (Keycloak).
+**Architecture:** kube-prometheus-stack Helm chart for Prometheus/Grafana/Alertmanager. Loki (monolithic initially, upgrade to SimpleScalable later) and Alloy deployed via Kustomize. All ingress via Gateway API + Traefik. Basic-auth on Prometheus/Alertmanager as placeholder until Bundle 2 (Identity/Keycloak).
 
 **Tech Stack:** kube-prometheus-stack Helm chart, Loki 3.4.6, Grafana Alloy v1.6.1, Gateway API v1, Traefik, Kustomize.
 
@@ -150,7 +150,7 @@ cp ../rke2-cluster-via-rancher/services/monitoring-stack/helm/additional-scrape-
 Edit `services/monitoring-stack/helm/kube-prometheus-stack-values.yaml`:
 - Remove `limits:` blocks from: prometheusOperator, prometheus, alertmanager, grafana, node-exporter, kube-state-metrics
 - Keep all `requests:` blocks
-- Comment out Keycloak OIDC env vars (GF_AUTH_GENERIC_OAUTH_*) with note "Enabled in Bundle 4"
+- Comment out Keycloak OIDC env vars (GF_AUTH_GENERIC_OAUTH_*) with note "Enabled in Bundle 2"
 - Comment out `grafana-oidc-secret` envValueFrom
 - Comment out `extraVolumeMounts` and `extraVolumes` for vault-root-ca (needed after Keycloak)
 - Replace `CHANGEME_GRAFANA_ADMIN_PASSWORD` with a reference to env var: leave as CHANGEME placeholder
@@ -372,7 +372,7 @@ cp ../rke2-cluster-via-rancher/services/monitoring-stack/alertmanager-service-al
 
 ### Step 2: Create kustomization.yaml
 
-Adapted from source — remove oauth2-proxy references (Bundle 4), remove Keycloak ESO references, include basic-auth middlewares.
+Adapted from source — remove oauth2-proxy references (Bundle 2), remove Keycloak ESO references, include basic-auth middlewares.
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1

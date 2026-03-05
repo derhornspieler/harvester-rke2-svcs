@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-04
 **Status:** Approved
-**Bundle:** 4 of 6
+**Bundle:** 2 of 6
 
 ## Overview
 
@@ -99,6 +99,7 @@ Adapted from source. Run manually after Keycloak is healthy:
 6. Update Grafana Helm values to enable OIDC (uncomment Bundle 4 sections)
 
 Future bundles add their own OIDC clients to this realm:
+- Bundle 3: (Monitoring) uses pre-configured Grafana OIDC from Bundle 2 setup
 - Bundle 5: argocd, argo-rollouts
 - Bundle 6: gitlab
 
@@ -133,6 +134,5 @@ Future bundles add their own OIDC clients to this realm:
 ## Dependencies
 
 - Bundle 1 (PKI & Secrets): TLS, Vault, ESO
-- Bundle 2 (Monitoring): Prometheus for ServiceMonitors, Grafana for dashboards
-- Bundle 3 (Harbor): MinIO for CNPG backups (shared)
-- CNPG Operator: Must be installed (CRD dependency)
+- CNPG Operator: Installed by this bundle (CRD dependency for future bundles)
+- MinIO: Installed by this bundle for CNPG backups

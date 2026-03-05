@@ -173,6 +173,9 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/hpa.yaml"
   # Volume autoscalers (PVC auto-expansion)
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/volume-autoscalers.yaml"
+  # NetworkPolicies
+  log_info "Applying monitoring NetworkPolicy..."
+  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/networkpolicy.yaml"
   end_phase "Phase 4: Rules + Monitors + Scaling"
 fi
 
