@@ -7,8 +7,12 @@ replicas: 1
 ## GitLab instance URL — runner registers here
 gitlabUrl: https://gitlab.CHANGEME_DOMAIN
 
-## Runner configuration
+## TLS certificates for GitLab instance trust (Vault CA chain)
+certsSecretName: gitlab-runner-certs
+
+## Runner registration token (created by GitLab chart)
 runners:
+  secret: gitlab-gitlab-runner-secret
   config: |
     [[runners]]
       name = "platform-services-k8s-runner"
