@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through deploying all four service bundles onto an RKE2
+This guide walks through deploying all six service bundles onto an RKE2
 cluster from scratch.
 
 ## Prerequisites
@@ -36,12 +36,12 @@ kubectl get nodes
 
 ### Cluster Operators
 
-Bundles 3 and 4 require these operators to be pre-installed on the cluster:
+Bundles 3, 4, and 6 require these operators to be pre-installed on the cluster:
 
 | Operator | Required by | Purpose |
 |----------|-------------|---------|
-| CNPG (CloudNativePG) | Harbor, Keycloak | HA PostgreSQL clusters |
-| Redis operator (e.g., Spotahome) | Harbor | Valkey Sentinel HA |
+| CNPG (CloudNativePG) | Harbor, Keycloak, GitLab | HA PostgreSQL clusters |
+| Redis operator (Spotahome for Harbor Valkey, OpsTree for GitLab Redis) | Harbor, GitLab | Redis Sentinel HA |
 
 ## Step 1: Clone the Repository
 
@@ -115,6 +115,14 @@ HARBOR_MINIO_SECRET_KEY="<strong-password>"
 KC_ADMIN_PASSWORD="<strong-password>"
 KEYCLOAK_DB_PASSWORD="<strong-password>"
 BREAKGLASS_PASSWORD="<strong-password>"
+
+# Argo GitOps passwords (required for Bundle 5)
+ARGO_BASIC_AUTH_PASS="<strong-password>"
+WORKFLOWS_BASIC_AUTH_PASS="<strong-password>"
+
+# GitLab passwords (required for Bundle 6)
+GITLAB_ROOT_PASSWORD="<strong-password>"
+GITLAB_REDIS_PASSWORD="<strong-password>"
 ```
 
 The deploy scripts derive `DOMAIN_DASHED` and `DOMAIN_DOT` automatically from
@@ -361,6 +369,131 @@ After deployment, Keycloak is accessible at `https://keycloak.example.com`.
 
 ---
 
+## Bundle 5: GitOps (Argo)
+
+### Step 8: Deploy Bundle 5
+
+Bundle 5 deploys the Argo GitOps platform: ArgoCD for continuous delivery, Argo
+Rollouts for progressive delivery (canary/blue-green), and Argo Workflows for
+workflow automation.
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `ARGO_BASIC_AUTH_PASS` | Basic-auth password for Argo Rollouts dashboard |
+| `WORKFLOWS_BASIC_AUTH_PASS` | Basic-auth password for Argo Workflows UI |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Bundle 2 must be deployed (Prometheus for AnalysisTemplate queries)
+- Bundle 4 must be deployed (Keycloak for ArgoCD OIDC SSO)
+- Secrets must be seeded in Vault KV v2 at the paths expected by the
+  ExternalSecret manifests in `services/argo/`
+
+Deploy the Argo platform:
+
+```bash
+./scripts/deploy-argo.sh
+```
+
+### What Happens During Bundle 5 Deployment
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~10 sec | Creates `argocd`, `argo-rollouts`, `argo-workflows` namespaces |
+| 2 | ~1 min | Creates Vault K8s auth roles/policies, SecretStores, ExternalSecrets per namespace |
+| 3 | ~5 min | Helm installs ArgoCD (HA server with OIDC SSO configured) |
+| 4 | ~3 min | Helm installs Argo Rollouts with Gateway API traffic plugin |
+| 5 | ~2 min | Helm installs Argo Workflows server and controller |
+| 6 | ~1 min | Applies Gateways, HTTPRoutes, basic-auth secrets, AnalysisTemplates, waits for TLS certs |
+| 7 | ~30 sec | Applies monitoring dashboards, alerts, and ServiceMonitors for all three components |
+
+### Verify Bundle 5
+
+```bash
+./scripts/deploy-argo.sh --validate
+```
+
+After deployment, the following UIs are accessible:
+
+| Service | URL | Authentication |
+|---------|-----|---------------|
+| ArgoCD | `https://argo.example.com` | OIDC via Keycloak |
+| Argo Rollouts | `https://rollouts.example.com` | Basic-auth |
+| Argo Workflows | `https://workflows.example.com` | Basic-auth |
+
+---
+
+## Bundle 6: Git & CI (GitLab)
+
+### Step 9: Deploy Bundle 6
+
+Bundle 6 deploys GitLab EE with CNPG PostgreSQL, OpsTree Redis Sentinel,
+Praefect/Gitaly for Git storage, Gateway API with SSH TCPRoute, and three
+GitLab Runner types.
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `GITLAB_ROOT_PASSWORD` | GitLab root user password |
+| `GITLAB_REDIS_PASSWORD` | Redis password for GitLab cache/session/queues |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Bundle 2 must be deployed (monitoring namespace for ServiceMonitors)
+- Bundle 3 must be deployed (Harbor for Runner image push credentials)
+- Bundle 4 must be deployed (Keycloak for OIDC SSO)
+- Secrets must be seeded in Vault KV v2 at the paths expected by the
+  ExternalSecret manifests in `services/gitlab/`
+- CNPG operator must be installed
+- OpsTree Redis operator must be installed
+
+Deploy GitLab:
+
+```bash
+./scripts/deploy-gitlab.sh
+```
+
+### What Happens During Bundle 6 Deployment
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~10 sec | Creates `gitlab`, `gitlab-runners` namespaces, ensures `database` namespace |
+| 2 | ~1 min | Creates Vault K8s auth roles/policies, SecretStores, ExternalSecrets (Gitaly, Praefect, Redis, OIDC, root, Harbor push) |
+| 3 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures Praefect user/DB, scheduled backup |
+| 4 | ~2 min | Deploys OpsTree RedisReplication + RedisSentinel |
+| 5 | ~1 min | Applies Gateway (HTTPS + SSH), TCPRoute for SSH port 22, waits for TLS cert |
+| 6 | ~30 min | Helm installs GitLab EE, waits for database migrations job, waits for core deployments (webservice, sidekiq, shell, kas) |
+| 7 | ~5 min | Helm installs shared, security, and group runners in `gitlab-runners` namespace |
+| 8 | ~10 sec | Applies volume autoscaler resources for dynamic PVC scaling |
+| 9 | ~30 sec | Applies monitoring Kustomize, verifies HTTPS health endpoint and SSH TCPRoute |
+
+### Post-Deploy: Upload GitLab License
+
+After GitLab is running, upload your GitLab EE license through the Admin Area:
+
+1. Log in at `https://gitlab.example.com` with the root password
+2. Navigate to **Admin Area > Settings > General > License**
+3. Upload the `.gitlab-license` file or paste the license key
+
+### Verify Bundle 6
+
+```bash
+./scripts/deploy-gitlab.sh --validate
+```
+
+After deployment, GitLab is accessible at:
+
+| Access Method | URL / Command | Authentication |
+|---------------|---------------|---------------|
+| HTTPS | `https://gitlab.example.com` | Root password or OIDC via Keycloak |
+| SSH (Git) | `git clone git@gitlab.example.com:group/project.git` | SSH key |
+| KAS (Agent) | `wss://kas.example.com` | Agent token |
+
+---
+
 ## Day-2 Operations
 
 ### Unsealing Vault After Restart
@@ -383,6 +516,8 @@ Run validation across all bundles:
 ./scripts/deploy-monitoring.sh --validate
 ./scripts/deploy-harbor.sh --validate
 ./scripts/deploy-keycloak.sh --validate
+./scripts/deploy-argo.sh --validate
+./scripts/deploy-gitlab.sh --validate
 ```
 
 ### Adding Secrets for a New Application

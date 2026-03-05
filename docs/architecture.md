@@ -1,9 +1,9 @@
 # Architecture Overview
 
-This document describes the architecture of all four service bundles deployed
+This document describes the architecture of all six service bundles deployed
 onto RKE2 clusters. The bundles build on each other to provide a complete
 platform foundation: PKI/secrets management, monitoring, container registry,
-and identity/SSO.
+identity/SSO, GitOps, and Git/CI.
 
 ## Bundle Overview
 
@@ -36,6 +36,20 @@ graph TB
         CNPG2["CNPG PostgreSQL"]
     end
 
+    subgraph "Bundle 5: GitOps"
+        ArgoCD["ArgoCD"]
+        Rollouts["Argo Rollouts"]
+        Workflows["Argo Workflows"]
+    end
+
+    subgraph "Bundle 6: Git &amp; CI"
+        GL["GitLab EE"]
+        Gitaly["Praefect/Gitaly"]
+        CNPG3["CNPG PostgreSQL"]
+        GLRedis["Redis Sentinel"]
+        Runners["GitLab Runners"]
+    end
+
     Vault -->|TLS certs| CM
     Vault -->|secrets| ESO
     ESO -->|credentials| Harbor
@@ -49,8 +63,20 @@ graph TB
     Prom -->|scrapes all| Harbor
     Prom -->|scrapes all| KC
     KC -->|OIDC| OAuth
+    KC -->|OIDC| ArgoCD
+    KC -->|OIDC| GL
     OAuth -->|protects| Prom
     OAuth -->|protects| AM
+    ESO -->|credentials| ArgoCD
+    ESO -->|credentials| GL
+    CM -->|TLS| ArgoCD
+    CM -->|TLS| GL
+    Prom -->|scrapes all| ArgoCD
+    Prom -->|scrapes all| GL
+    GL --> Gitaly
+    GL --> CNPG3
+    GL --> GLRedis
+    GL --> Runners
 
     style Vault fill:#f57c00,color:#fff
     style CM fill:#1565c0,color:#fff
@@ -67,6 +93,14 @@ graph TB
     style KC fill:#7b1fa2,color:#fff
     style OAuth fill:#7b1fa2,color:#fff
     style CNPG2 fill:#7b1fa2,color:#fff
+    style ArgoCD fill:#ef6c00,color:#fff
+    style Rollouts fill:#ef6c00,color:#fff
+    style Workflows fill:#ef6c00,color:#fff
+    style GL fill:#e65100,color:#fff
+    style Gitaly fill:#e65100,color:#fff
+    style CNPG3 fill:#388e3c,color:#fff
+    style GLRedis fill:#d32f2f,color:#fff
+    style Runners fill:#e65100,color:#fff
 ```
 
 ## Components
@@ -89,6 +123,16 @@ graph TB
 | **Keycloak** | OIDC identity provider, realm/user/client management | `keycloak` | 4 |
 | **OAuth2-proxy** | OIDC authentication proxy for Prometheus, Alertmanager, Hubble | `keycloak` | 4 |
 | **CNPG PostgreSQL (Keycloak)** | HA PostgreSQL cluster for Keycloak | `database` | 4 |
+| **ArgoCD** | GitOps continuous delivery, HA server with OIDC SSO | `argocd` | 5 |
+| **Argo Rollouts** | Progressive delivery (canary/blue-green) with Gateway API traffic management | `argo-rollouts` | 5 |
+| **Argo Workflows** | Workflow engine for CI/CD pipelines and automation | `argo-workflows` | 5 |
+| **AnalysisTemplates** | Automated rollout analysis (error-rate, latency, success-rate) | `argo-rollouts` | 5 |
+| **GitLab EE** | Source code management, CI/CD, issue tracking | `gitlab` | 6 |
+| **Praefect/Gitaly** | Git storage layer with Praefect for HA routing | `gitlab` | 6 |
+| **CNPG PostgreSQL (GitLab)** | HA PostgreSQL cluster for GitLab metadata | `database` | 6 |
+| **Redis Sentinel (GitLab)** | OpsTree Redis Sentinel for GitLab cache/session/queues | `gitlab` | 6 |
+| **GitLab Runners** | Shared, security, and group runners for CI job execution | `gitlab-runners` | 6 |
+| **CI Templates** | Reusable pipeline templates (build, test, scan, deploy, promote) | N/A (included in repo) | 6 |
 
 ---
 
@@ -274,6 +318,11 @@ Every service includes ServiceMonitors, PrometheusRules, and Grafana dashboards:
 | Alloy | Alloy metrics | AlloyDown | Collection rate, pipeline health |
 | CNPG | CNPG controller metrics | PostgreSQLDown, ReplicationLag | Replication lag, connections, WAL |
 | Valkey | Redis exporter metrics | RedisDown, RedisMemoryHigh | Memory usage, hit ratio, connections |
+| ArgoCD | ArgoCD server metrics | ArgoCDDown, SyncFailure | App sync status, repo server health |
+| Argo Rollouts | Rollouts controller metrics | RolloutFailed, AnalysisFailed | Rollout progress, analysis results |
+| Argo Workflows | Workflows controller metrics | WorkflowFailed | Workflow status, duration, error rates |
+| GitLab | Webservice + Sidekiq metrics | GitLabDown, SidekiqQueueHigh | Request rates, job queues, latency |
+| GitLab Runners | Runner metrics | RunnerDown, JobFailureRate | Job execution, queue wait time |
 
 ---
 
@@ -465,7 +514,220 @@ sequenceDiagram
 
 ---
 
-## Deployment Flow (All 4 Bundles)
+## Bundle 5: GitOps
+
+### GitOps Architecture
+
+The Argo GitOps platform provides continuous delivery (ArgoCD), progressive
+delivery with canary/blue-green deployments (Argo Rollouts), and workflow
+automation (Argo Workflows). Each component runs in its own namespace.
+
+```mermaid
+graph TB
+    subgraph "argocd namespace"
+        ArgoServer["ArgoCD Server<br/>(HA, OIDC SSO)"]
+        ArgoRepo["ArgoCD Repo Server"]
+        ArgoApp["ArgoCD App Controller"]
+        GW3["Gateway<br/>(Traefik)"]
+        HR3["HTTPRoute"]
+    end
+
+    subgraph "argo-rollouts namespace"
+        RollCtrl["Argo Rollouts<br/>Controller"]
+        RollDash["Rollouts Dashboard<br/>(basic-auth)"]
+        OAuth_R["OAuth2-proxy<br/>(Rollouts)"]
+        AT["AnalysisTemplates<br/>(error-rate, latency,<br/>success-rate)"]
+    end
+
+    subgraph "argo-workflows namespace"
+        WFServer["Argo Workflows<br/>Server (basic-auth)"]
+        WFCtrl["Argo Workflows<br/>Controller"]
+    end
+
+    GW3 --> HR3 --> ArgoServer
+    ArgoServer --> ArgoRepo
+    ArgoServer --> ArgoApp
+    ArgoApp -->|manages| RollCtrl
+
+    RollCtrl --> AT
+    AT -->|query| PromExt["Prometheus<br/>(metrics)"]
+
+    KC2["Keycloak"] -->|OIDC| ArgoServer
+
+    style ArgoServer fill:#ef6c00,color:#fff
+    style ArgoRepo fill:#ef6c00,color:#fff
+    style ArgoApp fill:#ef6c00,color:#fff
+    style RollCtrl fill:#ef6c00,color:#fff
+    style RollDash fill:#ef6c00,color:#fff
+    style WFServer fill:#ef6c00,color:#fff
+    style WFCtrl fill:#ef6c00,color:#fff
+    style AT fill:#ef6c00,color:#fff
+```
+
+**Key design decisions:**
+
+- **ArgoCD** runs in HA mode with native OIDC SSO via Keycloak. The server is
+  exposed through a Traefik Gateway with cert-manager TLS.
+- **Argo Rollouts** provides progressive delivery using Gateway API for traffic
+  management. The dashboard is protected by basic-auth (with optional
+  OAuth2-proxy).
+- **Argo Workflows** provides a workflow engine for CI/CD automation. The server
+  is protected by basic-auth.
+- **AnalysisTemplates** define automated rollout analysis queries against
+  Prometheus: error-rate, latency-check, and success-rate. These are used by
+  Rollouts to gate canary promotions.
+- **ESO SecretStores** are configured per namespace (`argocd`, `argo-rollouts`,
+  `argo-workflows`) with Vault Kubernetes auth roles scoped to each namespace.
+- **Monitoring** includes ServiceMonitors, PrometheusRules, and Grafana
+  dashboards for all three Argo components.
+
+---
+
+## Bundle 6: Git & CI
+
+### GitLab Architecture
+
+GitLab EE provides source code management, CI/CD pipelines, and issue tracking.
+It is backed by CNPG PostgreSQL for metadata, OpsTree Redis Sentinel for
+caching/sessions/queues, and Praefect/Gitaly for Git repository storage. GitLab
+Runners execute CI jobs in a dedicated namespace.
+
+```mermaid
+graph TB
+    subgraph "gitlab namespace"
+        Web["GitLab Webservice<br/>(Rails API + UI)"]
+        Sidekiq["Sidekiq<br/>(background jobs)"]
+        Shell["GitLab Shell<br/>(SSH access)"]
+        KAS["KAS<br/>(Kubernetes agent)"]
+        Praefect["Praefect<br/>(Gitaly router)"]
+        GitalySvc["Gitaly<br/>(Git storage)"]
+        RedisGL["Redis Sentinel<br/>(OpsTree)"]
+        GW4["Gateway<br/>(HTTPS + SSH)"]
+        HR4["HTTPRoute"]
+        TCP["TCPRoute<br/>(SSH port 22)"]
+    end
+
+    subgraph "gitlab-runners namespace"
+        SharedR["Shared Runner"]
+        SecurityR["Security Runner"]
+        GroupR["Group Runner"]
+    end
+
+    subgraph "database namespace"
+        PG3["CNPG PostgreSQL<br/>(3-instance HA)"]
+        PGBackup3["Scheduled Backups<br/>(to MinIO)"]
+    end
+
+    GW4 --> HR4 --> Web
+    GW4 --> TCP --> Shell
+    Web --> Sidekiq
+    Web --> PG3
+    Web --> RedisGL
+    Web --> Praefect
+    Praefect --> GitalySvc
+    Sidekiq --> RedisGL
+    Shell --> Praefect
+    KAS --> Web
+    PG3 --> PGBackup3
+
+    SharedR -->|register| Web
+    SecurityR -->|register| Web
+    GroupR -->|register| Web
+
+    KC3["Keycloak"] -->|OIDC| Web
+
+    style Web fill:#e65100,color:#fff
+    style Sidekiq fill:#e65100,color:#fff
+    style Shell fill:#e65100,color:#fff
+    style KAS fill:#e65100,color:#fff
+    style Praefect fill:#e65100,color:#fff
+    style GitalySvc fill:#e65100,color:#fff
+    style RedisGL fill:#d32f2f,color:#fff
+    style PG3 fill:#388e3c,color:#fff
+    style SharedR fill:#e65100,color:#fff
+    style SecurityR fill:#e65100,color:#fff
+    style GroupR fill:#e65100,color:#fff
+```
+
+**Key design decisions:**
+
+- **GitLab EE** is deployed via the official Helm chart with external
+  PostgreSQL (CNPG) and external Redis (OpsTree Sentinel). The built-in
+  PostgreSQL and Redis sub-charts are disabled.
+- **Praefect/Gitaly** provides the Git storage layer. Praefect acts as a
+  transparent proxy that routes Git RPCs to Gitaly nodes.
+- **CNPG PostgreSQL** runs a 3-instance HA cluster in the shared `database`
+  namespace. A Praefect user and database are created during Phase 3 for
+  Praefect's metadata storage.
+- **Redis Sentinel (OpsTree)** provides HA caching, session storage, and
+  Sidekiq job queues. Deployed as RedisReplication + RedisSentinel CRDs.
+- **GitLab Runners** are deployed as three separate Helm releases in the
+  `gitlab-runners` namespace: shared (general workloads), security (SAST/DAST
+  scanning), and group (platform-services team). Each runner has its own
+  values file and resource limits.
+- **CI Templates** provide reusable pipeline definitions: base stage ordering,
+  individual jobs (build, test, lint, scan, deploy, promote, rollout,
+  eso-provision), and composite patterns (microservice, library, infrastructure,
+  platform-service).
+- **All credentials** (Gitaly token, Praefect DB password, Redis password, OIDC
+  client secret, root password, Harbor push credentials) are sourced from Vault
+  via ESO ExternalSecrets.
+- **TLS** is terminated at the Traefik Gateway for HTTPS traffic. SSH access
+  uses a TCPRoute on port 22 for native Git-over-SSH.
+
+### SSH TCP Routing
+
+GitLab SSH access (for `git clone git@gitlab.example.com:...`) is handled by a
+Gateway API TCPRoute, which forwards TCP port 22 traffic directly to the GitLab
+Shell service without TLS termination:
+
+```mermaid
+sequenceDiagram
+    participant Client as Git Client
+    participant GW as Gateway (Traefik)<br/>port 22
+    participant TCP as TCPRoute<br/>(gitlab-ssh)
+    participant Shell as GitLab Shell<br/>(port 2222)
+    participant Praefect as Praefect
+    participant Gitaly as Gitaly<br/>(Git storage)
+
+    Client->>GW: SSH connection to port 22
+    GW->>TCP: Match TCPRoute
+    TCP->>Shell: Forward TCP stream
+    Shell->>Praefect: Git RPC (push/pull)
+    Praefect->>Gitaly: Route to storage node
+    Gitaly-->>Praefect: Git data
+    Praefect-->>Shell: Response
+    Shell-->>Client: SSH response
+```
+
+### GitLab Data Flow: CI Pipeline
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GL as GitLab Webservice
+    participant Sidekiq as Sidekiq
+    participant Runner as GitLab Runner
+    participant Harbor as Harbor Registry
+    participant Redis as Redis Sentinel
+    participant DB as CNPG PostgreSQL
+
+    Dev->>GL: git push (via SSH/HTTPS)
+    GL->>DB: Record push event
+    GL->>Redis: Enqueue pipeline creation
+    Redis->>Sidekiq: Process pipeline job
+    Sidekiq->>DB: Create pipeline + jobs
+    Runner->>GL: Poll for pending jobs
+    GL-->>Runner: Assign job
+    Runner->>Runner: Execute CI stages<br/>(build, test, scan)
+    Runner->>Harbor: Push container image
+    Runner->>GL: Report job result
+    GL->>DB: Update pipeline status
+```
+
+---
+
+## Deployment Flow (All 6 Bundles)
 
 The bundles are deployed in order, each building on the previous:
 
@@ -475,13 +737,17 @@ flowchart LR
     B2["Bundle 2<br/>Monitoring<br/>(6 phases)"]
     B3["Bundle 3<br/>Harbor<br/>(8 phases)"]
     B4["Bundle 4<br/>Identity<br/>(7+6 phases)"]
+    B5["Bundle 5<br/>GitOps<br/>(7 phases)"]
+    B6["Bundle 6<br/>Git &amp; CI<br/>(9 phases)"]
 
-    B1 --> B2 --> B3 --> B4
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6
 
     style B1 fill:#1565c0,color:#fff
     style B2 fill:#e65100,color:#fff
     style B3 fill:#1565c0,color:#fff
     style B4 fill:#7b1fa2,color:#fff
+    style B5 fill:#ef6c00,color:#fff
+    style B6 fill:#e65100,color:#fff
 ```
 
 ### Bundle 1: PKI & Secrets (7 Phases)
@@ -578,6 +844,36 @@ Scripts: `scripts/deploy-keycloak.sh` + `scripts/setup-keycloak.sh`
 | 5 | Auth Flow | Copy browser flow to `browser-prompt-login`, set as realm default |
 | 6 | Validation | Print summary of all created resources |
 
+### Bundle 5: GitOps (7 Phases)
+
+Script: `scripts/deploy-argo.sh`
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespaces | Create `argocd`, `argo-rollouts`, `argo-workflows` namespaces |
+| 2 | ESO SecretStores | Create Vault K8s auth roles/policies, SecretStores per namespace |
+| 3 | ArgoCD Helm | Helm install ArgoCD (HA server with OIDC SSO) |
+| 4 | Argo Rollouts Helm | Helm install Argo Rollouts with Gateway API traffic plugin |
+| 5 | Argo Workflows Helm | Helm install Argo Workflows server and controller |
+| 6 | Gateways + Auth | Apply Gateways, HTTPRoutes, basic-auth for Rollouts/Workflows dashboards, deploy AnalysisTemplates, wait for TLS |
+| 7 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for all three Argo components |
+
+### Bundle 6: Git & CI (9 Phases)
+
+Script: `scripts/deploy-gitlab.sh`
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespaces | Create `gitlab`, `gitlab-runners`, ensure `database` namespace |
+| 2 | ESO | SecretStores + ExternalSecrets for Gitaly, Praefect, Redis, OIDC, root password, Harbor push credentials |
+| 3 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure Praefect user/DB, scheduled backup |
+| 4 | Redis | Deploy OpsTree RedisReplication + RedisSentinel |
+| 5 | Gateway + TCPRoute | Apply Gateway (HTTPS + SSH), TCPRoute for SSH port 22, wait for TLS |
+| 6 | GitLab Helm | Helm install GitLab EE, wait for migrations job (up to 30 min), wait for core deployments |
+| 7 | Runners | Helm install shared, security, and group runners in `gitlab-runners` namespace |
+| 8 | VolumeAutoscalers | Apply volume autoscaler resources for dynamic PVC scaling |
+| 9 | Monitoring + Verify | Apply monitoring Kustomize, verify HTTPS health endpoint and SSH TCPRoute |
+
 ---
 
 ## Component Relationships
@@ -631,9 +927,33 @@ graph TB
             OAuthC["OAuth2-proxy (x3)"]
         end
 
+        subgraph "argocd namespace"
+            ArgoCDC["ArgoCD Server"]
+        end
+
+        subgraph "argo-rollouts namespace"
+            RollC["Argo Rollouts"]
+        end
+
+        subgraph "argo-workflows namespace"
+            WFC["Argo Workflows"]
+        end
+
+        subgraph "gitlab namespace"
+            GLC["GitLab Webservice"]
+            ShellC["GitLab Shell"]
+            PraefectC["Praefect/Gitaly"]
+            RedisGLC["Redis Sentinel"]
+        end
+
+        subgraph "gitlab-runners namespace"
+            RunnersC["Runners (x3)"]
+        end
+
         subgraph "database namespace"
             PGHarbor["harbor-pg<br/>(CNPG cluster)"]
             PGKC["keycloak-pg<br/>(CNPG cluster)"]
+            PGGL["gitlab-pg<br/>(CNPG cluster)"]
         end
 
         subgraph "app namespaces"
@@ -656,6 +976,14 @@ graph TB
         HarborC --> ValkeyC
         KCC --> PGKC
         OAuthC -->|OIDC| KCC
+        ArgoCDC -->|OIDC| KCC
+        GLC -->|OIDC| KCC
+        GLC --> PGGL
+        GLC --> PraefectC
+        GLC --> RedisGLC
+        RunnersC -->|register| GLC
+        PromC -->|scrapes| ArgoCDC
+        PromC -->|scrapes| GLC
     end
 
     subgraph "Offline"
@@ -683,6 +1011,15 @@ graph TB
     style OAuthC fill:#7b1fa2,color:#fff
     style PGHarbor fill:#388e3c,color:#fff
     style PGKC fill:#388e3c,color:#fff
+    style ArgoCDC fill:#ef6c00,color:#fff
+    style RollC fill:#ef6c00,color:#fff
+    style WFC fill:#ef6c00,color:#fff
+    style GLC fill:#e65100,color:#fff
+    style ShellC fill:#e65100,color:#fff
+    style PraefectC fill:#e65100,color:#fff
+    style RedisGLC fill:#d32f2f,color:#fff
+    style RunnersC fill:#e65100,color:#fff
+    style PGGL fill:#388e3c,color:#fff
 ```
 
 ## Placeholder Substitution
@@ -737,12 +1074,30 @@ harvester-rke2-svcs/
 │   │   ├── postgres/               # CNPG cluster, scheduled backup
 │   │   ├── valkey/                 # RedisReplication + RedisSentinel
 │   │   └── monitoring/             # Dashboards, alerts, ServiceMonitors
-│   └── keycloak/                   # Keycloak identity provider
-│       ├── gateway.yaml            # Gateway API
-│       ├── httproute.yaml          # HTTPRoute to Keycloak
-│       ├── keycloak/               # Deployment, services, HPA, RBAC
-│       ├── postgres/               # CNPG cluster, scheduled backup
-│       ├── oauth2-proxy/           # OAuth2-proxy instances + middleware
+│   ├── keycloak/                   # Keycloak identity provider
+│   │   ├── gateway.yaml            # Gateway API
+│   │   ├── httproute.yaml          # HTTPRoute to Keycloak
+│   │   ├── keycloak/               # Deployment, services, HPA, RBAC
+│   │   ├── postgres/               # CNPG cluster, scheduled backup
+│   │   ├── oauth2-proxy/           # OAuth2-proxy instances + middleware
+│   │   └── monitoring/             # Dashboards, alerts, ServiceMonitors
+│   ├── argo/                       # Argo GitOps platform
+│   │   ├── argocd/                 # ArgoCD Helm values, Gateway, HTTPRoute
+│   │   ├── argo-rollouts/          # Rollouts Helm values, OAuth2-proxy, basic-auth
+│   │   ├── argo-workflows/         # Workflows Helm values, Gateway, basic-auth
+│   │   ├── analysis-templates/     # AnalysisTemplates (error-rate, latency, success-rate)
+│   │   └── monitoring/             # Dashboards, alerts, ServiceMonitors
+│   └── gitlab/                     # GitLab EE + CI platform
+│       ├── values-rke2-prod.yaml   # GitLab Helm values
+│       ├── gateway.yaml            # Gateway (HTTPS + SSH)
+│       ├── tcproute-ssh.yaml       # TCPRoute for SSH port 22
+│       ├── gitaly/                 # Praefect/Gitaly ExternalSecret
+│       ├── praefect/               # Praefect DB secret + token ExternalSecrets
+│       ├── redis/                  # OpsTree RedisReplication + RedisSentinel
+│       ├── oidc/                   # OIDC ExternalSecret for Keycloak SSO
+│       ├── root/                   # Root password ExternalSecret
+│       ├── runners/                # Shared, security, group runner Helm values + RBAC
+│       ├── ci-templates/           # Reusable CI pipeline templates
 │       └── monitoring/             # Dashboards, alerts, ServiceMonitors
 ├── scripts/
 │   ├── deploy-pki-secrets.sh       # Bundle 1 orchestrator (7 phases)
@@ -750,6 +1105,8 @@ harvester-rke2-svcs/
 │   ├── deploy-harbor.sh            # Bundle 3 orchestrator (8 phases)
 │   ├── deploy-keycloak.sh          # Bundle 4 orchestrator (7 phases)
 │   ├── setup-keycloak.sh           # Keycloak Admin API setup (6 phases)
+│   ├── deploy-argo.sh              # Bundle 5 orchestrator (7 phases)
+│   ├── deploy-gitlab.sh            # Bundle 6 orchestrator (9 phases)
 │   ├── .env.example                # Environment variable template
 │   └── utils/                      # Shell utility modules
 │       ├── log.sh                  # Colored logging + phase timing
