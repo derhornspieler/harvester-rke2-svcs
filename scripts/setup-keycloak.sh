@@ -137,18 +137,16 @@ fi
 if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   start_phase "Phase 2: Create Breakglass User"
   log_info "Creating user 'admin-breakglass'..."
-  kc_api_create POST "${KC_REALM}/users" -d '{
-    "username": "admin-breakglass",
-    "enabled": true,
-    "emailVerified": true,
-    "credentials": [
-      {
-        "type": "password",
-        "value": "'"${BREAKGLASS_PASSWORD}"'",
-        "temporary": false
-      }
-    ]
-  }'
+  # Use jq to safely construct JSON — prevents injection if password contains " or \
+  _user_payload=$(jq -n \
+    --arg pass "$BREAKGLASS_PASSWORD" \
+    '{
+      username: "admin-breakglass",
+      enabled: true,
+      emailVerified: true,
+      credentials: [{type: "password", value: $pass, temporary: false}]
+    }')
+  kc_api_create POST "${KC_REALM}/users" -d "$_user_payload"
 
   # Get user ID for later group assignment
   BREAKGLASS_ID=$(kc_api GET "${KC_REALM}/users?username=admin-breakglass" | jq -r '.[0].id')
@@ -300,7 +298,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   log_info ""
   log_info "Next steps:"
   log_info "  1. Store OIDC client secrets in Vault (kv/oidc/<client-id>/client-secret)"
-  log_info "  2. Run deploy-keycloak.sh --phase 6 to deploy OAuth2-proxy instances"
+  log_info "  2. Run deploy-keycloak.sh --phase 7 to deploy OAuth2-proxy instances"
   log_info "  3. Configure Grafana OIDC in kube-prometheus-stack values"
   end_phase "Phase 6: Validation"
 fi

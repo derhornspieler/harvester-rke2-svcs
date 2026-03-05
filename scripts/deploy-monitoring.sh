@@ -150,6 +150,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   # Substitute CHANGEME tokens in values file before passing to helm
   _prom_values=$(mktemp /tmp/prom-values.XXXXXX.yaml)
   trap 'rm -f "$_prom_values"' EXIT
+  chmod 600 "$_prom_values"
   _subst_changeme < "${REPO_ROOT}/services/monitoring-stack/helm/kube-prometheus-stack-values.yaml" > "$_prom_values"
   helm_install_if_needed kube-prometheus-stack "$HELM_CHART_PROMETHEUS_STACK" monitoring \
     --version 72.6.2 \
