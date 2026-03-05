@@ -53,14 +53,14 @@ Options:
   -h, --help      Show this help
 
 Phases:
-  1  Shared Data Svc     CNPG operator + MinIO (skip if exists)
-  2  Namespaces           Create keycloak, database namespaces
-  3  ESO ExternalSecrets  Apply ExternalSecrets for Keycloak and PostgreSQL
-  4  PostgreSQL CNPG      HA cluster (3 instances), scheduled backup
-  5  Keycloak             RBAC, services, deployment, health check
-  6  Gateway + HPA        Gateway, HTTPRoute, HPA, TLS verification
-  7  OAuth2-proxy         External secrets, deployments, middleware CRDs
-  8  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
+  1  Shared Data Svc     CNPG operator (skip if exists)
+  2  Namespaces + Vault  Create namespaces, seed Vault, create SecretStores
+  3  ESO + MinIO         Apply ExternalSecrets, deploy MinIO
+  4  PostgreSQL CNPG     HA cluster (3 instances), scheduled backup
+  5  Keycloak            RBAC, services, deployment, health check
+  6  Gateway + HPA       Gateway, HTTPRoute, HPA, TLS verification
+  7  OAuth2-proxy        External secrets, deployments, middleware CRDs
+  8  Monitoring + Verify Dashboards, alerts, ServiceMonitors
 EOF
   exit 0
 }
@@ -125,8 +125,129 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     log_info "CNPG operator CRD already exists, skipping install"
   fi
 
-  # Deploy MinIO (shared object storage for CNPG backups)
+  end_phase "Phase 1: Shared Data Services"
+fi
+
+# Phase 2: Namespaces + Vault Secrets + SecretStores
+if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
+  start_phase "Phase 2: Namespaces + Vault Secrets"
+
+  # Create namespaces
   kubectl create namespace minio --dry-run=client -o yaml | kubectl apply -f -
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/namespace.yaml"
+  kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
+
+  # Seed Vault KV secrets
+  [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
+  root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+
+  # Generate random credentials for MinIO
+  MINIO_ROOT_USER="${MINIO_ROOT_USER:-minio-admin}"
+  MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$(openssl rand -base64 24)}"
+
+  log_info "Seeding Vault KV secrets..."
+  vault_exec "$root_token" kv put kv/services/minio/root-credentials \
+    root-user="$MINIO_ROOT_USER" \
+    root-password="$MINIO_ROOT_PASSWORD"
+
+  # Keycloak admin credentials (single break-glass admin)
+  KC_ADMIN_USER="${KC_ADMIN_USER:-admin-breakglass}"
+  KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:-$(openssl rand -base64 24)}"
+  KC_ADMIN_CLIENT_ID="${KC_ADMIN_CLIENT_ID:-temp-admin-svc}"
+  KC_ADMIN_CLIENT_SECRET="${KC_ADMIN_CLIENT_SECRET:-$(openssl rand -hex 32)}"
+
+  vault_exec "$root_token" kv put kv/services/keycloak/admin-secret \
+    KC_BOOTSTRAP_ADMIN_USERNAME="$KC_ADMIN_USER" \
+    KC_BOOTSTRAP_ADMIN_PASSWORD="$KC_ADMIN_PASSWORD" \
+    KC_BOOTSTRAP_ADMIN_CLIENT_ID="$KC_ADMIN_CLIENT_ID" \
+    KC_BOOTSTRAP_ADMIN_CLIENT_SECRET="$KC_ADMIN_CLIENT_SECRET"
+
+  # Keycloak PostgreSQL credentials
+  PG_KC_USER="${PG_KC_USER:-keycloak}"
+  PG_KC_PASSWORD="${PG_KC_PASSWORD:-$(openssl rand -base64 24)}"
+
+  vault_exec "$root_token" kv put kv/services/keycloak/postgres-secret \
+    POSTGRES_USER="$PG_KC_USER" \
+    POSTGRES_PASSWORD="$PG_KC_PASSWORD"
+
+  vault_exec "$root_token" kv put kv/services/database/keycloak-pg \
+    username="$PG_KC_USER" \
+    password="$PG_KC_PASSWORD"
+
+  # Create Vault K8s auth roles and policies for each namespace
+  for ns in minio keycloak database; do
+    log_info "Creating Vault K8s auth role eso-${ns}..."
+    vault_exec "$root_token" write "auth/kubernetes/role/eso-${ns}" \
+      bound_service_account_names=eso-secrets \
+      "bound_service_account_namespaces=${ns}" \
+      "policies=eso-${ns}" \
+      ttl=1h
+
+    # Write policy via kubectl exec with stdin
+    kubectl exec -i -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="$root_token" \
+      vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/services/${ns}/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+
+    # Create service account and SecretStore in each namespace
+    kubectl create serviceaccount eso-secrets -n "$ns" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: ${ns}
+spec:
+  provider:
+    vault:
+      server: http://vault.vault.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: eso-${ns}
+          serviceAccountRef:
+            name: eso-secrets
+EOF
+  done
+
+  end_phase "Phase 2: Namespaces + Vault Secrets"
+fi
+
+# Phase 3: ESO ExternalSecrets + MinIO
+if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
+  start_phase "Phase 3: ESO ExternalSecrets + MinIO"
+
+  # Apply ExternalSecrets for all components
+  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/external-secret.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/external-secret.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/external-secret.yaml"
+
+  # Wait for secrets to sync
+  log_info "Waiting for ExternalSecrets to sync..."
+  sleep 10
+  for secret in minio-root-credentials:minio keycloak-admin-secret:keycloak \
+    keycloak-postgres-secret:keycloak keycloak-pg-credentials:database; do
+    local_name="${secret%%:*}"
+    local_ns="${secret##*:}"
+    if kubectl -n "$local_ns" get secret "$local_name" &>/dev/null; then
+      log_ok "Secret ${local_name} synced in ${local_ns}"
+    else
+      log_warn "Secret ${local_name} not yet synced in ${local_ns} (ESO may still be reconciling)"
+    fi
+  done
+
+  # Deploy MinIO (shared object storage for CNPG backups)
   if ! kubectl -n minio get deployment minio &>/dev/null; then
     log_info "Deploying MinIO..."
     kubectl apply -f "${REPO_ROOT}/services/harbor/minio/pvc.yaml"
@@ -141,38 +262,7 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     log_info "MinIO already deployed, skipping"
   fi
 
-  end_phase "Phase 1: Shared Data Services"
-fi
-
-# Phase 2: Namespaces
-if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
-  start_phase "Phase 2: Namespaces"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/namespace.yaml"
-  kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
-  end_phase "Phase 2: Namespaces"
-fi
-
-# Phase 3: ESO ExternalSecrets
-if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
-  start_phase "Phase 3: ESO ExternalSecrets"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/external-secret.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/external-secret.yaml"
-
-  # Wait for secrets to sync
-  log_info "Waiting for ExternalSecrets to sync..."
-  sleep 10
-  for secret in keycloak-admin-secret:keycloak keycloak-postgres-secret:keycloak \
-    keycloak-pg-credentials:database; do
-    local_name="${secret%%:*}"
-    local_ns="${secret##*:}"
-    if kubectl -n "$local_ns" get secret "$local_name" &>/dev/null; then
-      log_ok "Secret ${local_name} synced in ${local_ns}"
-    else
-      log_warn "Secret ${local_name} not yet synced in ${local_ns} (ESO may still be reconciling)"
-    fi
-  done
-
-  end_phase "Phase 3: ESO ExternalSecrets"
+  end_phase "Phase 3: ESO ExternalSecrets + MinIO"
 fi
 
 # Phase 4: PostgreSQL CNPG
@@ -196,10 +286,11 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   kube_apply_subst "${REPO_ROOT}/services/keycloak/keycloak/deployment.yaml"
   wait_for_deployment keycloak keycloak 600s
 
-  # Health check
+  # Health check (Keycloak image doesn't have curl; use wget or kubectl port-forward)
   log_info "Verifying Keycloak health..."
-  kubectl exec -n keycloak deploy/keycloak -- curl -sf http://localhost:8080/realms/master > /dev/null \
-    || log_warn "Keycloak master realm not yet responding (may need a moment)"
+  kubectl exec -n keycloak deploy/keycloak -- \
+    sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e "GET /health/ready HTTP/1.1\r\nHost: localhost\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | grep -q "200" \
+    || log_warn "Keycloak health endpoint not yet responding (may need a moment)"
 
   end_phase "Phase 5: Keycloak"
 fi
@@ -214,40 +305,53 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   end_phase "Phase 6: Gateway + HTTPRoute + HPA"
 fi
 
-# Phase 7: OAuth2-proxy
+# Phase 7: OAuth2-proxy (requires monitoring namespace from Bundle 3 + setup-keycloak.sh)
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: OAuth2-proxy"
-  log_info "Applying OAuth2-proxy instances..."
-  log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
 
-  # External secrets for OIDC client credentials
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
+  if ! kubectl get ns monitoring &>/dev/null; then
+    log_warn "Monitoring namespace not found — skipping OAuth2-proxy (deploy after Bundle 3)"
+    end_phase "Phase 7: OAuth2-proxy (skipped)"
+  else
+    log_info "Applying OAuth2-proxy instances..."
+    log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
 
-  # OAuth2-proxy deployments
-  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
-  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
-  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
+    # External secrets for OIDC client credentials
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
 
-  # Middleware CRDs
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
+    # OAuth2-proxy deployments
+    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
+    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
+    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
 
-  end_phase "Phase 7: OAuth2-proxy"
+    # Middleware CRDs
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
+
+    end_phase "Phase 7: OAuth2-proxy"
+  fi
 fi
 
-# Phase 8: Monitoring + Verify
+# Phase 8: Monitoring + NetworkPolicies
 if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
-  start_phase "Phase 8: Monitoring + Verify"
-  kubectl apply -k "${REPO_ROOT}/services/keycloak/monitoring/"
-  # NetworkPolicies
+  start_phase "Phase 8: Monitoring + NetworkPolicies"
+
+  if kubectl get ns monitoring &>/dev/null && kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null; then
+    kubectl apply -k "${REPO_ROOT}/services/keycloak/monitoring/"
+  else
+    log_warn "Monitoring namespace or CRDs not found — skipping ServiceMonitors/alerts (deploy after Bundle 3)"
+  fi
+
+  # NetworkPolicies (always apply)
   log_info "Applying NetworkPolicies for Identity services..."
   kubectl apply -f "${REPO_ROOT}/services/keycloak/networkpolicy.yaml"
   kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/networkpolicy.yaml"
-  end_phase "Phase 8: Monitoring + Verify"
+  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/networkpolicy.yaml"
+  end_phase "Phase 8: Monitoring + NetworkPolicies"
 fi
 
 log_ok "Keycloak deployment complete"
