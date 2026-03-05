@@ -1,0 +1,63 @@
+# Blue/Green deployment via ArgoCD Rollouts
+#
+# Updates image tag in the deploy repo via kustomize, triggers ArgoCD sync.
+# Uses the developer's Keycloak identity for git commit attribution.
+#
+# Required variables:
+#   DEPLOY_REPO — GitLab path to deploy repo (e.g., platform_services/svc-identity-portal)
+#   IMAGE_NAME, IMAGE_FULL — set by base.yml
+
+.deploy:blue-green:
+  stage: deploy-staging
+  image: bitnami/git:latest
+  variables:
+    DEPLOY_REPO: ""
+    DEPLOY_BRANCH: deploy
+    DEPLOY_PATH: k8s/base
+  script:
+    - |
+      if [ -z "${DEPLOY_REPO}" ]; then
+        echo "DEPLOY_REPO not set — skipping deployment"
+        exit 0
+      fi
+
+      git clone "https://oauth2:${CI_JOB_TOKEN}@gitlab.${DOMAIN}/${DEPLOY_REPO}.git" deploy-repo
+      cd "deploy-repo/${DEPLOY_PATH}"
+
+      # Update image tag in rollout or deployment manifest
+      for manifest in rollout.yaml deployment.yaml; do
+        if [ -f "$manifest" ]; then
+          sed -i "s|image: .*/${CI_PROJECT_NAME}:.*|image: ${IMAGE_FULL}|g" "$manifest"
+          echo "Updated image in ${manifest}"
+        fi
+      done
+
+      git config user.name "${GITLAB_USER_NAME:-CI Pipeline}"
+      git config user.email "${GITLAB_USER_EMAIL:-ci@${DOMAIN}}"
+      git add .
+      git diff --cached --quiet && { echo "No changes to deploy"; exit 0; }
+      git commit -m "deploy: ${CI_PROJECT_NAME} ${IMAGE_TAG} (blue-green)
+
+      Triggered by: ${GITLAB_USER_LOGIN:-ci}
+      Pipeline: ${CI_PIPELINE_URL}"
+      git push origin "${DEPLOY_BRANCH}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "deploy"'
+
+.deploy:blue-green:promote:
+  stage: deploy-production
+  image: bitnami/kubectl:latest
+  variables:
+    ROLLOUT_NAME: ""
+    ROLLOUT_NAMESPACE: ""
+  script:
+    - |
+      if [ -z "${ROLLOUT_NAME}" ] || [ -z "${ROLLOUT_NAMESPACE}" ]; then
+        echo "ROLLOUT_NAME or ROLLOUT_NAMESPACE not set — skipping promotion"
+        exit 0
+      fi
+      kubectl argo rollouts promote "${ROLLOUT_NAME}" -n "${ROLLOUT_NAMESPACE}"
+      echo "Promoted rollout ${ROLLOUT_NAME} in ${ROLLOUT_NAMESPACE}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "deploy"'
+      when: manual
