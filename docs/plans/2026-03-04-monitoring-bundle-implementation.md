@@ -560,7 +560,7 @@ find services/monitoring-stack/ -name '*.yaml' -not -name '*dashboard*' \
 ### Step 4: Security grep
 
 ```bash
-grep -rn "aegis\|/home/rocky\|derhornspieler" services/monitoring-stack/ scripts/deploy-monitoring.sh
+grep -rn "<ORG_NAME>\|/home/<USER>\|<GITHUB_USER>" services/monitoring-stack/ scripts/deploy-monitoring.sh
 ```
 Expected: zero matches.
 
