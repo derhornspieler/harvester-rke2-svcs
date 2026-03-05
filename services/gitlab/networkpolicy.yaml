@@ -18,11 +18,14 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Traefik ingress controller (webservice, shell, registry)
+    # Traefik ingress controller (runs in kube-system as RKE2 DaemonSet)
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: traefik
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rke2-traefik
       ports:
         - protocol: TCP
           port: 8181
@@ -30,6 +33,8 @@ spec:
           port: 8080
         - protocol: TCP
           port: 8443
+        - protocol: TCP
+          port: 22
     # Prometheus scraping metrics (redis-exporter, gitlab-exporter)
     - from:
         - namespaceSelector:

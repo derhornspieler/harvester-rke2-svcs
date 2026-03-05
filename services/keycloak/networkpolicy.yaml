@@ -18,11 +18,14 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Traefik ingress controller
+    # Traefik ingress controller (runs in kube-system as RKE2 DaemonSet)
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: traefik
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rke2-traefik
       ports:
         - protocol: TCP
           port: 8080
@@ -37,7 +40,7 @@ spec:
     # Intra-namespace communication (Keycloak <-> oauth2-proxy)
     - from:
         - podSelector: {}
-    # OIDC clients (Grafana, ArgoCD, GitLab, Harbor, Argo Workflows)
+    # OIDC clients (Grafana, ArgoCD, GitLab, Harbor, Argo Workflows, Argo Rollouts, Hubble)
     - from:
         - namespaceSelector:
             matchExpressions:
@@ -49,6 +52,8 @@ spec:
                   - gitlab
                   - harbor
                   - argo-workflows
+                  - argo-rollouts
+                  - kube-system
       ports:
         - protocol: TCP
           port: 8080

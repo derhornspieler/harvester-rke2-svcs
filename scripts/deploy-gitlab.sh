@@ -78,6 +78,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Temp files for Helm values — single trap cleans all on exit
+_gitlab_values=""
+_shared_values=""
+_security_values=""
+_group_values=""
+trap 'rm -f "$_gitlab_values" "$_shared_values" "$_security_values" "$_group_values"' EXIT
+
 # Validation mode
 if [[ "$VALIDATE_ONLY" == "true" ]]; then
   start_phase "Validation: GitLab Health Check"
@@ -302,7 +309,6 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
 
   # Substitute CHANGEME tokens in values file before passing to Helm
   _gitlab_values=$(mktemp /tmp/gitlab-values.XXXXXX.yaml)
-  trap 'rm -f "$_gitlab_values"' EXIT
   _subst_changeme < "${GITLAB_DIR}/values-rke2-prod.yaml" > "$_gitlab_values"
   chmod 600 "$_gitlab_values"
   helm_install_if_needed gitlab "$HELM_CHART_GITLAB" gitlab \
@@ -364,7 +370,6 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   # Shared runner
   log_info "Installing shared runner..."
   _shared_values=$(mktemp /tmp/shared-runner-values.XXXXXX.yaml)
-  trap 'rm -f "$_shared_values"' EXIT
   _subst_changeme < "${GITLAB_DIR}/runners/shared-runner-values.yaml" > "$_shared_values"
   chmod 600 "$_shared_values"
   helm_install_if_needed gitlab-runner-shared "$HELM_CHART_RUNNER" gitlab-runners \
@@ -375,7 +380,6 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   # Security runner
   log_info "Installing security runner..."
   _security_values=$(mktemp /tmp/security-runner-values.XXXXXX.yaml)
-  trap 'rm -f "$_security_values"' EXIT
   _subst_changeme < "${GITLAB_DIR}/runners/security-runner-values.yaml" > "$_security_values"
   chmod 600 "$_security_values"
   helm_install_if_needed gitlab-runner-security "$HELM_CHART_RUNNER" gitlab-runners \
@@ -386,7 +390,6 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   # Group runner (platform-services)
   log_info "Installing group runner..."
   _group_values=$(mktemp /tmp/group-runner-values.XXXXXX.yaml)
-  trap 'rm -f "$_group_values"' EXIT
   _subst_changeme < "${GITLAB_DIR}/runners/group-runner-values.yaml" > "$_group_values"
   chmod 600 "$_group_values"
   helm_install_if_needed gitlab-runner-group "$HELM_CHART_RUNNER" gitlab-runners \

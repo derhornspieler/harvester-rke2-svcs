@@ -18,14 +18,17 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Traefik ingress controller
+    # Traefik ingress controller (ArgoCD server listens on container port 8080)
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: traefik
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rke2-traefik
       ports:
         - protocol: TCP
-          port: 80
+          port: 8080
     # Prometheus scraping metrics (server, repo-server, application-controller)
     - from:
         - namespaceSelector:

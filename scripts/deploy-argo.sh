@@ -77,6 +77,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Temp files for Helm values — single trap cleans all on exit
+_argocd_values=""
+_rollouts_values=""
+_workflows_values=""
+trap 'rm -f "$_argocd_values" "$_rollouts_values" "$_workflows_values"' EXIT
+
 # Validation mode
 if [[ "$VALIDATE_ONLY" == "true" ]]; then
   start_phase "Validation: Argo Platform Health Check"
@@ -187,7 +193,6 @@ fi
 if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   start_phase "Phase 3: ArgoCD Helm Install"
   _argocd_values=$(mktemp /tmp/argocd-values.XXXXXX.yaml)
-  trap 'rm -f "$_argocd_values"' EXIT
   _subst_changeme < "${REPO_ROOT}/services/argo/argocd/argocd-values.yaml" > "$_argocd_values"
   chmod 600 "$_argocd_values"
   helm_install_if_needed argocd "$HELM_CHART_ARGOCD" argocd \
@@ -203,7 +208,6 @@ fi
 if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   start_phase "Phase 4: Argo Rollouts Helm Install"
   _rollouts_values=$(mktemp /tmp/rollouts-values.XXXXXX.yaml)
-  trap 'rm -f "$_rollouts_values"' EXIT
   _subst_changeme < "${REPO_ROOT}/services/argo/argo-rollouts/argo-rollouts-values.yaml" > "$_rollouts_values"
   chmod 600 "$_rollouts_values"
   helm_install_if_needed argo-rollouts "$HELM_CHART_ROLLOUTS" argo-rollouts \
@@ -219,7 +223,6 @@ fi
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   start_phase "Phase 5: Argo Workflows Helm Install"
   _workflows_values=$(mktemp /tmp/workflows-values.XXXXXX.yaml)
-  trap 'rm -f "$_workflows_values"' EXIT
   _subst_changeme < "${REPO_ROOT}/services/argo/argo-workflows/argo-workflows-values.yaml" > "$_workflows_values"
   chmod 600 "$_workflows_values"
   helm_install_if_needed argo-workflows "$HELM_CHART_WORKFLOWS" argo-workflows \
