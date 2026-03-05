@@ -36,13 +36,14 @@ kubectl get nodes
 
 ### Cluster Operators
 
-Bundle 2 (Identity) installs the CNPG operator automatically in Phase 1.
-Bundles 4 and 6 require the following operator to be pre-installed:
+Bundle 2 (Identity) installs the CNPG operator automatically during Phase 1.
+The Redis operators must be pre-installed:
 
-| Operator | Required by | Purpose |
-|----------|-------------|---------|
-| CNPG (CloudNativePG) | Keycloak (auto-installed), Harbor, GitLab | HA PostgreSQL clusters |
-| Redis operator (Spotahome for Harbor Valkey, OpsTree for GitLab Redis) | Harbor, GitLab | Redis Sentinel HA |
+| Operator | Required by | Installation |
+|----------|-------------|--------------|
+| CNPG (CloudNativePG) | Keycloak, Harbor, GitLab | **Auto-installed in Bundle 2, Phase 1** |
+| Redis operator (Spotahome) | Harbor (Valkey Sentinel) | Must be pre-installed |
+| Redis operator (OpsTree) | GitLab (Redis Sentinel) | Must be pre-installed |
 
 ## Step 1: Clone the Repository
 
@@ -230,7 +231,7 @@ and `setup-keycloak.sh` configures Keycloak via the Admin REST API.
 
 | Phase | Duration | What it does |
 |-------|----------|--------------|
-| 1 | ~3 min | Installs CNPG operator + deploys shared MinIO (skip if exists) |
+| 1 | ~3 min | Installs CNPG operator, deploys shared MinIO (skip if exists) |
 | 2 | ~10 sec | Creates `keycloak`, `database` namespaces |
 | 3 | ~30 sec | Applies ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
 | 4 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
