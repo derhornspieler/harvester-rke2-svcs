@@ -5,7 +5,7 @@ Full observability stack: metrics (Prometheus), dashboards (Grafana), logs (Loki
 ## Architecture
 
 - **Prometheus** — metrics collection, 30-day retention, 50Gi PVC, auto-scaling via VolumeAutoscaler
-- **Grafana** — 18 dashboards (15 platform + 3 from Bundle 1), HPA 2-4 replicas, native OIDC (Bundle 4)
+- **Grafana** — 18 dashboards (15 platform + 3 from Bundle 1), HPA 2-4 replicas, native OIDC (Bundle 2)
 - **Alertmanager** — alert routing (critical/warning/default receivers), HTTP listener on port 9093
 - **Loki** — log aggregation, 30-day retention (720h), TSDB v13, auto-scaling via VolumeAutoscaler, startupProbe for graceful initialization, hardened securityContext (non-root, read-only filesystem)
 - **Alloy** — DaemonSet log collector (pod logs, journal, K8s events)
@@ -39,7 +39,7 @@ Optional Helm chart overrides:
 | Prometheus | `https://prometheus.<DOMAIN>` | Basic-auth (admin/admin) |
 | Alertmanager | `https://alertmanager.<DOMAIN>` | Basic-auth (admin/admin) |
 
-Basic-auth is a placeholder — replaced by Keycloak OIDC in Bundle 4.
+Basic-auth is a placeholder — replaced by Keycloak OIDC in Bundle 2.
 
 ## Dashboards (18)
 

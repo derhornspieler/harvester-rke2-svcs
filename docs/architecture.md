@@ -15,7 +15,13 @@ graph TB
         ESO["ESO"]
     end
 
-    subgraph "Bundle 2: Monitoring"
+    subgraph "Bundle 2: Identity"
+        KC["Keycloak"]
+        OAuth["OAuth2-proxy"]
+        CNPG2["CNPG PostgreSQL"]
+    end
+
+    subgraph "Bundle 3: Monitoring"
         Prom["Prometheus"]
         Graf["Grafana"]
         AM["Alertmanager"]
@@ -23,17 +29,11 @@ graph TB
         Alloy["Alloy"]
     end
 
-    subgraph "Bundle 3: Harbor"
+    subgraph "Bundle 4: Harbor"
         Harbor["Harbor"]
         MinIO["MinIO"]
         CNPG1["CNPG PostgreSQL"]
         Valkey["Valkey Sentinel"]
-    end
-
-    subgraph "Bundle 4: Identity"
-        KC["Keycloak"]
-        OAuth["OAuth2-proxy"]
-        CNPG2["CNPG PostgreSQL"]
     end
 
     subgraph "Bundle 5: GitOps"
@@ -111,18 +111,18 @@ graph TB
 | **cert-manager** | Requests and renews TLS leaf certificates from Vault | `cert-manager` | 1 |
 | **External Secrets Operator (ESO)** | Syncs Vault KV v2 secrets to Kubernetes Secrets | `external-secrets` | 1 |
 | **PKI tooling** | Offline Root CA generation and chain verification | Local (not deployed) | 1 |
-| **Prometheus** | Metrics collection, alerting rules evaluation | `monitoring` | 2 |
-| **Grafana** | Metrics and log visualization, dashboards | `monitoring` | 2 |
-| **Alertmanager** | Alert routing, deduplication, notification | `monitoring` | 2 |
-| **Loki** | Log aggregation (single-binary mode) | `monitoring` | 2 |
-| **Alloy** | Log collection agent (DaemonSet) | `monitoring` | 2 |
-| **Harbor** | Container image registry with vulnerability scanning | `harbor` | 3 |
-| **MinIO** | S3-compatible object storage for Harbor | `minio` | 3 |
-| **CNPG PostgreSQL (Harbor)** | HA PostgreSQL cluster for Harbor metadata | `database` | 3 |
-| **Valkey Sentinel** | Redis-compatible cache with HA sentinel | `harbor` | 3 |
-| **Keycloak** | OIDC identity provider, realm/user/client management | `keycloak` | 4 |
-| **OAuth2-proxy** | OIDC authentication proxy for Prometheus, Alertmanager, Hubble | `keycloak` | 4 |
-| **CNPG PostgreSQL (Keycloak)** | HA PostgreSQL cluster for Keycloak | `database` | 4 |
+| **Keycloak** | OIDC identity provider, realm/user/client management | `keycloak` | 2 |
+| **OAuth2-proxy** | OIDC authentication proxy for Prometheus, Alertmanager, Hubble | `keycloak` | 2 |
+| **CNPG PostgreSQL (Keycloak)** | HA PostgreSQL cluster for Keycloak | `database` | 2 |
+| **Prometheus** | Metrics collection, alerting rules evaluation | `monitoring` | 3 |
+| **Grafana** | Metrics and log visualization, dashboards | `monitoring` | 3 |
+| **Alertmanager** | Alert routing, deduplication, notification | `monitoring` | 3 |
+| **Loki** | Log aggregation (single-binary mode) | `monitoring` | 3 |
+| **Alloy** | Log collection agent (DaemonSet) | `monitoring` | 3 |
+| **Harbor** | Container image registry with vulnerability scanning | `harbor` | 4 |
+| **MinIO** | S3-compatible object storage for Harbor | `minio` | 4 |
+| **CNPG PostgreSQL (Harbor)** | HA PostgreSQL cluster for Harbor metadata | `database` | 4 |
+| **Valkey Sentinel** | Redis-compatible cache with HA sentinel | `harbor` | 4 |
 | **ArgoCD** | GitOps continuous delivery, HA server with OIDC SSO | `argocd` | 5 |
 | **Argo Rollouts** | Progressive delivery (canary/blue-green) with Gateway API traffic management | `argo-rollouts` | 5 |
 | **Argo Workflows** | Workflow engine for CI/CD pipelines and automation | `argo-workflows` | 5 |
@@ -226,7 +226,105 @@ sequenceDiagram
 
 ---
 
-## Bundle 2: Monitoring
+## Bundle 2: Identity
+
+### Identity Architecture
+
+Keycloak provides centralized OIDC identity management. OAuth2-proxy instances
+sit in front of services that lack native OIDC support (Prometheus, Alertmanager,
+Hubble), authenticating users against Keycloak before proxying requests.
+
+```mermaid
+graph TB
+    subgraph "keycloak namespace"
+        KC["Keycloak<br/>(OIDC provider)"]
+        OAuth_P["OAuth2-proxy<br/>(Prometheus)"]
+        OAuth_A["OAuth2-proxy<br/>(Alertmanager)"]
+        OAuth_H["OAuth2-proxy<br/>(Hubble)"]
+        GW2["Gateway<br/>(Traefik)"]
+        HR2["HTTPRoute"]
+    end
+
+    subgraph "database namespace"
+        PG2["CNPG PostgreSQL<br/>(3-instance HA)"]
+    end
+
+    subgraph "monitoring namespace"
+        Prom2["Prometheus"]
+        AM2["Alertmanager"]
+        Graf2["Grafana"]
+    end
+
+    GW2 --> HR2 --> KC
+    KC --> PG2
+
+    OAuth_P -->|forward auth| Prom2
+    OAuth_A -->|forward auth| AM2
+    Graf2 -->|native OIDC| KC
+
+    KC -->|OIDC tokens| OAuth_P
+    KC -->|OIDC tokens| OAuth_A
+    KC -->|OIDC tokens| OAuth_H
+
+    style KC fill:#7b1fa2,color:#fff
+    style OAuth_P fill:#7b1fa2,color:#fff
+    style OAuth_A fill:#7b1fa2,color:#fff
+    style OAuth_H fill:#7b1fa2,color:#fff
+    style PG2 fill:#388e3c,color:#fff
+    style Prom2 fill:#e65100,color:#fff
+    style AM2 fill:#e65100,color:#fff
+    style Graf2 fill:#f57c00,color:#fff
+```
+
+**Key design decisions:**
+
+- **Keycloak** runs as a Deployment (not StatefulSet) with HPA. Session
+  state is externalized to PostgreSQL, enabling horizontal scaling.
+- **CNPG PostgreSQL** runs a 3-instance HA cluster in the shared `database`
+  namespace (same namespace as Harbor's PostgreSQL, different cluster name).
+- **OAuth2-proxy** runs as separate deployments per protected service, each
+  with its own OIDC client credentials stored in Vault and synced via ESO.
+- **Traefik ForwardAuth middleware** integrates OAuth2-proxy into the request
+  path. The middleware checks authentication before forwarding to the upstream.
+- **setup-keycloak.sh** is a post-deploy script that configures Keycloak via
+  the Admin REST API: creates the realm, breakglass user, OIDC clients, groups,
+  and authentication flows.
+- **Grafana** uses native OIDC integration (configured in Helm values) rather
+  than OAuth2-proxy.
+
+### Identity Flow: OAuth2-proxy Authentication
+
+```mermaid
+sequenceDiagram
+    participant User as Browser
+    participant GW as Gateway (Traefik)
+    participant MW as ForwardAuth<br/>Middleware
+    participant OP as OAuth2-proxy
+    participant KC as Keycloak
+    participant Svc as Upstream Service<br/>(Prometheus / Alertmanager)
+
+    User->>GW: GET https://prometheus.example.com
+    GW->>MW: Check ForwardAuth
+    MW->>OP: Forward auth request
+    OP-->>User: 302 Redirect to Keycloak
+    User->>KC: Login (username + password)
+    KC-->>User: 302 Redirect with auth code
+    User->>OP: Callback with auth code
+    OP->>KC: Exchange code for tokens
+    KC-->>OP: ID token + access token
+    OP-->>User: Set session cookie, 302 to original URL
+    User->>GW: GET (with session cookie)
+    GW->>MW: Check ForwardAuth
+    MW->>OP: Validate session
+    OP-->>MW: 200 OK (authenticated)
+    MW-->>GW: Pass through
+    GW->>Svc: Proxy request to upstream
+    Svc-->>User: Response
+```
+
+---
+
+## Bundle 3: Monitoring
 
 ### Monitoring Architecture
 
@@ -326,7 +424,7 @@ Every service includes ServiceMonitors, PrometheusRules, and Grafana dashboards:
 
 ---
 
-## Bundle 3: Harbor
+## Bundle 4: Harbor
 
 ### Harbor Architecture
 
@@ -412,104 +510,6 @@ sequenceDiagram
     Core->>DB: Record image metadata
 
     Note over Core,Reg: Trivy scans run asynchronously via Jobservice
-```
-
----
-
-## Bundle 4: Identity
-
-### Identity Architecture
-
-Keycloak provides centralized OIDC identity management. OAuth2-proxy instances
-sit in front of services that lack native OIDC support (Prometheus, Alertmanager,
-Hubble), authenticating users against Keycloak before proxying requests.
-
-```mermaid
-graph TB
-    subgraph "keycloak namespace"
-        KC["Keycloak<br/>(OIDC provider)"]
-        OAuth_P["OAuth2-proxy<br/>(Prometheus)"]
-        OAuth_A["OAuth2-proxy<br/>(Alertmanager)"]
-        OAuth_H["OAuth2-proxy<br/>(Hubble)"]
-        GW2["Gateway<br/>(Traefik)"]
-        HR2["HTTPRoute"]
-    end
-
-    subgraph "database namespace"
-        PG2["CNPG PostgreSQL<br/>(3-instance HA)"]
-    end
-
-    subgraph "monitoring namespace"
-        Prom2["Prometheus"]
-        AM2["Alertmanager"]
-        Graf2["Grafana"]
-    end
-
-    GW2 --> HR2 --> KC
-    KC --> PG2
-
-    OAuth_P -->|forward auth| Prom2
-    OAuth_A -->|forward auth| AM2
-    Graf2 -->|native OIDC| KC
-
-    KC -->|OIDC tokens| OAuth_P
-    KC -->|OIDC tokens| OAuth_A
-    KC -->|OIDC tokens| OAuth_H
-
-    style KC fill:#7b1fa2,color:#fff
-    style OAuth_P fill:#7b1fa2,color:#fff
-    style OAuth_A fill:#7b1fa2,color:#fff
-    style OAuth_H fill:#7b1fa2,color:#fff
-    style PG2 fill:#388e3c,color:#fff
-    style Prom2 fill:#e65100,color:#fff
-    style AM2 fill:#e65100,color:#fff
-    style Graf2 fill:#f57c00,color:#fff
-```
-
-**Key design decisions:**
-
-- **Keycloak** runs as a Deployment (not StatefulSet) with HPA. Session
-  state is externalized to PostgreSQL, enabling horizontal scaling.
-- **CNPG PostgreSQL** runs a 3-instance HA cluster in the shared `database`
-  namespace (same namespace as Harbor's PostgreSQL, different cluster name).
-- **OAuth2-proxy** runs as separate deployments per protected service, each
-  with its own OIDC client credentials stored in Vault and synced via ESO.
-- **Traefik ForwardAuth middleware** integrates OAuth2-proxy into the request
-  path. The middleware checks authentication before forwarding to the upstream.
-- **setup-keycloak.sh** is a post-deploy script that configures Keycloak via
-  the Admin REST API: creates the realm, breakglass user, OIDC clients, groups,
-  and authentication flows.
-- **Grafana** uses native OIDC integration (configured in Helm values) rather
-  than OAuth2-proxy.
-
-### Identity Flow: OAuth2-proxy Authentication
-
-```mermaid
-sequenceDiagram
-    participant User as Browser
-    participant GW as Gateway (Traefik)
-    participant MW as ForwardAuth<br/>Middleware
-    participant OP as OAuth2-proxy
-    participant KC as Keycloak
-    participant Svc as Upstream Service<br/>(Prometheus / Alertmanager)
-
-    User->>GW: GET https://prometheus.example.com
-    GW->>MW: Check ForwardAuth
-    MW->>OP: Forward auth request
-    OP-->>User: 302 Redirect to Keycloak
-    User->>KC: Login (username + password)
-    KC-->>User: 302 Redirect with auth code
-    User->>OP: Callback with auth code
-    OP->>KC: Exchange code for tokens
-    KC-->>OP: ID token + access token
-    OP-->>User: Set session cookie, 302 to original URL
-    User->>GW: GET (with session cookie)
-    GW->>MW: Check ForwardAuth
-    MW->>OP: Validate session
-    OP-->>MW: 200 OK (authenticated)
-    MW-->>GW: Pass through
-    GW->>Svc: Proxy request to upstream
-    Svc-->>User: Response
 ```
 
 ---
@@ -734,18 +734,18 @@ The bundles are deployed in order, each building on the previous:
 ```mermaid
 flowchart LR
     B1["Bundle 1<br/>PKI &amp; Secrets<br/>(7 phases)"]
-    B2["Bundle 2<br/>Monitoring<br/>(6 phases)"]
-    B3["Bundle 3<br/>Harbor<br/>(8 phases)"]
-    B4["Bundle 4<br/>Identity<br/>(7+6 phases)"]
+    B2["Bundle 2<br/>Identity<br/>(7+6 phases)"]
+    B3["Bundle 3<br/>Monitoring<br/>(6 phases)"]
+    B4["Bundle 4<br/>Harbor<br/>(8 phases)"]
     B5["Bundle 5<br/>GitOps<br/>(7 phases)"]
     B6["Bundle 6<br/>Git &amp; CI<br/>(9 phases)"]
 
     B1 --> B2 --> B3 --> B4 --> B5 --> B6
 
     style B1 fill:#1565c0,color:#fff
-    style B2 fill:#e65100,color:#fff
-    style B3 fill:#1565c0,color:#fff
-    style B4 fill:#7b1fa2,color:#fff
+    style B2 fill:#7b1fa2,color:#fff
+    style B3 fill:#e65100,color:#fff
+    style B4 fill:#1565c0,color:#fff
     style B5 fill:#ef6c00,color:#fff
     style B6 fill:#e65100,color:#fff
 ```
@@ -789,35 +789,7 @@ flowchart LR
 needs the key. After Phase 3 completes, the Root CA key can be returned to
 offline storage.
 
-### Bundle 2: Monitoring (6 Phases)
-
-Script: `scripts/deploy-monitoring.sh`
-
-| Phase | Component | What happens |
-|-------|-----------|--------------|
-| 1 | Namespace + Loki + Alloy | Create `monitoring` namespace, deploy Loki StatefulSet and Alloy DaemonSet |
-| 2 | Scrape Configs Secret | Create additional Prometheus scrape configs as a Kubernetes Secret |
-| 3 | kube-prometheus-stack | Helm install (Prometheus, Grafana, Alertmanager, operator) |
-| 4 | PrometheusRules + ServiceMonitors | Apply alert rules, service monitors, and per-service monitoring from Bundle 1 |
-| 5 | Gateways + HTTPRoutes + Auth | Create basic-auth secrets, apply ingress routes for Grafana, Prometheus, Alertmanager; deploy dashboards |
-| 6 | Verify | Wait for Grafana, Prometheus, and TLS secrets to become ready |
-
-### Bundle 3: Harbor (8 Phases)
-
-Script: `scripts/deploy-harbor.sh`
-
-| Phase | Component | What happens |
-|-------|-----------|--------------|
-| 1 | Namespaces | Create `harbor`, `minio`, `database` namespaces |
-| 2 | ESO SecretStores | Create Vault K8s auth roles/policies, SecretStores, and ExternalSecrets for MinIO, PostgreSQL, Valkey |
-| 3 | MinIO | Deploy MinIO with PVC, create S3 buckets for Harbor |
-| 4 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
-| 5 | Valkey Sentinel | Deploy RedisReplication + RedisSentinel for Harbor cache |
-| 6 | Harbor Helm | Helm install Harbor with substituted values |
-| 7 | Ingress + HPAs | Apply Gateway, HTTPRoute, and HorizontalPodAutoscalers |
-| 8 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for Harbor, MinIO, Valkey |
-
-### Bundle 4: Identity (7 + 6 Phases)
+### Bundle 2: Identity (7 + 6 Phases)
 
 Scripts: `scripts/deploy-keycloak.sh` + `scripts/setup-keycloak.sh`
 
@@ -844,6 +816,34 @@ Scripts: `scripts/deploy-keycloak.sh` + `scripts/setup-keycloak.sh`
 | 5 | Auth Flow | Copy browser flow to `browser-prompt-login`, set as realm default |
 | 6 | Validation | Print summary of all created resources |
 
+### Bundle 3: Monitoring (6 Phases)
+
+Script: `scripts/deploy-monitoring.sh`
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespace + Loki + Alloy | Create `monitoring` namespace, deploy Loki StatefulSet and Alloy DaemonSet |
+| 2 | Scrape Configs Secret | Create additional Prometheus scrape configs as a Kubernetes Secret |
+| 3 | kube-prometheus-stack | Helm install (Prometheus, Grafana, Alertmanager, operator) |
+| 4 | PrometheusRules + ServiceMonitors | Apply alert rules, service monitors, and per-service monitoring from Bundle 1 |
+| 5 | Gateways + HTTPRoutes + Auth | Create basic-auth secrets, apply ingress routes for Grafana, Prometheus, Alertmanager; deploy dashboards |
+| 6 | Verify | Wait for Grafana, Prometheus, and TLS secrets to become ready |
+
+### Bundle 4: Harbor (8 Phases)
+
+Script: `scripts/deploy-harbor.sh`
+
+| Phase | Component | What happens |
+|-------|-----------|--------------|
+| 1 | Namespaces | Create `harbor`, `minio`, `database` namespaces |
+| 2 | ESO SecretStores | Create Vault K8s auth roles/policies, SecretStores, and ExternalSecrets for MinIO, PostgreSQL, Valkey |
+| 3 | MinIO | Deploy MinIO with PVC, create S3 buckets for Harbor |
+| 4 | PostgreSQL CNPG | Deploy 3-instance HA PostgreSQL cluster, configure scheduled backups |
+| 5 | Valkey Sentinel | Deploy RedisReplication + RedisSentinel for Harbor cache |
+| 6 | Harbor Helm | Helm install Harbor with substituted values |
+| 7 | Ingress + HPAs | Apply Gateway, HTTPRoute, and HorizontalPodAutoscalers |
+| 8 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for Harbor, MinIO, Valkey |
+
 ### Bundle 5: GitOps (7 Phases)
 
 Script: `scripts/deploy-argo.sh`
@@ -859,6 +859,8 @@ Script: `scripts/deploy-argo.sh`
 | 7 | Monitoring + Verify | Apply dashboards, alerts, and ServiceMonitors for all three Argo components |
 
 ### Bundle 6: Git & CI (9 Phases)
+
+Script: `scripts/deploy-gitlab.sh`
 
 Script: `scripts/deploy-gitlab.sh`
 

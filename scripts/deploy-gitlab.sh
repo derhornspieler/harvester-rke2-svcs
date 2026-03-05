@@ -254,9 +254,11 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
     if [[ -n "${primary_pod:-}" ]]; then
       log_info "Setting praefect user password via ${primary_pod}..."
+      # Escape single quotes to prevent SQL injection (defense-in-depth)
+      escaped_password="${praefect_password//\'/\'\'}"
       if kubectl -n database exec "$primary_pod" -- \
         psql -U postgres -d gitlabhq_production \
-        -c "ALTER USER praefect WITH PASSWORD '${praefect_password}';" 2>/dev/null; then
+        -c "ALTER USER praefect WITH PASSWORD '${escaped_password}';" 2>/dev/null; then
         log_ok "Praefect user password configured"
       else
         log_warn "Failed to set praefect password (may require superuser access or manual setup)"
@@ -299,11 +301,14 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   helm_repo_add gitlab "$HELM_REPO_GITLAB"
 
   # Substitute CHANGEME tokens in values file before passing to Helm
-  _subst_changeme < "${GITLAB_DIR}/values-rke2-prod.yaml" > /tmp/gitlab-values.yaml
+  _gitlab_values=$(mktemp /tmp/gitlab-values.XXXXXX.yaml)
+  trap 'rm -f "$_gitlab_values"' EXIT
+  _subst_changeme < "${GITLAB_DIR}/values-rke2-prod.yaml" > "$_gitlab_values"
+  chmod 600 "$_gitlab_values"
   helm_install_if_needed gitlab "$HELM_CHART_GITLAB" gitlab \
-    -f /tmp/gitlab-values.yaml \
+    -f "$_gitlab_values" \
     --timeout 30m
-  rm -f /tmp/gitlab-values.yaml
+  rm -f "$_gitlab_values"
 
   # Wait for database migrations job (can take 20-30 min on first install)
   log_info "Waiting for GitLab migrations job to complete (timeout: 1800s)..."
@@ -358,27 +363,36 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
 
   # Shared runner
   log_info "Installing shared runner..."
-  _subst_changeme < "${GITLAB_DIR}/runners/shared-runner-values.yaml" > /tmp/shared-runner-values.yaml
+  _shared_values=$(mktemp /tmp/shared-runner-values.XXXXXX.yaml)
+  trap 'rm -f "$_shared_values"' EXIT
+  _subst_changeme < "${GITLAB_DIR}/runners/shared-runner-values.yaml" > "$_shared_values"
+  chmod 600 "$_shared_values"
   helm_install_if_needed gitlab-runner-shared "$HELM_CHART_RUNNER" gitlab-runners \
-    -f /tmp/shared-runner-values.yaml \
+    -f "$_shared_values" \
     --wait --timeout 5m
-  rm -f /tmp/shared-runner-values.yaml
+  rm -f "$_shared_values"
 
   # Security runner
   log_info "Installing security runner..."
-  _subst_changeme < "${GITLAB_DIR}/runners/security-runner-values.yaml" > /tmp/security-runner-values.yaml
+  _security_values=$(mktemp /tmp/security-runner-values.XXXXXX.yaml)
+  trap 'rm -f "$_security_values"' EXIT
+  _subst_changeme < "${GITLAB_DIR}/runners/security-runner-values.yaml" > "$_security_values"
+  chmod 600 "$_security_values"
   helm_install_if_needed gitlab-runner-security "$HELM_CHART_RUNNER" gitlab-runners \
-    -f /tmp/security-runner-values.yaml \
+    -f "$_security_values" \
     --wait --timeout 5m
-  rm -f /tmp/security-runner-values.yaml
+  rm -f "$_security_values"
 
   # Group runner (platform-services)
   log_info "Installing group runner..."
-  _subst_changeme < "${GITLAB_DIR}/runners/group-runner-values.yaml" > /tmp/group-runner-values.yaml
+  _group_values=$(mktemp /tmp/group-runner-values.XXXXXX.yaml)
+  trap 'rm -f "$_group_values"' EXIT
+  _subst_changeme < "${GITLAB_DIR}/runners/group-runner-values.yaml" > "$_group_values"
+  chmod 600 "$_group_values"
   helm_install_if_needed gitlab-runner-group "$HELM_CHART_RUNNER" gitlab-runners \
-    -f /tmp/group-runner-values.yaml \
+    -f "$_group_values" \
     --wait --timeout 5m
-  rm -f /tmp/group-runner-values.yaml
+  rm -f "$_group_values"
 
   end_phase "Phase 7: GitLab Runners"
 fi
@@ -394,6 +408,10 @@ fi
 if [[ $PHASE_FROM -le 9 && $PHASE_TO -ge 9 ]]; then
   start_phase "Phase 9: Monitoring + Verify"
   kubectl apply -k "${GITLAB_DIR}/monitoring/"
+  # NetworkPolicies
+  log_info "Applying NetworkPolicies for GitLab services..."
+  kubectl apply -f "${REPO_ROOT}/services/gitlab/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/gitlab/runners/networkpolicy.yaml"
 
   # Verify HTTPS endpoint
   log_info "Verifying GitLab HTTPS endpoint..."

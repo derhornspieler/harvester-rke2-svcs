@@ -36,11 +36,12 @@ kubectl get nodes
 
 ### Cluster Operators
 
-Bundles 3, 4, and 6 require these operators to be pre-installed on the cluster:
+Bundle 2 (Identity) installs the CNPG operator automatically in Phase 1.
+Bundles 4 and 6 require the following operator to be pre-installed:
 
 | Operator | Required by | Purpose |
 |----------|-------------|---------|
-| CNPG (CloudNativePG) | Harbor, Keycloak, GitLab | HA PostgreSQL clusters |
+| CNPG (CloudNativePG) | Keycloak (auto-installed), Harbor, GitLab | HA PostgreSQL clusters |
 | Redis operator (Spotahome for Harbor Valkey, OpsTree for GitLab Redis) | Harbor, GitLab | Redis Sentinel HA |
 
 ## Step 1: Clone the Repository
@@ -100,21 +101,21 @@ DOMAIN="example.com"
 ROOT_CA_CERT="${SCRIPT_DIR}/../services/pki/roots/root-ca.pem"
 ROOT_CA_KEY="/path/to/offline/root-ca-key.pem"
 
-# Monitoring passwords (required for Bundle 2)
+# Keycloak passwords (required for Bundle 2)
+KC_ADMIN_PASSWORD="<strong-password>"
+KEYCLOAK_DB_PASSWORD="<strong-password>"
+BREAKGLASS_PASSWORD="<strong-password>"
+
+# Monitoring passwords (required for Bundle 3)
 GRAFANA_ADMIN_PASSWORD="<strong-password>"
 PROM_BASIC_AUTH_PASS="<strong-password>"
 AM_BASIC_AUTH_PASS="<strong-password>"
 
-# Harbor passwords (required for Bundle 3)
+# Harbor passwords (required for Bundle 4)
 HARBOR_ADMIN_PASSWORD="<strong-password>"
 HARBOR_DB_PASSWORD="<strong-password>"
 HARBOR_REDIS_PASSWORD="<strong-password>"
 HARBOR_MINIO_SECRET_KEY="<strong-password>"
-
-# Keycloak passwords (required for Bundle 4)
-KC_ADMIN_PASSWORD="<strong-password>"
-KEYCLOAK_DB_PASSWORD="<strong-password>"
-BREAKGLASS_PASSWORD="<strong-password>"
 
 # Argo GitOps passwords (required for Bundle 5)
 ARGO_BASIC_AUTH_PASS="<strong-password>"
@@ -135,7 +136,7 @@ including Helm chart source overrides for private registries.
 
 ## Bundle 1: PKI & Secrets
 
-### Step 4: Deploy Bundle 1
+### Step 4: Deploy Bundle 1 (PKI & Secrets)
 
 Deploy all seven phases:
 
@@ -200,106 +201,11 @@ KV v2 engine at the paths expected by the ExternalSecret manifests. See the
 
 ---
 
-## Bundle 2: Monitoring
+## Bundle 2: Identity (Keycloak)
 
 ### Step 5: Deploy Bundle 2
 
-**Required environment variables:**
-
-| Variable | Description |
-|----------|-------------|
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin UI password |
-| `PROM_BASIC_AUTH_PASS` | Basic-auth password for Prometheus ingress |
-| `AM_BASIC_AUTH_PASS` | Basic-auth password for Alertmanager ingress |
-
-Deploy the monitoring stack:
-
-```bash
-./scripts/deploy-monitoring.sh
-```
-
-### What Happens During Bundle 2 Deployment
-
-| Phase | Duration | What it does |
-|-------|----------|--------------|
-| 1 | ~2 min | Creates `monitoring` namespace, deploys Loki StatefulSet and Alloy DaemonSet |
-| 2 | ~10 sec | Creates additional Prometheus scrape configs Secret |
-| 3 | ~5 min | Helm installs kube-prometheus-stack (Prometheus, Grafana, Alertmanager) |
-| 4 | ~30 sec | Applies PrometheusRules, ServiceMonitors, and per-service monitoring from Bundle 1 |
-| 5 | ~1 min | Creates basic-auth secrets, applies Gateways/HTTPRoutes for Grafana, Prometheus, Alertmanager; deploys dashboards |
-| 6 | ~2 min | Waits for Grafana, Prometheus, and TLS secrets to become ready |
-
-### Verify Bundle 2
-
-```bash
-./scripts/deploy-monitoring.sh --validate
-```
-
-After deployment, the following UIs are accessible:
-
-| Service | URL | Authentication |
-|---------|-----|---------------|
-| Grafana | `https://grafana.example.com` | Admin password (OIDC after Bundle 4) |
-| Prometheus | `https://prometheus.example.com` | Basic-auth (OIDC after Bundle 4) |
-| Alertmanager | `https://alertmanager.example.com` | Basic-auth (OIDC after Bundle 4) |
-
----
-
-## Bundle 3: Harbor
-
-### Step 6: Deploy Bundle 3
-
-**Required environment variables:**
-
-| Variable | Description |
-|----------|-------------|
-| `HARBOR_ADMIN_PASSWORD` | Harbor admin UI password |
-| `HARBOR_DB_PASSWORD` | PostgreSQL database password for Harbor |
-| `HARBOR_REDIS_PASSWORD` | Valkey/Redis password |
-| `HARBOR_MINIO_SECRET_KEY` | MinIO secret key (S3 access) |
-
-**Prerequisites:**
-- Bundle 1 must be deployed (Vault, ESO)
-- Secrets must be seeded in Vault KV v2 at the paths expected by
-  `services/harbor/*/external-secret.yaml`
-- CNPG operator must be installed
-- Redis operator must be installed
-
-Deploy Harbor:
-
-```bash
-./scripts/deploy-harbor.sh
-```
-
-### What Happens During Bundle 3 Deployment
-
-| Phase | Duration | What it does |
-|-------|----------|--------------|
-| 1 | ~10 sec | Creates `harbor`, `minio`, `database` namespaces |
-| 2 | ~1 min | Creates Vault K8s auth roles/policies, SecretStores, and ExternalSecrets |
-| 3 | ~2 min | Deploys MinIO with PVC storage, runs bucket creation job |
-| 4 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
-| 5 | ~2 min | Deploys Valkey RedisReplication + RedisSentinel |
-| 6 | ~5 min | Helm installs Harbor with substituted values |
-| 7 | ~1 min | Applies Gateway, HTTPRoute, HorizontalPodAutoscalers |
-| 8 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors |
-
-### Verify Bundle 3
-
-```bash
-./scripts/deploy-harbor.sh --validate
-```
-
-After deployment, Harbor is accessible at `https://harbor.example.com`.
-Log in with the admin credentials configured in Vault.
-
----
-
-## Bundle 4: Identity (Keycloak)
-
-### Step 7: Deploy Bundle 4
-
-Bundle 4 has two scripts: `deploy-keycloak.sh` deploys the infrastructure,
+Bundle 2 has two scripts: `deploy-keycloak.sh` deploys the infrastructure,
 and `setup-keycloak.sh` configures Keycloak via the Admin REST API.
 
 **Required environment variables:**
@@ -313,10 +219,8 @@ and `setup-keycloak.sh` configures Keycloak via the Admin REST API.
 
 **Prerequisites:**
 - Bundle 1 must be deployed (Vault, ESO)
-- Bundle 2 must be deployed (monitoring namespace exists for OAuth2-proxy targets)
 - Secrets must be seeded in Vault KV v2 at the paths expected by
   `services/keycloak/*/external-secret.yaml`
-- CNPG operator must be installed
 
 #### Deploy Keycloak Infrastructure
 
@@ -326,13 +230,14 @@ and `setup-keycloak.sh` configures Keycloak via the Admin REST API.
 
 | Phase | Duration | What it does |
 |-------|----------|--------------|
-| 1 | ~10 sec | Creates `keycloak`, `database` namespaces |
-| 2 | ~30 sec | Applies ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
-| 3 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
-| 4 | ~3 min | Deploys Keycloak (RBAC, services, deployment), verifies health endpoint |
-| 5 | ~1 min | Applies Gateway, HTTPRoute, HPA, verifies TLS certificate |
-| 6 | ~30 sec | Deploys OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; applies ForwardAuth middleware |
-| 7 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors |
+| 1 | ~3 min | Installs CNPG operator + deploys shared MinIO (skip if exists) |
+| 2 | ~10 sec | Creates `keycloak`, `database` namespaces |
+| 3 | ~30 sec | Applies ExternalSecrets for Keycloak admin, DB, and OIDC credentials |
+| 4 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
+| 5 | ~3 min | Deploys Keycloak (RBAC, services, deployment), verifies health endpoint |
+| 6 | ~1 min | Applies Gateway, HTTPRoute, HPA, verifies TLS certificate |
+| 7 | ~30 sec | Deploys OAuth2-proxy instances for Prometheus, Alertmanager, Hubble; applies ForwardAuth middleware |
+| 8 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors, NetworkPolicies |
 
 #### Configure Keycloak (Post-Deploy)
 
@@ -359,13 +264,112 @@ run the setup script to configure the realm, users, clients, and groups:
    real client secrets
 3. Configure Grafana OIDC in the kube-prometheus-stack Helm values
 
-### Verify Bundle 4
+### Verify Bundle 2
 
 ```bash
 ./scripts/deploy-keycloak.sh --validate
 ```
 
 After deployment, Keycloak is accessible at `https://keycloak.example.com`.
+
+---
+
+## Bundle 3: Monitoring
+
+### Step 6: Deploy Bundle 3
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin UI password |
+| `PROM_BASIC_AUTH_PASS` | Basic-auth password for Prometheus ingress |
+| `AM_BASIC_AUTH_PASS` | Basic-auth password for Alertmanager ingress |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Bundle 2 may be deployed (optional, for OIDC pre-configuration)
+
+Deploy the monitoring stack:
+
+```bash
+./scripts/deploy-monitoring.sh
+```
+
+### What Happens During Bundle 3 Deployment
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~2 min | Creates `monitoring` namespace, deploys Loki StatefulSet and Alloy DaemonSet |
+| 2 | ~10 sec | Creates additional Prometheus scrape configs Secret |
+| 3 | ~5 min | Helm installs kube-prometheus-stack (Prometheus, Grafana, Alertmanager) |
+| 4 | ~30 sec | Applies PrometheusRules, ServiceMonitors, and per-service monitoring from Bundle 1 |
+| 5 | ~1 min | Creates basic-auth secrets, applies Gateways/HTTPRoutes for Grafana, Prometheus, Alertmanager; deploys dashboards |
+| 6 | ~2 min | Waits for Grafana, Prometheus, and TLS secrets to become ready |
+
+### Verify Bundle 3
+
+```bash
+./scripts/deploy-monitoring.sh --validate
+```
+
+After deployment, the following UIs are accessible:
+
+| Service | URL | Authentication |
+|---------|-----|---------------|
+| Grafana | `https://grafana.example.com` | Admin password (OIDC after Bundle 2) |
+| Prometheus | `https://prometheus.example.com` | Basic-auth (OIDC after Bundle 2) |
+| Alertmanager | `https://alertmanager.example.com` | Basic-auth (OIDC after Bundle 2) |
+
+---
+
+## Bundle 4: Harbor
+
+### Step 7: Deploy Bundle 4
+
+**Required environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `HARBOR_ADMIN_PASSWORD` | Harbor admin UI password |
+| `HARBOR_DB_PASSWORD` | PostgreSQL database password for Harbor |
+| `HARBOR_REDIS_PASSWORD` | Valkey/Redis password |
+| `HARBOR_MINIO_SECRET_KEY` | MinIO secret key (S3 access) |
+
+**Prerequisites:**
+- Bundle 1 must be deployed (Vault, ESO)
+- Bundle 2 must be deployed (Identity - Keycloak for OIDC, CNPG operator installed via Keycloak deploy)
+- Secrets must be seeded in Vault KV v2 at the paths expected by
+  `services/harbor/*/external-secret.yaml`
+- Redis operator must be installed
+
+Deploy Harbor:
+
+```bash
+./scripts/deploy-harbor.sh
+```
+
+### What Happens During Bundle 4 Deployment
+
+| Phase | Duration | What it does |
+|-------|----------|--------------|
+| 1 | ~10 sec | Creates `harbor`, `minio`, `database` namespaces |
+| 2 | ~1 min | Creates Vault K8s auth roles/policies, SecretStores, and ExternalSecrets |
+| 3 | ~2 min | Deploys MinIO with PVC storage, runs bucket creation job |
+| 4 | ~5 min | Deploys 3-instance CNPG PostgreSQL HA cluster, configures scheduled backups |
+| 5 | ~2 min | Deploys Valkey RedisReplication + RedisSentinel |
+| 6 | ~5 min | Helm installs Harbor with substituted values |
+| 7 | ~1 min | Applies Gateway, HTTPRoute, HorizontalPodAutoscalers |
+| 8 | ~30 sec | Applies monitoring dashboards, alerts, ServiceMonitors |
+
+### Verify Bundle 4
+
+```bash
+./scripts/deploy-harbor.sh --validate
+```
+
+After deployment, Harbor is accessible at `https://harbor.example.com`.
+Log in with the admin credentials configured in Vault.
 
 ---
 
@@ -386,8 +390,8 @@ workflow automation.
 
 **Prerequisites:**
 - Bundle 1 must be deployed (Vault, ESO)
-- Bundle 2 must be deployed (Prometheus for AnalysisTemplate queries)
-- Bundle 4 must be deployed (Keycloak for ArgoCD OIDC SSO)
+- Bundle 2 must be deployed (Keycloak for ArgoCD OIDC SSO)
+- Bundle 3 must be deployed (Monitoring - Prometheus for AnalysisTemplate queries)
 - Secrets must be seeded in Vault KV v2 at the paths expected by the
   ExternalSecret manifests in `services/argo/`
 
@@ -442,12 +446,11 @@ GitLab Runner types.
 
 **Prerequisites:**
 - Bundle 1 must be deployed (Vault, ESO)
-- Bundle 2 must be deployed (monitoring namespace for ServiceMonitors)
-- Bundle 3 must be deployed (Harbor for Runner image push credentials)
-- Bundle 4 must be deployed (Keycloak for OIDC SSO)
+- Bundle 2 must be deployed (Keycloak for OIDC SSO, CNPG operator installed)
+- Bundle 3 must be deployed (Monitoring namespace for ServiceMonitors)
+- Bundle 4 must be deployed (Harbor for Runner image push credentials)
 - Secrets must be seeded in Vault KV v2 at the paths expected by the
   ExternalSecret manifests in `services/gitlab/`
-- CNPG operator must be installed
 - OpsTree Redis operator must be installed
 
 Deploy GitLab:
