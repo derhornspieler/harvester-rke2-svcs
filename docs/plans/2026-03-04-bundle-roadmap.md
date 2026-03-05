@@ -10,6 +10,7 @@
 - Secrets via ESO + Vault KV v2
 - Each bundle has a deploy script for bootstrap, ArgoCD manages steady-state later
 - GitLab SSH uses TCP Gateway listener (port 22 passthrough)
+- **NetworkPolicies** on all namespaces — default-deny-ingress + explicit allow rules (applied in final phase of each bundle)
 - **Resource requests only, no limits** — allows bursting, prevents artificial OOM kills
 - **HPA enabled** on stateless workloads (Grafana, OAuth2-proxy, ArgoCD server, GitLab Webservice, etc.)
 - **Storage autoscaler** on PVCs that grow (Prometheus TSDB, Loki, Gitaly, MinIO, CNPG WAL)
@@ -32,6 +33,8 @@
 
 | Service | Purpose |
 |---------|---------|
+| CNPG operator | Auto-installed for PostgreSQL HA (Keycloak, Harbor, GitLab) |
+| Shared MinIO | Auto-deployed for object storage (used by Harbor, GitLab backups) |
 | Keycloak | OIDC provider, single realm, group-based RBAC |
 | OAuth2-proxy | Auth proxy for non-OIDC services (Prometheus, Alertmanager, Hubble) |
 
@@ -42,8 +45,11 @@
 - Group-based access control per client
 - Clients: Grafana, ArgoCD, Harbor, Hubble, GitLab, Argo Workflows, Keycloak admin
 
+**Shared Infrastructure:**
+- CNPG operator installed in Phase 1 (used by Bundles 2, 4, 6 for PostgreSQL)
+- Shared MinIO deployed in Phase 1 (used by Harbor, GitLab backups)
+
 Depends on: Bundle 1 (TLS, secrets)
-- CNPG operator installed by this bundle for Keycloak PostgreSQL
 
 ---
 
@@ -55,6 +61,7 @@ Depends on: Bundle 1 (TLS, secrets)
 | Grafana | Dashboards (includes dashboards from source repo), native OIDC |
 | Loki | Log aggregation |
 | Alloy (Grafana Agent) | Log/metric shipping |
+| NetworkPolicy | Default-deny-ingress, allows Traefik and Prometheus scraping |
 
 Depends on: Bundle 1 (TLS, secrets)
 - Optional: Bundle 2 (Identity) for OIDC pre-configuration in Grafana
@@ -66,11 +73,12 @@ Depends on: Bundle 1 (TLS, secrets)
 | Service | Purpose |
 |---------|---------|
 | Harbor | Container registry + pull-through cache |
-| MinIO | S3-compatible object storage for Harbor |
-| CNPG (PostgreSQL) | Harbor database |
+| MinIO | S3-compatible object storage for Harbor (skip if already deployed in Bundle 2) |
+| CNPG (PostgreSQL) | Harbor database (uses operator from Bundle 2) |
 | Valkey | Harbor caching layer |
+| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping |
 
-Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator)
+Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator, shared MinIO)
 
 ---
 
@@ -78,9 +86,10 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator)
 
 | Service | Purpose |
 |---------|---------|
-| ArgoCD | GitOps engine (declarative service management) |
-| Argo Rollouts | Blue/green and canary deployment strategies |
+| ArgoCD | GitOps engine (declarative service management), OIDC SSO |
+| Argo Rollouts | Blue/green and canary deployment strategies, analysis templates |
 | Argo Workflows | Workflow automation, DAG-based pipelines |
+| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping |
 
 Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Monitoring for AnalysisTemplate queries)
 
@@ -91,9 +100,11 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Mon
 | Service | Purpose |
 |---------|---------|
 | GitLab (Ultimate) | Self-hosted Git server, licensed via registration key |
+| Praefect/Gitaly | Git repository storage with HA routing |
 | GitLab Runners | Kubernetes executor (CI jobs run as pods) |
-| CNPG (PostgreSQL) | GitLab database |
+| CNPG (PostgreSQL) | GitLab database (uses operator from Bundle 2) |
 | Redis Sentinel | GitLab caching/session/queue store |
+| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping, SSH on port 22 |
 
 **Notes:**
 - Ultimate license via registration key file (gitignored, from source repo)
@@ -101,28 +112,46 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Mon
 - GitLab SSH via TCP Gateway listener (port 22 passthrough)
 - Post-deploy research: GitLab Auto DevOps / Review Apps on K8s
 
-Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Monitoring for ServiceMonitors), Bundle 4 (Harbor for Runner images)
+Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator), Bundle 3 (Monitoring for ServiceMonitors), Bundle 4 (Harbor for Runner images)
 
 ---
 
 ## Dependency Graph
 
 ```
-Bundle 1: PKI & Secrets (DONE)
+Bundle 1: PKI & Secrets (7 phases)
+    ├─ CNPG operator (not yet)
+    ├─ Vault intermediate CA
+    ├─ TLS via cert-manager
+    └─ Secrets via ESO + Vault KV v2
     │
-    ├── Bundle 2: Identity (CNPG operator + MinIO + Keycloak)
-    │       │
-    │       ├── Bundle 3: Monitoring (with OIDC pre-configured)
-    │       │       │
-    │       │       └── Bundle 4: Harbor (reuses MinIO + CNPG)
-    │       │               │
-    │       │               ├── Bundle 5: GitOps & Workflows
-    │       │               │
-    │       │               └── Bundle 6: Git & CI
-    │       │
-    │       └── Bundle 4: Harbor (can deploy without Monitoring)
-    │
-    └── Bundle 3: Monitoring (can deploy without Identity, basic-auth fallback)
+    └── Bundle 2: Identity (8+6 phases) — installs CNPG operator + MinIO
+            ├─ Keycloak OIDC provider
+            ├─ CNPG operator (for all future PostgreSQL)
+            ├─ Shared MinIO (for Harbor, GitLab backups)
+            └─ OAuth2-proxy (for Prometheus, Alertmanager)
+            │
+            ├── Bundle 3: Monitoring (6 phases)
+            │       ├─ Prometheus + Grafana (OIDC ready)
+            │       ├─ Loki + Alloy (log pipeline)
+            │       └─ Alertmanager (with OAuth2-proxy)
+            │       │
+            │       ├── Bundle 5: GitOps (7 phases) — needs Monitoring for analysis
+            │       │       ├─ ArgoCD (OIDC + ServiceMonitors)
+            │       │       ├─ Argo Rollouts (analysis templates)
+            │       │       └─ Argo Workflows
+            │       │
+            │       └── Bundle 4: Harbor (8 phases) — can follow or precede Bundle 5
+            │               ├─ Harbor registry
+            │               ├─ MinIO (skip if exists from Bundle 2)
+            │               ├─ CNPG (reuses operator from Bundle 2)
+            │               └─ Valkey Sentinel
+            │               │
+            │               └── Bundle 6: Git & CI (9 phases)
+            │                       ├─ GitLab webservice + runners
+            │                       ├─ Praefect/Gitaly
+            │                       ├─ CNPG (reuses operator)
+            │                       └─ Redis Sentinel
 ```
 
 ## Out of Scope (Future Roadmap)

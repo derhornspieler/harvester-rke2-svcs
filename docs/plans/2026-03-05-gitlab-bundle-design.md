@@ -141,8 +141,8 @@ services/gitlab/
 ## Dependencies
 
 - Bundle 1 (PKI & Secrets): TLS, Vault, ESO
-- Bundle 2 (Monitoring): Prometheus, Grafana dashboards
-- Bundle 3 (Harbor): MinIO for CNPG backups, Harbor for runner image pushes
-- Bundle 4 (Identity): Keycloak OIDC for GitLab SSO
+- Bundle 2 (Identity): Keycloak OIDC for GitLab SSO, CNPG operator, shared MinIO
+- Bundle 3 (Monitoring): Prometheus, Grafana dashboards, ServiceMonitors
+- Bundle 4 (Harbor): Harbor for runner image pushes
 - Bundle 5 (GitOps): ArgoCD for deployment patterns in CI templates
-- CNPG Operator + Redis Operator: CRD dependencies
+- Redis Operator (OpsTree): For Redis Sentinel HA
