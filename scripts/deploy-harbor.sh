@@ -29,8 +29,9 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
 # Organization name (already in env from PKI bundle)
 ORG="${ORG:-My Organization}"
 
-# Helm chart source (Harbor uses OCI by default)
-HELM_CHART_HARBOR="${HELM_CHART_HARBOR:-oci://registry-1.docker.io/goharbor/harbor-helm}"
+# Helm chart source
+HELM_CHART_HARBOR="${HELM_CHART_HARBOR:-goharbor/harbor}"
+HELM_REPO_HARBOR="${HELM_REPO_HARBOR:-https://helm.goharbor.io}"
 
 # CLI Parsing
 PHASE_FROM=1
@@ -137,6 +138,39 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
 
+  # Seed Vault KV secrets for Harbor components
+  log_info "Seeding Vault KV secrets for Harbor..."
+
+  # Harbor PostgreSQL credentials
+  HARBOR_DB_USER="${HARBOR_DB_USER:-harbor}"
+  HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/database/harbor-pg \
+    username="$HARBOR_DB_USER" \
+    password="$HARBOR_DB_PASSWORD"
+  export HARBOR_DB_PASSWORD
+
+  # CNPG MinIO backup credentials (reuse MinIO root creds)
+  MINIO_ROOT_USER=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault kv get -field=root-user kv/services/minio/root-credentials 2>/dev/null) || true
+  MINIO_ROOT_PASSWORD=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault kv get -field=root-password kv/services/minio/root-credentials 2>/dev/null) || true
+  vault_exec "$root_token" kv put kv/services/database/cnpg-minio \
+    ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
+    ACCESS_SECRET_KEY="${MINIO_ROOT_PASSWORD}"
+
+  # Valkey (Redis) password
+  HARBOR_REDIS_PASSWORD="${HARBOR_REDIS_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/harbor/valkey \
+    password="$HARBOR_REDIS_PASSWORD"
+  export HARBOR_REDIS_PASSWORD
+
+  # Harbor admin password and MinIO secret key (for Helm values substitution)
+  HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASSWORD:-$(openssl rand -base64 24)}"
+  HARBOR_MINIO_SECRET_KEY="${HARBOR_MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}"
+  export HARBOR_ADMIN_PASSWORD HARBOR_MINIO_SECRET_KEY
+
   # Create Vault K8s auth roles and policies for each namespace
   for ns in minio database harbor; do
     log_info "Creating Vault K8s auth role eso-${ns}..."
@@ -146,7 +180,11 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       "policies=eso-${ns}" \
       ttl=1h
 
-    vault_exec "$root_token" policy write "eso-${ns}" - <<POLICY
+    # Write policy via kubectl exec with stdin (vault_exec doesn't support stdin)
+    kubectl exec -i -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="$root_token" \
+      vault policy write "eso-${ns}" - <<POLICY
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
 }
@@ -245,6 +283,34 @@ fi
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: Harbor Helm Install"
 
+  # Ensure password env vars are set (read from K8s secrets if Phase 2 was skipped)
+  if [[ -z "${HARBOR_DB_PASSWORD:-}" ]]; then
+    log_info "Reading HARBOR_DB_PASSWORD from K8s secret..."
+    HARBOR_DB_PASSWORD=$(kubectl -n database get secret harbor-pg-credentials \
+      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+    [[ -n "$HARBOR_DB_PASSWORD" ]] || die "HARBOR_DB_PASSWORD not set and secret not found"
+    export HARBOR_DB_PASSWORD
+  fi
+  if [[ -z "${HARBOR_REDIS_PASSWORD:-}" ]]; then
+    log_info "Reading HARBOR_REDIS_PASSWORD from K8s secret..."
+    HARBOR_REDIS_PASSWORD=$(kubectl -n harbor get secret harbor-valkey-credentials \
+      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
+    [[ -n "$HARBOR_REDIS_PASSWORD" ]] || die "HARBOR_REDIS_PASSWORD not set and secret not found"
+    export HARBOR_REDIS_PASSWORD
+  fi
+  if [[ -z "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
+    HARBOR_ADMIN_PASSWORD=$(openssl rand -base64 24)
+    export HARBOR_ADMIN_PASSWORD
+  fi
+  if [[ -z "${HARBOR_MINIO_SECRET_KEY:-}" ]]; then
+    log_info "Reading HARBOR_MINIO_SECRET_KEY from K8s secret..."
+    HARBOR_MINIO_SECRET_KEY=$(kubectl -n minio get secret minio-root-credentials \
+      -o jsonpath='{.data.root-password}' 2>/dev/null | base64 -d) || true
+    [[ -n "$HARBOR_MINIO_SECRET_KEY" ]] || die "HARBOR_MINIO_SECRET_KEY not set and secret not found"
+    export HARBOR_MINIO_SECRET_KEY
+  fi
+
+  helm_repo_add goharbor "$HELM_REPO_HARBOR"
   # Substitute CHANGEME tokens in values file before passing to Helm
   _harbor_values=$(mktemp /tmp/harbor-values.XXXXXX.yaml)
   trap 'rm -f "$_harbor_values"' EXIT
