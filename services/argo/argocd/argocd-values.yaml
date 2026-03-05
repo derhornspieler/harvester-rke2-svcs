@@ -142,6 +142,9 @@ redis-ha:
 
   haproxy:
     enabled: true
+    image:
+      repository: docker.io/library/haproxy
+      tag: 2.9.4-alpine
     affinity: |
       podAntiAffinity:
         preferredDuringSchedulingIgnoredDuringExecution:
