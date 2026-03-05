@@ -186,12 +186,15 @@ fi
 # Phase 3: ArgoCD Helm Install
 if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   start_phase "Phase 3: ArgoCD Helm Install"
-  _subst_changeme < "${REPO_ROOT}/services/argo/argocd/argocd-values.yaml" > /tmp/argocd-values.yaml
+  _argocd_values=$(mktemp /tmp/argocd-values.XXXXXX.yaml)
+  trap 'rm -f "$_argocd_values"' EXIT
+  _subst_changeme < "${REPO_ROOT}/services/argo/argocd/argocd-values.yaml" > "$_argocd_values"
+  chmod 600 "$_argocd_values"
   helm_install_if_needed argocd "$HELM_CHART_ARGOCD" argocd \
     --version 7.8.8 \
-    -f /tmp/argocd-values.yaml \
+    -f "$_argocd_values" \
     --wait --timeout 10m
-  rm -f /tmp/argocd-values.yaml
+  rm -f "$_argocd_values"
   wait_for_deployment argocd argocd-server 300s
   end_phase "Phase 3: ArgoCD Helm Install"
 fi
@@ -199,12 +202,15 @@ fi
 # Phase 4: Argo Rollouts Helm Install
 if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   start_phase "Phase 4: Argo Rollouts Helm Install"
-  _subst_changeme < "${REPO_ROOT}/services/argo/argo-rollouts/argo-rollouts-values.yaml" > /tmp/rollouts-values.yaml
+  _rollouts_values=$(mktemp /tmp/rollouts-values.XXXXXX.yaml)
+  trap 'rm -f "$_rollouts_values"' EXIT
+  _subst_changeme < "${REPO_ROOT}/services/argo/argo-rollouts/argo-rollouts-values.yaml" > "$_rollouts_values"
+  chmod 600 "$_rollouts_values"
   helm_install_if_needed argo-rollouts "$HELM_CHART_ROLLOUTS" argo-rollouts \
     --version 2.39.1 \
-    -f /tmp/rollouts-values.yaml \
+    -f "$_rollouts_values" \
     --wait --timeout 5m
-  rm -f /tmp/rollouts-values.yaml
+  rm -f "$_rollouts_values"
   wait_for_deployment argo-rollouts argo-rollouts 300s
   end_phase "Phase 4: Argo Rollouts Helm Install"
 fi
@@ -212,12 +218,15 @@ fi
 # Phase 5: Argo Workflows Helm Install
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   start_phase "Phase 5: Argo Workflows Helm Install"
-  _subst_changeme < "${REPO_ROOT}/services/argo/argo-workflows/argo-workflows-values.yaml" > /tmp/workflows-values.yaml
+  _workflows_values=$(mktemp /tmp/workflows-values.XXXXXX.yaml)
+  trap 'rm -f "$_workflows_values"' EXIT
+  _subst_changeme < "${REPO_ROOT}/services/argo/argo-workflows/argo-workflows-values.yaml" > "$_workflows_values"
+  chmod 600 "$_workflows_values"
   helm_install_if_needed argo-workflows "$HELM_CHART_WORKFLOWS" argo-workflows \
     --version 0.45.1 \
-    -f /tmp/workflows-values.yaml \
+    -f "$_workflows_values" \
     --wait --timeout 5m
-  rm -f /tmp/workflows-values.yaml
+  rm -f "$_workflows_values"
   end_phase "Phase 5: Argo Workflows Helm Install"
 fi
 
@@ -256,6 +265,11 @@ fi
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/argo/monitoring/"
+  # NetworkPolicies
+  log_info "Applying NetworkPolicies for Argo services..."
+  kubectl apply -f "${REPO_ROOT}/services/argo/argocd/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/networkpolicy.yaml"
   end_phase "Phase 7: Monitoring + Verify"
 fi
 

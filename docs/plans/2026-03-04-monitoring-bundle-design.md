@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-04
 **Status:** Approved
-**Bundle:** 2 of 6
+**Bundle:** 3 of 6
 
 ## Overview
 
@@ -39,7 +39,7 @@ Loki (SimpleScalable: read + write replicas)
 Grafana (Deployment, HPA 2-4)
   → queries Prometheus (metrics) + Loki (logs) + Alertmanager (alerts)
   → 18 platform dashboards via ConfigMap sidecar
-  → Native OIDC auth (Bundle 4 adds Keycloak integration)
+  → Native OIDC auth (Bundle 2 adds Keycloak integration)
 ```
 
 ## Directory Structure
@@ -92,13 +92,13 @@ services/monitoring-stack/
 
 ## Ingress & Auth
 
-| Service | URL | Auth (Bundle 2) | Auth (After Bundle 4) |
+| Service | URL | Auth (Bundle 3) | Auth (After Bundle 2) |
 |---------|-----|-----------------|----------------------|
 | Grafana | `https://grafana.CHANGEME_DOMAIN` | Built-in login (admin) | Keycloak OIDC (native) |
 | Prometheus | `https://prometheus.CHANGEME_DOMAIN` | Traefik basic-auth (admin/admin) | Keycloak via OAuth2-proxy |
 | Alertmanager | `https://alertmanager.CHANGEME_DOMAIN` | Traefik basic-auth (admin/admin) | Keycloak via OAuth2-proxy |
 
-## Dashboards (18 total in Bundle 2)
+## Dashboards (18 total in Bundle 3)
 
 **15 platform dashboards (monitoring-stack/grafana/dashboards/):**
 - Home overview, firing alerts
@@ -146,7 +146,7 @@ services/monitoring-stack/
 | traefik-alerts | Error rate, latency, TLS expiry |
 | postgresql-alerts | Connection pool, replication lag |
 | redis-alerts | Memory usage, evictions |
-| oauth2-proxy-alerts | Auth failures (placeholder until Bundle 4) |
+| oauth2-proxy-alerts | Auth failures (placeholder until Bundle 2) |
 
 ## Dependencies
 

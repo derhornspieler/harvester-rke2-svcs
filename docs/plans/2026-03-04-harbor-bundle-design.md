@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-04
 **Status:** Approved
-**Bundle:** 3 of 6
+**Bundle:** 4 of 6
 
 ## Overview
 
@@ -130,6 +130,6 @@ This is documented as a post-deploy step, not automated in the deploy script.
 ## Dependencies
 
 - Bundle 1 (PKI & Secrets): TLS certs, Vault secrets, ESO
-- Bundle 2 (Monitoring): Prometheus for ServiceMonitors and dashboards
-- CNPG Operator: Must be installed on the cluster (CRD dependency)
+- Bundle 2 (Identity): CNPG operator installed by Identity bundle, MinIO operator, Keycloak for OIDC
+- Bundle 3 (Monitoring): Prometheus for ServiceMonitors and dashboards
 - OpsTree Redis Operator: Must be installed on the cluster (CRD dependency)

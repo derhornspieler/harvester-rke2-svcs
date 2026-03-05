@@ -205,14 +205,18 @@ fi
 # Phase 3: MinIO
 if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   start_phase "Phase 3: MinIO"
-  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/pvc.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/deployment.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/service.yaml"
-  wait_for_deployment minio minio 300s
+  if kubectl -n minio get deployment minio &>/dev/null; then
+    log_info "MinIO already deployed (by Identity bundle), skipping"
+  else
+    kubectl apply -f "${REPO_ROOT}/services/harbor/minio/pvc.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/harbor/minio/deployment.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/harbor/minio/service.yaml"
+    wait_for_deployment minio minio 300s
 
-  # Run bucket creation job
-  log_info "Creating MinIO buckets..."
-  kube_apply_subst "${REPO_ROOT}/services/harbor/minio/job-create-buckets.yaml"
+    # Run bucket creation job
+    log_info "Creating MinIO buckets..."
+    kube_apply_subst "${REPO_ROOT}/services/harbor/minio/job-create-buckets.yaml"
+  fi
   end_phase "Phase 3: MinIO"
 fi
 
@@ -242,12 +246,15 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: Harbor Helm Install"
 
   # Substitute CHANGEME tokens in values file before passing to Helm
-  _subst_changeme < "${REPO_ROOT}/services/harbor/harbor-values.yaml" > /tmp/harbor-values.yaml
+  _harbor_values=$(mktemp /tmp/harbor-values.XXXXXX.yaml)
+  trap 'rm -f "$_harbor_values"' EXIT
+  _subst_changeme < "${REPO_ROOT}/services/harbor/harbor-values.yaml" > "$_harbor_values"
+  chmod 600 "$_harbor_values"
   helm_install_if_needed harbor "$HELM_CHART_HARBOR" harbor \
     --version 1.18.2 \
-    -f /tmp/harbor-values.yaml \
+    -f "$_harbor_values" \
     --wait --timeout 10m
-  rm -f /tmp/harbor-values.yaml
+  rm -f "$_harbor_values"
 
   wait_for_deployment harbor harbor-core 300s
   wait_for_deployment harbor harbor-registry 300s
@@ -271,6 +278,10 @@ fi
 if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
   start_phase "Phase 8: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/harbor/monitoring/"
+  # NetworkPolicies
+  log_info "Applying NetworkPolicies for Harbor services..."
+  kubectl apply -f "${REPO_ROOT}/services/harbor/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/networkpolicy.yaml"
   end_phase "Phase 8: Monitoring + Verify"
 fi
 

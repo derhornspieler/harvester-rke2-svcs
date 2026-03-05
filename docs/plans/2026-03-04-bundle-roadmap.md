@@ -28,38 +28,12 @@
 
 ---
 
-## Bundle 2: Monitoring
-
-| Service | Purpose |
-|---------|---------|
-| Prometheus (kube-prometheus-stack) | Metrics collection, alerting |
-| Grafana | Dashboards (includes dashboards from source repo) |
-| Loki | Log aggregation |
-| Alloy (Grafana Agent) | Log/metric shipping |
-
-Depends on: Bundle 1 (TLS, secrets)
-
----
-
-## Bundle 3: Harbor
-
-| Service | Purpose |
-|---------|---------|
-| Harbor | Container registry + pull-through cache |
-| MinIO | S3-compatible object storage for Harbor |
-| CNPG (PostgreSQL) | Harbor database |
-| Valkey | Harbor caching layer |
-
-Depends on: Bundle 1 (TLS, secrets), Bundle 2 (monitoring)
-
----
-
-## Bundle 4: Identity
+## Bundle 2: Identity
 
 | Service | Purpose |
 |---------|---------|
 | Keycloak | OIDC provider, single realm, group-based RBAC |
-| OAuth2-proxy | Auth proxy for non-OIDC services (Hubble, etc.) |
+| OAuth2-proxy | Auth proxy for non-OIDC services (Prometheus, Alertmanager, Hubble) |
 
 **Identity model:**
 - Single realm: `platform`
@@ -68,7 +42,35 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (monitoring)
 - Group-based access control per client
 - Clients: Grafana, ArgoCD, Harbor, Hubble, GitLab, Argo Workflows, Keycloak admin
 
-Depends on: Bundle 1 (TLS, secrets), Bundle 3 (CNPG for DB, Harbor for images)
+Depends on: Bundle 1 (TLS, secrets)
+- CNPG operator installed by this bundle for Keycloak PostgreSQL
+
+---
+
+## Bundle 3: Monitoring
+
+| Service | Purpose |
+|---------|---------|
+| Prometheus (kube-prometheus-stack) | Metrics collection, alerting |
+| Grafana | Dashboards (includes dashboards from source repo), native OIDC |
+| Loki | Log aggregation |
+| Alloy (Grafana Agent) | Log/metric shipping |
+
+Depends on: Bundle 1 (TLS, secrets)
+- Optional: Bundle 2 (Identity) for OIDC pre-configuration in Grafana
+
+---
+
+## Bundle 4: Harbor
+
+| Service | Purpose |
+|---------|---------|
+| Harbor | Container registry + pull-through cache |
+| MinIO | S3-compatible object storage for Harbor |
+| CNPG (PostgreSQL) | Harbor database |
+| Valkey | Harbor caching layer |
+
+Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator)
 
 ---
 
@@ -80,7 +82,7 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 3 (CNPG for DB, Harbor for images)
 | Argo Rollouts | Blue/green and canary deployment strategies |
 | Argo Workflows | Workflow automation, DAG-based pipelines |
 
-Depends on: Bundle 1 (TLS, secrets), optionally Bundle 4 (SSO)
+Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Monitoring for AnalysisTemplate queries)
 
 ---
 
@@ -91,7 +93,7 @@ Depends on: Bundle 1 (TLS, secrets), optionally Bundle 4 (SSO)
 | GitLab (Ultimate) | Self-hosted Git server, licensed via registration key |
 | GitLab Runners | Kubernetes executor (CI jobs run as pods) |
 | CNPG (PostgreSQL) | GitLab database |
-| Valkey | GitLab caching/session store |
+| Redis Sentinel | GitLab caching/session/queue store |
 
 **Notes:**
 - Ultimate license via registration key file (gitignored, from source repo)
@@ -99,7 +101,7 @@ Depends on: Bundle 1 (TLS, secrets), optionally Bundle 4 (SSO)
 - GitLab SSH via TCP Gateway listener (port 22 passthrough)
 - Post-deploy research: GitLab Auto DevOps / Review Apps on K8s
 
-Depends on: Bundle 1 (TLS, secrets), Bundle 3 (Harbor for images), Bundle 4 (SSO)
+Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Monitoring for ServiceMonitors), Bundle 4 (Harbor for Runner images)
 
 ---
 
@@ -108,19 +110,19 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 3 (Harbor for images), Bundle 4 (SSO
 ```
 Bundle 1: PKI & Secrets (DONE)
     │
-    ├── Bundle 2: Monitoring
+    ├── Bundle 2: Identity (CNPG operator + MinIO + Keycloak)
     │       │
-    │       └── Bundle 3: Harbor
-    │               │
-    │               ├── Bundle 4: Identity
-    │               │       │
-    │               │       ├── Bundle 5: GitOps & Workflows
-    │               │       │
-    │               │       └── Bundle 6: Git & CI
-    │               │
-    │               └── Bundle 5: GitOps & Workflows (can deploy without Identity)
+    │       ├── Bundle 3: Monitoring (with OIDC pre-configured)
+    │       │       │
+    │       │       └── Bundle 4: Harbor (reuses MinIO + CNPG)
+    │       │               │
+    │       │               ├── Bundle 5: GitOps & Workflows
+    │       │               │
+    │       │               └── Bundle 6: Git & CI
+    │       │
+    │       └── Bundle 4: Harbor (can deploy without Monitoring)
     │
-    └── Bundle 5: GitOps & Workflows (minimal, without SSO)
+    └── Bundle 3: Monitoring (can deploy without Identity, basic-auth fallback)
 ```
 
 ## Out of Scope (Future Roadmap)

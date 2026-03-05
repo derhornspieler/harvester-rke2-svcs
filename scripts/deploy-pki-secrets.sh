@@ -318,8 +318,6 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
     --set serviceMonitor.enabled=true \
     --set resources.requests.cpu=100m \
     --set resources.requests.memory=128Mi \
-    --set resources.limits.cpu=500m \
-    --set resources.limits.memory=512Mi \
     --set nodeSelector.workload-type=general \
     --wait --timeout 5m
   wait_for_deployment external-secrets external-secrets 300s
@@ -332,7 +330,7 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: Kustomize Overlays"
   kube_apply_subst "${REPO_ROOT}/services/vault/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/vault/httproute.yaml"
-  # Monitoring overlays require Bundle 2 (Prometheus CRDs + monitoring namespace).
+  # Monitoring overlays require Bundle 3 (Prometheus CRDs + monitoring namespace).
   # Apply them if available; skip gracefully if not yet deployed.
   if kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null \
      && kubectl get ns monitoring &>/dev/null; then
@@ -340,8 +338,13 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
     kubectl apply -k "${REPO_ROOT}/services/cert-manager/monitoring/"
     kubectl apply -k "${REPO_ROOT}/services/external-secrets/monitoring/"
   else
-    log_warn "Skipping monitoring overlays (Bundle 2 not yet deployed)"
+    log_warn "Skipping monitoring overlays (Bundle 3 not yet deployed)"
   fi
+  # NetworkPolicies
+  log_info "Applying NetworkPolicies for PKI services..."
+  kubectl apply -f "${REPO_ROOT}/services/vault/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/cert-manager/networkpolicy.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/external-secrets/networkpolicy.yaml"
   wait_for_tls_secret vault "vault-${DOMAIN_DASHED}-tls" 300
   log_ok "All Kustomize overlays applied"
   end_phase "Phase 7: Kustomize Overlays"
