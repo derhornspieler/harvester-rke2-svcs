@@ -1,0 +1,16 @@
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  target:
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: prometheus
+  thresholdPercent: 80
+  increasePercent: 20
+  increaseMinimum: 10Gi
+  maxSize: 200Gi
+  cooldownPeriod: 10m
+  prometheusURL: http://prometheus.monitoring.svc:9090

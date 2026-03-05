@@ -49,7 +49,7 @@ Phases:
   1  Namespace + Loki + Alloy     Create NS, deploy Loki and Alloy
   2  Scrape Configs Secret        Additional Prometheus scrape configs
   3  kube-prometheus-stack         Helm install (Prometheus, Grafana, Alertmanager)
-  4  PrometheusRules + Monitors   Apply rules, ServiceMonitors, per-service monitoring
+  4  Rules + Monitors + Scaling   Apply rules, ServiceMonitors, HPA, VolumeAutoscalers
   5  Gateways + Routes + Auth     Ingress routes, basic-auth, dashboards
   6  Verify                        Wait for all components to become ready
 EOF
@@ -160,14 +160,20 @@ fi
 
 # Phase 4: PrometheusRules + ServiceMonitors
 if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
-  start_phase "Phase 4: PrometheusRules + ServiceMonitors"
+  start_phase "Phase 4: Rules + Monitors + Scaling"
   kubectl apply -k "${REPO_ROOT}/services/monitoring-stack/prometheus-rules/"
   kubectl apply -k "${REPO_ROOT}/services/monitoring-stack/service-monitors/"
   # Also apply per-service monitoring from Bundle 1
   kubectl apply -k "${REPO_ROOT}/services/vault/monitoring/"
   kubectl apply -k "${REPO_ROOT}/services/cert-manager/monitoring/"
   kubectl apply -k "${REPO_ROOT}/services/external-secrets/monitoring/"
-  end_phase "Phase 4: PrometheusRules + ServiceMonitors"
+  # Grafana HPA
+  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/hpa.yaml"
+  # Volume autoscalers (PVC auto-expansion)
+  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/volume-autoscaler-loki.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/volume-autoscaler-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/volume-autoscaler-alertmanager.yaml"
+  end_phase "Phase 4: Rules + Monitors + Scaling"
 fi
 
 # Phase 5: Gateways + HTTPRoutes + basic-auth
@@ -190,9 +196,9 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   # Service aliases
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/prometheus-service-alias.yaml"
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/alertmanager-service-alias.yaml"
-  # Apply dashboards
+  # Apply dashboards (some contain CHANGEME_DOMAIN tokens)
   for f in "${REPO_ROOT}"/services/monitoring-stack/grafana/dashboards/configmap-dashboard-*.yaml; do
-    kubectl apply -f "$f"
+    kube_apply_subst "$f"
   done
   end_phase "Phase 5: Gateways + HTTPRoutes + Basic Auth"
 fi
