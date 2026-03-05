@@ -1,16 +1,17 @@
+---
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
-  name: alertmanager
-  namespace: monitoring
+  name: argocd-redis
+  namespace: argocd
 spec:
   target:
     selector:
       matchLabels:
-        app.kubernetes.io/name: alertmanager
+        app.kubernetes.io/name: redis-ha
   thresholdPercent: 80
-  increasePercent: 20
+  maxSize: 30Gi
+  increasePercent: 25
   increaseMinimum: 2Gi
-  maxSize: 20Gi
+  pollInterval: 120s
   cooldownPeriod: 10m
-  prometheusURL: http://prometheus.monitoring.svc:9090

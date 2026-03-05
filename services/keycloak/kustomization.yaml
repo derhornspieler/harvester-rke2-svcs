@@ -16,5 +16,7 @@ resources:
   # Ingress
   - gateway.yaml
   - httproute.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscalers.yaml
   # Monitoring
   - monitoring/
