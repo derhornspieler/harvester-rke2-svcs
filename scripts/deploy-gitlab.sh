@@ -149,6 +149,69 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
 
+  # Seed Vault KV secrets for GitLab components
+  log_info "Seeding Vault KV secrets for GitLab..."
+
+  # Redis password
+  GITLAB_REDIS_PASSWORD="${GITLAB_REDIS_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/gitlab/redis \
+    password="$GITLAB_REDIS_PASSWORD"
+  export GITLAB_REDIS_PASSWORD
+
+  # Gitaly token
+  GITLAB_GITALY_TOKEN="${GITLAB_GITALY_TOKEN:-$(openssl rand -hex 32)}"
+  vault_exec "$root_token" kv put kv/services/gitlab/gitaly-secret \
+    token="$GITLAB_GITALY_TOKEN"
+
+  # Praefect DB secret
+  GITLAB_PRAEFECT_DB_PASSWORD="${GITLAB_PRAEFECT_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/gitlab/praefect-dbsecret \
+    secret="$GITLAB_PRAEFECT_DB_PASSWORD"
+
+  # Praefect internal token
+  GITLAB_PRAEFECT_TOKEN="${GITLAB_PRAEFECT_TOKEN:-$(openssl rand -hex 32)}"
+  vault_exec "$root_token" kv put kv/services/gitlab/praefect-secret \
+    token="$GITLAB_PRAEFECT_TOKEN"
+
+  # Initial root password
+  GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/gitlab/initial-root-password \
+    password="$GITLAB_ROOT_PASSWORD"
+
+  # OIDC provider (placeholder — setup-keycloak.sh will update with real client secret)
+  GITLAB_OIDC_CLIENT_SECRET="${GITLAB_OIDC_CLIENT_SECRET:-placeholder-update-after-keycloak}"
+  _oidc_provider=$(cat <<OIDCJSON
+{"name":"openid_connect","label":"Keycloak","args":{"name":"openid_connect","scope":["openid","profile","email"],"response_type":"code","issuer":"https://keycloak.${DOMAIN}/realms/${KC_REALM:-platform}","discovery":true,"client_auth_method":"query","uid_field":"preferred_username","client_options":{"identifier":"gitlab","secret":"${GITLAB_OIDC_CLIENT_SECRET}","redirect_uri":"https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"}}}
+OIDCJSON
+  )
+  vault_exec "$root_token" kv put kv/services/gitlab/oidc-secret \
+    provider="$_oidc_provider"
+
+  # Harbor CI push credentials (robot account for runners)
+  HARBOR_CI_USER="${HARBOR_CI_USER:-harbor-ci-push}"
+  HARBOR_CI_PASSWORD="${HARBOR_CI_PASSWORD:-placeholder-create-harbor-robot-account}"
+  vault_exec "$root_token" kv put kv/ci/harbor-push \
+    username="$HARBOR_CI_USER" \
+    password="$HARBOR_CI_PASSWORD"
+
+  # CNPG PostgreSQL credentials
+  GITLAB_DB_USER="${GITLAB_DB_USER:-gitlab}"
+  GITLAB_DB_PASSWORD="${GITLAB_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  vault_exec "$root_token" kv put kv/services/database/gitlab-pg \
+    username="$GITLAB_DB_USER" \
+    password="$GITLAB_DB_PASSWORD"
+
+  # CNPG MinIO backup credentials (reuse MinIO root creds)
+  MINIO_ROOT_USER=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault kv get -field=root-user kv/services/minio/root-credentials 2>/dev/null) || true
+  MINIO_ROOT_PASSWORD=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault kv get -field=root-password kv/services/minio/root-credentials 2>/dev/null) || true
+  vault_exec "$root_token" kv put kv/services/database/cnpg-minio-gitlab \
+    ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
+    ACCESS_SECRET_KEY="${MINIO_ROOT_PASSWORD}"
+
   # Create Vault K8s auth roles and policies for gitlab and gitlab-runners namespaces
   for ns in gitlab gitlab-runners; do
     log_info "Creating Vault K8s auth role eso-${ns}..."
@@ -158,7 +221,11 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       "policies=eso-${ns}" \
       ttl=1h
 
-    vault_exec "$root_token" policy write "eso-${ns}" - <<POLICY
+    # Write policy via kubectl exec with stdin (vault_exec doesn't support stdin)
+    kubectl exec -i -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="$root_token" \
+      vault policy write "eso-${ns}" - <<POLICY
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
 }
@@ -194,7 +261,10 @@ EOF
 
   # gitlab-runners policy also needs access to ci/ path for harbor-push credentials
   log_info "Extending gitlab-runners Vault policy for ci/ path..."
-  vault_exec "$root_token" policy write "eso-gitlab-runners" - <<POLICY
+  kubectl exec -i -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 \
+    VAULT_TOKEN="$root_token" \
+    vault policy write "eso-gitlab-runners" - <<POLICY
 path "kv/data/services/gitlab-runners/*" {
   capabilities = ["read"]
 }
@@ -277,6 +347,15 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     log_warn "Praefect dbsecret not available, skipping password setup"
   fi
 
+  # Copy CNPG-generated gitlab-postgresql-app secret to gitlab namespace
+  # (CNPG creates it in database ns; GitLab chart expects it in gitlab ns)
+  log_info "Copying gitlab-postgresql-app secret to gitlab namespace..."
+  kubectl -n database get secret gitlab-postgresql-app -o json \
+    | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid,
+              .metadata.creationTimestamp, .metadata.managedFields,
+              .metadata.ownerReferences, .metadata.annotations)' \
+    | kubectl -n gitlab apply -f -
+
   kubectl apply -f "${GITLAB_DIR}/cloudnativepg-scheduled-backup.yaml"
   end_phase "Phase 3: PostgreSQL CNPG"
 fi
@@ -303,6 +382,36 @@ fi
 # Phase 6: GitLab Helm Install
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: GitLab Helm Install"
+
+  # Create gitlab-root-ca secret (Vault CA chain for OIDC/TLS trust)
+  log_info "Creating gitlab-root-ca secret with Vault CA chain..."
+  root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+  root_issuer=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault list -format=json pki/issuers 2>/dev/null | jq -r '.[0]')
+  root_ca=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault read -field=certificate "pki/issuer/${root_issuer}" 2>/dev/null)
+  int_issuer=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault list -format=json pki_int/issuers 2>/dev/null | jq -r '.[0]')
+  int_ca=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault read -field=certificate "pki_int/issuer/${int_issuer}" 2>/dev/null)
+  kubectl -n gitlab create secret generic gitlab-root-ca \
+    --from-literal="gitlab.${DOMAIN}.pem=${root_ca}
+${int_ca}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Ensure gitlab-postgresql-app secret exists in gitlab namespace
+  if ! kubectl -n gitlab get secret gitlab-postgresql-app &>/dev/null; then
+    log_info "Copying gitlab-postgresql-app secret to gitlab namespace..."
+    kubectl -n database get secret gitlab-postgresql-app -o json \
+      | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid,
+                .metadata.creationTimestamp, .metadata.managedFields,
+                .metadata.ownerReferences, .metadata.annotations)' \
+      | kubectl -n gitlab apply -f -
+  fi
 
   # Add GitLab Helm repo (non-OCI)
   helm_repo_add gitlab "$HELM_REPO_GITLAB"
@@ -366,6 +475,38 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
 
   # Apply runner RBAC (ServiceAccount, Role, RoleBinding)
   kubectl apply -k "${GITLAB_DIR}/runners/"
+
+  # Create runner TLS trust secrets (Vault CA chain)
+  log_info "Creating runner TLS trust secrets..."
+  root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+  _root_issuer=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault list -format=json pki/issuers 2>/dev/null | jq -r '.[0]')
+  _root_ca=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault read -field=certificate "pki/issuer/${_root_issuer}" 2>/dev/null)
+  _int_issuer=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault list -format=json pki_int/issuers 2>/dev/null | jq -r '.[0]')
+  _int_ca=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
+    vault read -field=certificate "pki_int/issuer/${_int_issuer}" 2>/dev/null)
+  _ca_chain="${_root_ca}
+${_int_ca}"
+  kubectl -n gitlab-runners create secret generic gitlab-runner-certs \
+    --from-literal="gitlab.${DOMAIN}.crt=${_ca_chain}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n gitlab-runners create configmap vault-root-ca \
+    --from-literal="ca.crt=${_ca_chain}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Copy runner registration token from gitlab namespace
+  log_info "Copying runner registration token..."
+  kubectl -n gitlab get secret gitlab-gitlab-runner-secret -o json \
+    | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid,
+              .metadata.creationTimestamp, .metadata.managedFields,
+              .metadata.ownerReferences, .metadata.annotations)' \
+    | kubectl -n gitlab-runners apply -f -
 
   # Shared runner
   log_info "Installing shared runner..."
