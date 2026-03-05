@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/<GITHUB_ORG>/harvester-rke2-svcs/actions/workflows/ci.yml/badge.svg)](https://github.com/<GITHUB_ORG>/harvester-rke2-svcs/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-Platform services for RKE2 clusters. Deploys four service bundles covering
-PKI/secrets management, monitoring, container registry, and identity/SSO --
-providing a complete foundation for production workloads.
+Platform services for RKE2 clusters. Deploys six service bundles covering
+PKI/secrets management, monitoring, container registry, identity/SSO, GitOps,
+and Git/CI -- providing a complete foundation for production workloads.
 
 ## Architecture
 
@@ -37,6 +37,20 @@ graph LR
         CNPG2["CNPG (Keycloak)"]
     end
 
+    subgraph "Bundle 5: GitOps"
+        Argo["ArgoCD"]
+        Roll["Rollouts"]
+        WF["Workflows"]
+    end
+
+    subgraph "Bundle 6: Git &amp; CI"
+        GL["GitLab"]
+        Gitaly["Praefect/Gitaly"]
+        CNPG3["CNPG (GitLab)"]
+        GLRedis["Redis"]
+        Runners["Runners"]
+    end
+
     Root -->|signs| Vault
     Vault -->|pki_int/sign| CM
     Vault -->|kv/data| ESO
@@ -53,8 +67,22 @@ graph LR
     Prom -->|scrapes| KC
 
     KC -->|OIDC| OAuth
+    KC -->|OIDC| Argo
+    KC -->|OIDC| GL
     OAuth -->|protects| Prom
     OAuth -->|protects| Graf
+
+    ESO -->|secrets| Argo
+    ESO -->|secrets| GL
+    CM -->|TLS| Argo
+    CM -->|TLS| GL
+    Prom -->|scrapes| Argo
+    Prom -->|scrapes| GL
+
+    GL --> Gitaly
+    GL --> CNPG3
+    GL --> GLRedis
+    GL --> Runners
 
     style Root fill:#d32f2f,color:#fff
     style Vault fill:#f57c00,color:#fff
@@ -67,6 +95,14 @@ graph LR
     style Harbor fill:#1565c0,color:#fff
     style KC fill:#7b1fa2,color:#fff
     style OAuth fill:#7b1fa2,color:#fff
+    style Argo fill:#ef6c00,color:#fff
+    style Roll fill:#ef6c00,color:#fff
+    style WF fill:#ef6c00,color:#fff
+    style GL fill:#e65100,color:#fff
+    style Gitaly fill:#e65100,color:#fff
+    style CNPG3 fill:#388e3c,color:#fff
+    style GLRedis fill:#d32f2f,color:#fff
+    style Runners fill:#e65100,color:#fff
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed diagrams
@@ -99,6 +135,12 @@ cp scripts/.env.example scripts/.env
 # 6. Deploy Bundle 4 -- Identity (Keycloak + OAuth2-proxy)
 ./scripts/deploy-keycloak.sh
 ./scripts/setup-keycloak.sh    # Realm, OIDC clients, groups (post-deploy)
+
+# 7. Deploy Bundle 5 -- GitOps (ArgoCD + Rollouts + Workflows)
+./scripts/deploy-argo.sh
+
+# 8. Deploy Bundle 6 -- Git & CI (GitLab + Runners)
+./scripts/deploy-gitlab.sh
 ```
 
 Each deploy script runs ordered, idempotent phases. See
@@ -113,6 +155,8 @@ guide including verification and troubleshooting.
 | Monitoring | Prometheus, Grafana, Alertmanager, Loki, Alloy | Active |
 | Harbor | Harbor registry, MinIO, CNPG PostgreSQL, Valkey Sentinel | Active |
 | Identity | Keycloak, OAuth2-proxy, CNPG PostgreSQL | Active |
+| GitOps | ArgoCD, Argo Rollouts, Argo Workflows, AnalysisTemplates | Active |
+| Git & CI | GitLab EE, Praefect/Gitaly, CNPG PostgreSQL, Redis Sentinel, Runners, CI Templates | Active |
 
 ## Structure
 
@@ -141,12 +185,28 @@ services/                    # One directory per service (Kustomize + Helm value
     postgres/                # CNPG PostgreSQL HA cluster
     oauth2-proxy/            # OAuth2-proxy instances + middleware
     monitoring/              # Dashboards, alerts, ServiceMonitors
+  argo/                      # Argo GitOps platform
+    argocd/                  # ArgoCD Helm values, Gateway, HTTPRoute
+    argo-rollouts/           # Argo Rollouts Helm values, OAuth2-proxy, basic-auth
+    argo-workflows/          # Argo Workflows Helm values, basic-auth
+    analysis-templates/      # AnalysisTemplates (error-rate, latency, success-rate)
+    monitoring/              # Dashboards, alerts, ServiceMonitors
+  gitlab/                    # GitLab EE + CI platform
+    gitaly/                  # Praefect/Gitaly ExternalSecret
+    praefect/                # Praefect DB secret + token ExternalSecrets
+    redis/                   # OpsTree RedisReplication + RedisSentinel
+    oidc/                    # OIDC ExternalSecret for Keycloak SSO
+    runners/                 # Shared, security, and group runner Helm values + RBAC
+    ci-templates/            # Reusable CI pipeline templates (jobs + patterns)
+    monitoring/              # Dashboards, alerts, ServiceMonitors
 scripts/                     # Deploy scripts and utility modules
   deploy-pki-secrets.sh      # Bundle 1 orchestrator (7 phases)
   deploy-monitoring.sh       # Bundle 2 orchestrator (6 phases)
   deploy-harbor.sh           # Bundle 3 orchestrator (8 phases)
   deploy-keycloak.sh         # Bundle 4 orchestrator (7 phases)
   setup-keycloak.sh          # Post-deploy Keycloak config via Admin API (6 phases)
+  deploy-argo.sh             # Bundle 5 orchestrator (7 phases)
+  deploy-gitlab.sh           # Bundle 6 orchestrator (9 phases)
   .env.example               # Environment variable template
   utils/                     # Shell utility modules
     log.sh                   # Colored logging + phase timing
@@ -169,6 +229,8 @@ docs/                        # Architecture and getting started guides
 ./scripts/deploy-monitoring.sh --validate
 ./scripts/deploy-harbor.sh --validate
 ./scripts/deploy-keycloak.sh --validate
+./scripts/deploy-argo.sh --validate
+./scripts/deploy-gitlab.sh --validate
 
 # Re-run a single phase
 ./scripts/deploy-pki-secrets.sh --phase 5
@@ -180,10 +242,10 @@ docs/                        # Architecture and getting started guides
 ## Documentation
 
 - [Architecture Overview](docs/architecture.md) -- PKI hierarchy, monitoring
-  pipeline, Harbor storage architecture, identity flow, deployment phases, and
-  component relationships
+  pipeline, Harbor storage architecture, identity flow, GitOps platform, GitLab
+  CI/CD architecture, deployment phases, and component relationships
 - [Getting Started Guide](docs/getting-started.md) -- step-by-step deployment
-  of all four bundles, verification, and troubleshooting
+  of all six bundles, verification, and troubleshooting
 - [Contributing](CONTRIBUTING.md) -- how to add services, coding conventions,
   and PR process
 
@@ -192,8 +254,8 @@ docs/                        # Architecture and getting started guides
 - RKE2 cluster with kubeconfig access
 - `kubectl`, `helm`, `jq`, `openssl`, `htpasswd`
 - Root CA key (offline, for initial PKI setup only)
-- CNPG operator installed (for Harbor and Keycloak PostgreSQL clusters)
-- Redis operator installed (for Valkey Sentinel)
+- CNPG operator installed (for Harbor, Keycloak, and GitLab PostgreSQL clusters)
+- Redis operator installed (for Valkey Sentinel and GitLab Redis Sentinel)
 
 ## License
 
