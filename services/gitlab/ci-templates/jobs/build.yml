@@ -18,10 +18,9 @@
         --context "${CONTEXT}" \
         --dockerfile "${CONTEXT}/${DOCKERFILE}" \
         --destination "${IMAGE_FULL}" \
-        --destination "${IMAGE_NAME}:latest" \
         --cache=true \
         --cache-repo="${HARBOR_REGISTRY}/ci-cache/${CI_PROJECT_NAME}" \
         --snapshot-mode=redo \
-        --skip-tls-verify
+        --registry-certificate "${HARBOR_REGISTRY}=/etc/ssl/certs/vault-root-ca.pem"
   rules:
     - if: '$CI_COMMIT_BRANCH'
