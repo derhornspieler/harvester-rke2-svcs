@@ -120,6 +120,10 @@ fi
 # Phase 1: cert-manager
 if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: cert-manager"
+  # Install experimental Gateway API CRDs (TCPRoute, TLSRoute) required by Traefik's experimental channel
+  log_info "Ensuring experimental Gateway API CRDs are installed..."
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/experimental/gateway.networking.k8s.io_tcproutes.yaml
+  kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml
   helm_repo_add jetstack "$HELM_REPO_CERTMANAGER"
   helm_install_if_needed cert-manager "$HELM_CHART_CERTMANAGER" cert-manager \
     --version v1.19.4 \

@@ -152,6 +152,17 @@ grafana:
     requests:
       cpu: 500m
       memory: 512Mi
+  grafana.ini:
+    diagnostics:
+      profiling.enabled: false
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  extraEmptyDirMounts:
+    - name: grafana-tmp
+      mountPath: /tmp
   nodeSelector:
     workload-type: general
   topologySpreadConstraints:
