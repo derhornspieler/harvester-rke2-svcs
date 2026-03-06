@@ -38,8 +38,17 @@ server:
               matchLabels:
                 app.kubernetes.io/name: argo-workflows-server
             topologyKey: kubernetes.io/hostname
+  # auth-mode=server disables Argo's built-in authentication.
+  # This is intentional: the Argo Workflows UI is protected by OAuth2-proxy
+  # (ForwardAuth via Traefik middleware), which handles OIDC authentication
+  # against Keycloak before any request reaches the Argo server.
+  # See: services/argo/argo-workflows/oauth2-proxy.yaml
+  #      services/argo/argo-workflows/middleware-oauth2-proxy.yaml
   extraArgs:
     - --auth-mode=server
+  # readOnlyRootFilesystem is false (chart default) because the argo-server
+  # writes temporary files at runtime. This is managed by the upstream Helm
+  # chart and cannot be overridden via values alone without breaking the server.
 
 workflow:
   serviceAccount:

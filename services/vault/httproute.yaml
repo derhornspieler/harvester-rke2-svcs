@@ -1,3 +1,8 @@
+# No OAuth2-proxy/ForwardAuth middleware on this route — intentional.
+# Vault provides its own authentication (token, OIDC, AppRole, userpass).
+# Adding ForwardAuth would break Vault API clients (ESO, cert-manager,
+# CI/CD pipelines) that authenticate directly via Vault tokens/AppRoles.
+# The Vault UI enforces authentication via its built-in login flow.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
