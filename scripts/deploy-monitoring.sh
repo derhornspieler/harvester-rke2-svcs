@@ -120,13 +120,11 @@ if [[ "$VALIDATE_ONLY" == "true" ]]; then
     fi
   done
   # Traefik dashboard TLS is in kube-system (Gateway lives there)
-  for secret in "traefik-${DOMAIN_DASHED}-tls"; do
-    if kubectl -n kube-system get secret "$secret" &>/dev/null; then
-      log_ok "TLS secret ${secret} exists (kube-system)"
-    else
-      log_warn "TLS secret ${secret} not found (kube-system)"
-    fi
-  done
+  if kubectl -n kube-system get secret "traefik-${DOMAIN_DASHED}-tls" &>/dev/null; then
+    log_ok "TLS secret traefik-${DOMAIN_DASHED}-tls exists (kube-system)"
+  else
+    log_warn "TLS secret traefik-${DOMAIN_DASHED}-tls not found (kube-system)"
+  fi
 
   end_phase "Validation: Monitoring Health Check"
   exit 0
