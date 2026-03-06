@@ -111,8 +111,9 @@ fi
 if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: Shared Data Services"
 
-  # Install CNPG operator (skip if CRD already exists)
-  if ! kubectl get crd clusters.postgresql.cnpg.io &>/dev/null; then
+  # Install CNPG operator (skip only if the controller is already running)
+  # CRDs may persist after teardown, so check the actual deployment not the CRD
+  if ! kubectl -n cnpg-system get deployment cnpg-controller-manager &>/dev/null; then
     log_info "Installing CloudNativePG operator..."
     helm_repo_add cnpg "$HELM_REPO_CNPG"
     helm_install_if_needed cnpg "$HELM_CHART_CNPG" cnpg-system \
@@ -120,14 +121,16 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
       --set monitoring.podMonitorEnabled=true \
       --set nodeSelector.workload-type=database \
       --wait --timeout 5m
-    wait_for_deployment cnpg-system cnpg-controller-manager 300s
+    # Deployment name varies by chart version: cnpg-cloudnative-pg or cnpg-controller-manager
+    _cnpg_deploy=$(kubectl -n cnpg-system get deployment -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    wait_for_deployment cnpg-system "${_cnpg_deploy:-cnpg-cloudnative-pg}" 300s
 
     # Apply HPA and PDB for the CNPG operator
     log_info "Applying CNPG operator HPA and PDB..."
     kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/hpa.yaml"
     kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/pdb.yaml"
   else
-    log_info "CNPG operator CRD already exists, skipping install"
+    log_info "CNPG operator already running, skipping install"
   fi
 
   end_phase "Phase 1: Shared Data Services"

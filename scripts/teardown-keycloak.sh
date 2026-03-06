@@ -168,6 +168,17 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   log_info "Deleting CNPG operator Helm release..."
   run helm uninstall cnpg -n cnpg-system --wait --timeout 5m 2>/dev/null || true
 
+  log_info "Deleting stale CNPG webhook configurations..."
+  safe_delete validatingwebhookconfiguration cnpg-validating-webhook-configuration --ignore-not-found
+  safe_delete mutatingwebhookconfiguration cnpg-mutating-webhook-configuration --ignore-not-found
+
+  log_info "Deleting CNPG CRDs (orphaned CRDs block Helm reinstall)..."
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log_info "[DRY-RUN] kubectl delete crd --selector=app.kubernetes.io/name=cloudnative-pg"
+  else
+    kubectl get crd -o name 2>/dev/null | grep cnpg | xargs -r kubectl delete 2>/dev/null || true
+  fi
+
   log_info "Deleting cnpg-system namespace..."
   safe_delete namespace cnpg-system --ignore-not-found --wait=true --timeout=120s
 
