@@ -186,9 +186,9 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     # Apply ExternalSecrets (creates secrets in both database and monitoring namespaces)
     kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/external-secret.yaml"
     log_info "Waiting for grafana-pg-credentials ExternalSecret to sync..."
-    kubectl wait --for=condition=SecretSynced externalsecret/grafana-pg-credentials \
+    kubectl wait --for=condition=Ready externalsecret/grafana-pg-credentials \
       -n database --timeout=120s
-    kubectl wait --for=condition=SecretSynced externalsecret/grafana-db-secret \
+    kubectl wait --for=condition=Ready externalsecret/grafana-db-secret \
       -n monitoring --timeout=120s
     log_ok "Grafana DB ExternalSecrets synced"
 
@@ -198,7 +198,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
     # Wait for CNPG cluster to become ready
     log_info "Waiting for grafana-pg CNPG cluster to become ready..."
-    kubectl wait --for=condition=Ready cluster/grafana-pg -n database --timeout=300s
+    kubectl wait --for=condition=Ready clusters.postgresql.cnpg.io/grafana-pg -n database --timeout=300s
     log_ok "Grafana PostgreSQL cluster ready"
   else
     log_warn "Vault init file not found — skipping Grafana PostgreSQL setup"
