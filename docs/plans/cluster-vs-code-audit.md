@@ -34,6 +34,7 @@
 ## Live Cluster Inventory
 
 ### Namespaces (28 total)
+
 **System**: default, kube-system, kube-public, kube-node-lease, cattle-system, cattle-impersonation-system, cattle-local-user-passwords, cattle-fleet-system, local, cilium-secrets
 **Pre-bundle operators**: cnpg-system, redis-operator, storage-autoscaler, node-labeler, cluster-autoscaler
 **Bundle 1**: vault, cert-manager, external-secrets
@@ -44,6 +45,7 @@
 **Bundle 6**: gitlab, gitlab-runners
 
 ### Helm Releases (deployed)
+
 | Namespace | Release | Version |
 |-----------|---------|---------|
 | argocd | argocd | 2 |
@@ -60,6 +62,7 @@
 | vault | vault | 1 |
 
 ### CNPG Clusters (all in `database` namespace)
+
 | Cluster | Instances | Poolers | Scheduled Backup |
 |---------|-----------|---------|------------------|
 | keycloak-pg | 3 | none | keycloak-pg-daily |
@@ -68,21 +71,26 @@
 | grafana-pg | 3 | none | grafana-pg-daily |
 
 ### Gateways (13)
+
 argo-rollouts, argo-workflows, argocd, gitlab, harbor, keycloak, hubble, traefik-dashboard, traefik-gateway, alertmanager, monitoring (grafana), prometheus, vault
 
 ### HTTPRoutes (13)
+
 argo-rollouts, argo-workflows, argocd, gitlab-gitlab, gitlab-kas, harbor, keycloak, hubble, traefik-dashboard, alertmanager, grafana, prometheus, vault
 
 ### OAuth2-proxy instances (6)
+
 monitoring: alertmanager, prometheus
 kube-system: hubble, traefik
 argo-rollouts: rollouts
 argo-workflows: workflows
 
 ### HelmChartConfigs (3)
+
 kube-system: harvester-cloud-provider, rke2-cilium, rke2-traefik
 
 ### VolumeAutoscalers (5)
+
 database: gitlab-pg, grafana-pg
 gitlab: gitlab-redis
 monitoring: loki, prometheus
@@ -92,6 +100,7 @@ monitoring: loki, prometheus
 ## Findings
 
 ### Phase 0: Pre-bundle / System Components
+
 **Status**: DONE
 
 #### Cilium HelmChartConfig — CRITICAL DRIFT
@@ -110,12 +119,15 @@ monitoring: loki, prometheus
 **Root cause**: RKE2 managed-chart controller (`objectset.rio.cattle.io`) merges/strips user HelmChartConfig values. `last-applied-configuration` retains full code, but actual rendered values are minimal.
 
 #### Traefik HelmChartConfig — IN SYNC
+
 All values match. Dashboard, Gateway API, SSH port, LB IP, volumes — all correct.
 
 #### OAuth2-proxy-traefik — DRIFT
+
 Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=2h`, `--metrics-address=0.0.0.0:44180`. Code was updated after deployment but not re-applied.
 
 #### Traefik Dashboard — NO DEPLOY SCRIPT
+
 `services/traefik-dashboard/` has 7 YAML files but no `deploy-traefik-dashboard.sh` and no `kustomization.yaml`. Resources must be applied manually.
 
 #### Pre-bundle Operators — NOT IN THIS REPO
@@ -132,9 +144,11 @@ Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=
 **CNPG HPA + PDB**: Live has both but no YAML in repo — cannot reproduce.
 
 ### Phase 1: Bundle 1 — PKI & Secrets
+
 **Status**: DONE
 
 #### Helm Releases — ALL MATCH
+
 - Vault 0.32.0: 3 replicas, 10Gi PVCs, database nodeSelector, anti-affinity, requests-only — all correct
 - cert-manager v1.19.4: CRDs, Gateway API enabled — correct
 - ESO 2.0.1: CRDs, nodeSelector general, requests 100m/128Mi — correct
@@ -151,6 +165,7 @@ Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=
 | vault-root-ca ConfigMaps | All 9 instances are procedural (kubectl create in scripts) — no declarative YAML | INFO |
 
 #### Verified Accurate
+
 - All 5 Vault services, Gateway/HTTPRoute, PDB, TLS cert
 - ClusterIssuer `vault-issuer` with correct Vault PKI path
 - All RBAC (SA, Role, RoleBinding for cert-manager)
@@ -158,6 +173,7 @@ Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=
 - PKI tooling: Root CA, intermediate CA, signing role, K8s auth — all reproducible
 
 ### Phase 2: Bundle 2 — Identity
+
 **Status**: DONE
 
 #### CRITICAL Findings
@@ -187,6 +203,7 @@ Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=
 | MinIO manifests path | Lives under `services/harbor/minio/` but MinIO is shared service — misleading |
 
 #### Verified Accurate
+
 - Keycloak deployment: image, env vars, security context, nodeSelector, topology spread, anti-affinity, resources, probes, HPA (2-5, 70% CPU)
 - All services (keycloak, keycloak-headless), Gateway, HTTPRoute
 - All ExternalSecrets (keycloak-admin-secret, keycloak-postgres-secret, keycloak-pg-credentials)
@@ -196,6 +213,7 @@ Live deployment missing 3 args vs code: `--cookie-expire=4h`, `--cookie-refresh=
 - setup-keycloak.sh: 10 OIDC clients, audience mappers, groups scope — mostly correct
 
 ### Phase 3: Bundle 3 — Monitoring
+
 **Status**: DONE (platform-engineer complete)
 
 #### 95%+ Match — Extremely Well Aligned
@@ -213,6 +231,7 @@ All core components match: Prometheus, Alertmanager, Grafana (HPA, OIDC, Postgre
 | Keycloak dashboard | `configmap-dashboard-keycloak.yaml` exists in code but not deployed (likely skipped in Bundle 2 Phase 8) | LOW |
 
 ### Phase 4: Bundle 4 — Harbor
+
 **Status**: DONE
 
 #### HIGH Findings
@@ -225,6 +244,7 @@ All core components match: Prometheus, Alertmanager, Grafana (HPA, OIDC, Postgre
 | vault-root-ca ConfigMap | Exists in harbor namespace but no source YAML or deploy script phase creates it |
 
 #### MEDIUM — CNPG Image Registry Drift
+
 Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) but live cluster uses direct `ghcr.io/...`. Code is correct per conventions — live needs re-apply.
 
 #### Harbor Deep-Dive Re-Audit (post Redis fix)
@@ -240,6 +260,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 **CNPG harbor-pg**: Healthy — 3/3 instances, backups working (last success 02:00 UTC), continuous archiving operational. Image uses direct `ghcr.io` instead of Harbor proxy-cache.
 
 #### Verified Accurate
+
 - All Harbor deployments, StatefulSets, services match Helm values
 - Gateway + HTTPRoute at harbor.dev.aegisgroup.ch — correct
 - Valkey Redis (RedisReplication + RedisSentinel) — 3 replicas, match code
@@ -249,6 +270,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 - MinIO S3 integration (endpoint, accesskey, bucket) — correct
 
 ### Phase 5: Bundle 5 — GitOps
+
 **Status**: DONE (platform-engineer complete)
 
 #### HIGH Findings
@@ -271,10 +293,12 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 | Argo VolumeAutoscaler | `volume-autoscalers.yaml` in code but never applied by deploy script |
 
 #### LOW Findings
+
 - `external-secret-redis.yaml` in rollouts — unused (cookie sessions), should be removed
 - OAuth2-proxy args drift (rollouts + workflows): live missing `--cookie-expire`, `--cookie-refresh`, `--metrics-address` vs code — code is ahead, needs re-apply
 
 #### Verified Accurate
+
 - All 3 Helm releases match pinned versions (ArgoCD 7.8.8, Rollouts 2.39.1, Workflows 0.45.1)
 - All deployments, StatefulSets match (replicas, resources, images)
 - All Gateways, HTTPRoutes, Middlewares, Certificates match
@@ -282,6 +306,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 - All monitoring (3 ServiceMonitors, 1 PrometheusRule, 3 dashboards) match
 
 ### Phase 6: Bundle 6 — Git & CI
+
 **Status**: DONE
 
 #### HIGH Findings
@@ -301,6 +326,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 | No Helm chart version pinning | GitLab chart (9.9.2) and runner chart (0.86.0) not version-pinned in deploy script |
 
 #### Verified Accurate
+
 - All Helm values match after CHANGEME substitution (full comparison)
 - All 6 ExternalSecrets in gitlab namespace match code
 - All 3 runner Helm releases (shared, security, group) — tags, executor, nodeSelector, RBAC match
@@ -310,6 +336,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 - All monitoring (3 ServiceMonitors, 1 PodMonitor, 2 PrometheusRules, 2 dashboards) — all match
 
 ### Phase 10: Documentation Sync
+
 **Status**: DONE
 
 #### Critical Documentation Issues
@@ -324,6 +351,7 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 | Hubble README | References `hubble.dev.aegisgroup.ch` but live uses `hubble.aegisgroup.ch` | MEDIUM |
 
 #### Verified Accurate
+
 - All deploy script phase counts match (7, 8+6, 6, 8, 7, 9)
 - Architecture Mermaid diagrams use correct GitLab-compatible HTML entities
 - Service dependencies and network flows documented accurately
@@ -437,16 +465,18 @@ Code correctly uses Harbor pull-through (`harbor.aegisgroup.ch/proxy-ghcr/...`) 
 The codebase captures ~85% of the live cluster state's *logic*, but **cannot produce a working deployment in an airgapped environment**. The fundamental blocker: 40+ container images, 6 Helm chart repos, 2 OCI chart references, and 2 GitHub CRD URLs all point to the public internet. In the airgapped cluster, these currently work because images were cached in Harbor during initial setup when the network was available — but a fresh deploy from this codebase would fail immediately.
 
 #### Blocking Issues — Airgap (fresh deploy would FAIL)
+
 1. **GitHub CRD fetch** (A76) — Gateway API CRDs fetched from raw.githubusercontent.com — must download to `scripts/manifests/`
 2. **Helm repos default to internet** (A77) — users must set `HELM_REPO_*`/`HELM_CHART_*` in `.env` (overrides exist but `HELM_REPO_CNPG` is missing)
 3. ~~Images~~ — **RESOLVED**: RKE2 `registries.yaml` rewrites all image pulls through Harbor at containerd level
 
 #### Blocking Issues — Logic (fresh deploy would FAIL even with internet)
-4. **CNPG operator deployment name mismatch** (A15) — `wait_for_deployment` polls wrong name, deploy hangs
-5. **CNPG operator version downgrade** (A16) — would install v1.25.0 over live v1.28.1
-6. **Harbor 3 ExternalSecrets never applied** (A82) + **inline credentials in Helm state** (A54) — passwords in plaintext in etcd
-7. **`subst.sh` empty defaults** (A55) — would deploy with blank passwords
-8. **ArgoCD OIDC rootCA** (A44) — next `helm upgrade` strips rootCA, breaks Keycloak SSO
+
+1. **CNPG operator deployment name mismatch** (A15) — `wait_for_deployment` polls wrong name, deploy hangs
+2. **CNPG operator version downgrade** (A16) — would install v1.25.0 over live v1.28.1
+3. **Harbor 3 ExternalSecrets never applied** (A82) + **inline credentials in Helm state** (A54) — passwords in plaintext in etcd
+4. **`subst.sh` empty defaults** (A55) — would deploy with blank passwords
+5. **ArgoCD OIDC rootCA** (A44) — next `helm upgrade` strips rootCA, breaks Keycloak SSO
 
 #### Drift Categories
 
@@ -463,6 +493,7 @@ The codebase captures ~85% of the live cluster state's *logic*, but **cannot pro
 | Missing code files for live resources | 3 | Reproducibility: cannot recreate from code |
 
 #### Recommended Priority Order
+
 1. **CRITICAL (18 items)**: A01, A02, A07, A14, A15, A16, A19, A24, A30, A31, A40, A54, A55, A58, A76, A77, A78, A79, A80, A81 — airgap blockers + logic failures
 2. **HIGH (23 items)**: Deploy script fixes, security hardening, PDBs, VolumeAutoscalers
 3. **MEDIUM (18 items)**: Config alignment, MANIFEST updates, operational improvements
@@ -482,6 +513,7 @@ A dedicated proxy VM (`harvester-helm-harbor-sync` repo) provides all external r
 #### Airgap Remediation Strategy
 
 **Container images** — handled by RKE2 `registries.yaml` (no YAML changes needed):
+
 | Mirror | Endpoint | Rewrite |
 |--------|----------|---------|
 | docker.io | harbor.aegisgroup.ch | `docker.io/$1` |
@@ -496,6 +528,7 @@ A dedicated proxy VM (`harvester-helm-harbor-sync` repo) provides all external r
 > This is configured per-node via Rancher/Terraform cloud-init. All container image pulls are transparently redirected to Harbor proxy-cache projects at the containerd level. Manifests can reference upstream registries directly.
 
 **HTTP Helm chart repos** — rewrite `HELM_REPO_*` vars to use `charts.aegisgroup.ch`:
+
 | Current (internet) | Airgap (proxy) |
 |---------------------|----------------|
 | `https://charts.jetstack.io` | `https://charts.aegisgroup.ch/jetstack` |
@@ -507,12 +540,14 @@ A dedicated proxy VM (`harvester-helm-harbor-sync` repo) provides all external r
 | `https://charts.gitlab.io` | `https://charts.aegisgroup.ch/gitlab` |
 
 **OCI Helm charts** — pull through Harbor proxy-cache:
+
 | Current (internet) | Airgap (Harbor OCI) |
 |---------------------|---------------------|
 | `oci://ghcr.io/argoproj/argo-helm/argo-cd` | `oci://harbor.aegisgroup.ch/proxy-ghcr/argoproj/argo-helm/argo-cd` |
 | `oci://registry-1.docker.io/goharbor/harbor-helm` | Already synced via charts.aegisgroup.ch/goharbor |
 
 **CRDs** — download and store in `scripts/manifests/`:
+
 | Current | Fix |
 |---------|-----|
 | `kubectl apply -f https://raw.githubusercontent.com/.../tcproutes.yaml` | Download to `scripts/manifests/gateway.networking.k8s.io_tcproutes.yaml` |
@@ -520,6 +555,7 @@ A dedicated proxy VM (`harvester-helm-harbor-sync` repo) provides all external r
 | Update `deploy-pki-secrets.sh` | `kubectl apply -f "${SCRIPT_DIR}/manifests/"` |
 
 ### Script Execution Order (from README)
+
 1. `deploy-pki-secrets.sh` (7 phases)
 2. `deploy-keycloak.sh` (8 phases) + `setup-keycloak.sh` (6 phases)
 3. `deploy-monitoring.sh` (6 phases)
@@ -530,7 +566,8 @@ A dedicated proxy VM (`harvester-helm-harbor-sync` repo) provides all external r
 **Additional scripts not in README bundle order:**
 - `deploy-hubble.sh` — Hubble observability (kube-system)
 
-### Pre-bundle dependencies (must exist before Bundle 1):
+### Pre-bundle dependencies (must exist before Bundle 1)
+
 - cnpg-system (CNPG operator)
 - redis-operator
 - storage-autoscaler

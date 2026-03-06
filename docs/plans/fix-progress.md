@@ -39,6 +39,7 @@
 ## Agent Results
 
 ### Batch 1: k8s-infra-engineer
+
 - Status: DONE (commit a35621c)
 - Worktree: merged + cleaned
 - Items completed: A04,A05,A11,A15,A16,A17,A21,A25,A26,A27,A52,A64,A65,A66,A67,A68,A70,A71,A85
@@ -46,12 +47,14 @@
 - Modified: 8 (4 deploy scripts, argocd-values, gitlab values, gitlab VAs, harbor VAs)
 
 ### Batch 2: security-sentinel
+
 - Status: DONE (commit e9a1f68)
 - Worktree: merged + cleaned
 - Items completed: A02(no-fix),A18,A19,A35(already-ok),A38,A55,A59(documented),A60,A61,A62(documented),A72(documented),A74(documented)
 - Modified: 11 files (subst.sh, vault.sh, 5 securityContext YAMLs, mc job, rollouts/workflows values, vault httproute)
 
 ### Batch 3: platform-developer
+
 - Status: DONE (commit 750a95b)
 - Worktree: merged from agent-abd264f4
 - Items completed: A12,A20,A39,A41,A43,A44,A45,A46,A47,A48,A49,A50,A73,A75,A76,A77,A86,A88
@@ -68,6 +71,7 @@
   - Airgap section in .env.example with HELM_REPO_CNPG
 
 ### Batch 4: platform-engineer
+
 - Status: DONE (commit 4ba409e)
 - Worktree: merged from agent-ad89421e
 - Items completed: A03,A13,A22,A28,A29,A32,A42,A51,A53,A63,A84
@@ -81,6 +85,7 @@
   - Harbor README Day-2 ops section
 
 ### Batch 5: tech-doc-keeper
+
 - Status: DONE (commits 75aaad8, 9819e04)
 - Worktree: main (committed directly)
 - Changes:
