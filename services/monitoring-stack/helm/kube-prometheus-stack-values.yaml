@@ -124,7 +124,7 @@ grafana:
     sessionAffinity: ClientIP
     sessionAffinityConfig:
       clientIP:
-        timeoutSeconds: 10800
+        timeoutSeconds: 1800
   adminUser: admin
   adminPassword: "CHANGEME_GRAFANA_ADMIN_PASSWORD"
   env:
