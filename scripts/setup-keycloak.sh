@@ -85,19 +85,20 @@ done
 # Helper functions
 ###############################################################################
 
-# Pre-cache bootstrap client credentials from Vault (called once at script start)
+# Pre-cache admin credentials from Vault (called once at script start)
+# Uses admin-cli with password grant (works out-of-the-box, no client registration needed)
 _kc_init_credentials() {
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
-  _KC_CLIENT_ID=$(kubectl exec -n vault vault-0 -- env \
+  _KC_ADMIN_USER=$(kubectl exec -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
-    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_ID kv/services/keycloak/admin-secret 2>/dev/null) || true
-  _KC_CLIENT_SECRET=$(kubectl exec -n vault vault-0 -- env \
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_USERNAME kv/services/keycloak/admin-secret 2>/dev/null) || true
+  _KC_ADMIN_PASS=$(kubectl exec -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
-    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_SECRET kv/services/keycloak/admin-secret 2>/dev/null) || true
-  [[ -n "$_KC_CLIENT_ID" && -n "$_KC_CLIENT_SECRET" ]] || \
-    die "Could not read bootstrap client credentials from Vault"
-  log_info "Using bootstrap client: ${_KC_CLIENT_ID}"
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_PASSWORD kv/services/keycloak/admin-secret 2>/dev/null) || true
+  [[ -n "$_KC_ADMIN_USER" && -n "$_KC_ADMIN_PASS" ]] || \
+    die "Could not read admin credentials from Vault"
+  log_info "Using admin user: ${_KC_ADMIN_USER}"
 }
 _kc_init_credentials
 
@@ -121,9 +122,10 @@ kc_get_token() {
   for attempt in 1 2 3; do
     token=$(curl -sf --connect-timeout 10 --max-time 30 \
       -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-      -d "grant_type=client_credentials" \
-      -d "client_id=${_KC_CLIENT_ID}" \
-      -d "client_secret=${_KC_CLIENT_SECRET}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
+      -d "grant_type=password" \
+      -d "client_id=admin-cli" \
+      -d "username=${_KC_ADMIN_USER}" \
+      -d "password=${_KC_ADMIN_PASS}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
     if [[ -n "$token" && "$token" != "null" ]]; then
       echo "$token" > "$_KC_TOKEN_FILE"
       date +%s > "$_KC_TOKEN_TIME_FILE"
