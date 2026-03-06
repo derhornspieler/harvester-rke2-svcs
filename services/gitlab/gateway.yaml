@@ -30,17 +30,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: Same
-    - name: minio-web
-      port: 8443
-      protocol: HTTPS
-      hostname: "minio.CHANGEME_DOMAIN"
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: minio-CHANGEME_DOMAIN_DASHED-tls
-      allowedRoutes:
-        namespaces:
-          from: Same
     - name: ssh
       port: 2222
       protocol: TCP
