@@ -49,10 +49,8 @@ manifests:
   gateways:
     - prometheus/gateway.yaml
     - prometheus/httproute.yaml
-    - prometheus/basic-auth-middleware.yaml
     - alertmanager/gateway.yaml
     - alertmanager/httproute.yaml
-    - alertmanager/basic-auth-middleware.yaml
     - grafana/gateway.yaml
     - grafana/httproute.yaml
   scaling:
@@ -70,5 +68,5 @@ deploy:
     Phase 2: Scrape Configs Secret — Add custom Prometheus scrape configurations
     Phase 3: kube-prometheus-stack — Helm install (Prometheus, Grafana, Alertmanager)
     Phase 4: Rules, Monitors, Scaling — Apply PrometheusRules, ServiceMonitors, HPA, VolumeAutoscalers
-    Phase 5: Gateways, Routes, Auth — Ingress routes, basic-auth, dashboards
+    Phase 5: Gateways, Routes, Auth — Ingress routes, OAuth2-proxy, dashboards
     Phase 6: Verify — Wait for all components ready, TLS certificates issued

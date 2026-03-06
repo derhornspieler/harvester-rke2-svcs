@@ -235,7 +235,7 @@ data:
           "id": 26,
           "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
           "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
-          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-traefik-dashboard\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-traefik\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
         },
         {
           "title": "Rollouts",

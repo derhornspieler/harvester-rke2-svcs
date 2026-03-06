@@ -119,6 +119,7 @@ graph TB
 | **Alertmanager** | Alert routing, deduplication, notification | `monitoring` | 3 |
 | **Loki** | Log aggregation (single-binary mode) | `monitoring` | 3 |
 | **Alloy** | Log collection agent (DaemonSet), includes Hubble flow log collection | `monitoring` | 3 |
+| **CNPG PostgreSQL (Grafana)** | HA PostgreSQL cluster for Grafana user/dashboard/datasource persistence | `database` | 3 |
 | **Cilium** | Network CNI (system chart), HelmChartConfig enables Hubble observability | `kube-system` | RKE2 system |
 | **Hubble Relay** | Aggregates Cilium network events, exposes metrics for Prometheus | `kube-system` | 3 |
 | **Hubble UI** | Web dashboard for network flow visualization, protected by OAuth2-proxy | `kube-system` | 2 |

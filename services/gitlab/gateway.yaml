@@ -5,6 +5,8 @@ metadata:
   namespace: gitlab
   annotations:
     cert-manager.io/cluster-issuer: vault-issuer
+    cert-manager.io/duration: "720h"
+    cert-manager.io/renew-before: "168h"
 spec:
   gatewayClassName: traefik
   listeners:

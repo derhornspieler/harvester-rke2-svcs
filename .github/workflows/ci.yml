@@ -67,9 +67,51 @@ jobs:
             -o kustomize.tar.gz
           tar xzf kustomize.tar.gz
           sudo mv kustomize /usr/local/bin/
+      # Bundle 1: PKI & Secrets
       - name: Build Vault
         run: kustomize build services/vault/
+      - name: Build Vault monitoring
+        run: kustomize build services/vault/monitoring/
       - name: Build cert-manager
         run: kustomize build services/cert-manager/
+      - name: Build cert-manager monitoring
+        run: kustomize build services/cert-manager/monitoring/
       - name: Build external-secrets
         run: kustomize build services/external-secrets/
+      - name: Build external-secrets monitoring
+        run: kustomize build services/external-secrets/monitoring/
+      # Bundle 2: Identity
+      - name: Build Keycloak
+        run: kustomize build services/keycloak/
+      - name: Build Keycloak monitoring
+        run: kustomize build services/keycloak/monitoring/
+      # Bundle 3: Monitoring
+      - name: Build monitoring-stack
+        run: kustomize build services/monitoring-stack/
+      - name: Build monitoring-stack prometheus-rules
+        run: kustomize build services/monitoring-stack/prometheus-rules/
+      - name: Build monitoring-stack service-monitors
+        run: kustomize build services/monitoring-stack/service-monitors/
+      - name: Build Cilium
+        run: kustomize build services/cilium/
+      - name: Build Hubble
+        run: kustomize build services/hubble/
+      - name: Build Traefik dashboard
+        run: kustomize build services/traefik-dashboard/
+      # Bundle 4: Harbor
+      - name: Build Harbor
+        run: kustomize build services/harbor/
+      - name: Build Harbor monitoring
+        run: kustomize build services/harbor/monitoring/
+      # Bundle 5: GitOps
+      - name: Build Argo
+        run: kustomize build services/argo/
+      - name: Build Argo monitoring
+        run: kustomize build services/argo/monitoring/
+      # Bundle 6: GitLab
+      - name: Build GitLab
+        run: kustomize build services/gitlab/
+      - name: Build GitLab runners
+        run: kustomize build services/gitlab/runners/
+      - name: Build GitLab monitoring
+        run: kustomize build services/gitlab/monitoring/

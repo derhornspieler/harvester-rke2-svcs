@@ -35,7 +35,7 @@ HELM_REPO_HARBOR="${HELM_REPO_HARBOR:-https://helm.goharbor.io}"
 
 # CLI Parsing
 PHASE_FROM=1
-PHASE_TO=8
+PHASE_TO=9
 VALIDATE_ONLY=false
 
 usage() {
@@ -47,7 +47,7 @@ Deploy Harbor container registry with MinIO, CNPG PostgreSQL, and Valkey backend
 Options:
   --phase N       Run only phase N
   --from N        Start from phase N (default: 1)
-  --to N          Stop after phase N (default: 8)
+  --to N          Stop after phase N (default: 9)
   --validate      Health check all components (no changes)
   -h, --help      Show this help
 
@@ -59,7 +59,8 @@ Phases:
   5  Valkey Sentinel      RedisReplication + RedisSentinel
   6  Harbor Helm          Helm install with substituted values
   7  Ingress + HPAs       Gateway, HTTPRoute, autoscaling
-  8  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
+  8  VolumeAutoscalers    VolumeAutoscaler CRs + PDBs for Harbor workloads
+  9  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
 EOF
   exit 0
 }
@@ -129,6 +130,19 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/harbor/namespace.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/minio/namespace.yaml"
   kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
+
+  # Create vault-root-ca ConfigMap in harbor namespace (CA trust for registry TLS)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap in harbor..."
+    kubectl create configmap vault-root-ca \
+      --namespace=harbor \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMap not created in harbor"
+  fi
+
   end_phase "Phase 1: Namespaces"
 fi
 
@@ -172,10 +186,12 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   export HARBOR_ADMIN_PASSWORD HARBOR_MINIO_SECRET_KEY
 
   # Store consolidated Harbor credentials in Vault for operator reference
+  # minio-access-key + minio-secret-key are consumed by harbor-s3-credentials ExternalSecret
   vault_exec "$root_token" kv put kv/services/harbor \
     admin-password="$HARBOR_ADMIN_PASSWORD" \
     db-password="$HARBOR_DB_PASSWORD" \
     redis-password="$HARBOR_REDIS_PASSWORD" \
+    minio-access-key="${MINIO_ROOT_USER}" \
     minio-secret-key="$HARBOR_MINIO_SECRET_KEY"
 
   # Create Vault K8s auth roles and policies for each namespace
@@ -188,12 +204,20 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       ttl=1h
 
     # Write policy via kubectl exec with stdin (vault_exec doesn't support stdin)
+    # Include both base path and wildcard — ESO reads kv/data/services/<ns> (no trailing slash)
+    # as well as kv/data/services/<ns>/subpath for sub-component secrets
     kubectl exec -i -n vault vault-0 -- env \
       VAULT_ADDR=http://127.0.0.1:8200 \
       VAULT_TOKEN="$root_token" \
       vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}" {
+  capabilities = ["read"]
+}
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
+}
+path "kv/metadata/services/${ns}" {
+  capabilities = ["read", "list"]
 }
 path "kv/metadata/services/${ns}/*" {
   capabilities = ["read", "list"]
@@ -229,12 +253,16 @@ EOF
   kubectl apply -f "${REPO_ROOT}/services/harbor/minio/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/postgres/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/valkey/external-secret.yaml"
+  # Harbor-namespace secrets (admin, db, s3 credentials consumed by Helm existingSecret refs)
+  kubectl apply -f "${REPO_ROOT}/services/harbor/external-secrets.yaml"
 
   # Wait for secrets to sync
   log_info "Waiting for ExternalSecrets to sync..."
   sleep 10
   for secret in minio-root-credentials:minio harbor-pg-credentials:database \
-    cnpg-minio-credentials:database harbor-valkey-credentials:harbor; do
+    cnpg-minio-credentials:database harbor-valkey-credentials:harbor \
+    harbor-admin-credentials:harbor harbor-db-credentials:harbor \
+    harbor-s3-credentials:harbor; do
     local_name="${secret%%:*}"
     local_ns="${secret##*:}"
     if kubectl -n "$local_ns" get secret "$local_name" &>/dev/null; then
@@ -347,11 +375,21 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   end_phase "Phase 7: Ingress + HPAs"
 fi
 
-# Phase 8: Monitoring + Verify
+# Phase 8: VolumeAutoscalers + PDBs
 if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
-  start_phase "Phase 8: Monitoring + Verify"
+  start_phase "Phase 8: VolumeAutoscalers + PDBs"
+  log_info "Applying VolumeAutoscalers for Harbor PVCs..."
+  kubectl apply -f "${REPO_ROOT}/services/harbor/volume-autoscalers.yaml"
+  log_info "Applying PDBs for Harbor stateless workloads..."
+  kubectl apply -f "${REPO_ROOT}/services/harbor/pdbs.yaml"
+  end_phase "Phase 8: VolumeAutoscalers + PDBs"
+fi
+
+# Phase 9: Monitoring + Verify
+if [[ $PHASE_FROM -le 9 && $PHASE_TO -ge 9 ]]; then
+  start_phase "Phase 9: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/harbor/monitoring/"
-  end_phase "Phase 8: Monitoring + Verify"
+  end_phase "Phase 9: Monitoring + Verify"
 fi
 
 log_ok "Harbor deployment complete"
