@@ -19,6 +19,7 @@ spec:
     - Ingress
   ingress:
     # Traefik ingress controller (runs in kube-system as RKE2 DaemonSet)
+    # Harbor nginx listens on 8080, core/portal also on 8080
     - from:
         - namespaceSelector:
             matchLabels:
@@ -30,13 +31,15 @@ spec:
         - protocol: TCP
           port: 80
         - protocol: TCP
-          port: 443
-    # Prometheus scraping metrics
+          port: 8080
+    # Prometheus scraping metrics (exporter 8001, redis 9121)
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
       ports:
+        - protocol: TCP
+          port: 8001
         - protocol: TCP
           port: 9090
         - protocol: TCP

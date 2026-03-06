@@ -149,37 +149,43 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
 
-  # Seed Vault KV secrets for GitLab components
-  log_info "Seeding Vault KV secrets for GitLab..."
+  # Read existing credentials from Vault or generate new ones (idempotent)
+  log_info "Reading/generating GitLab credentials (Vault-first, no regeneration on re-run)..."
 
   # Redis password
-  GITLAB_REDIS_PASSWORD="${GITLAB_REDIS_PASSWORD:-$(openssl rand -base64 24)}"
+  GITLAB_REDIS_PASSWORD="${GITLAB_REDIS_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/redis" "password" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/gitlab/redis \
     password="$GITLAB_REDIS_PASSWORD"
   export GITLAB_REDIS_PASSWORD
 
   # Gitaly token
-  GITLAB_GITALY_TOKEN="${GITLAB_GITALY_TOKEN:-$(openssl rand -hex 32)}"
+  GITLAB_GITALY_TOKEN="${GITLAB_GITALY_TOKEN:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/gitaly-secret" "token" "openssl rand -hex 32")}"
   vault_exec "$root_token" kv put kv/services/gitlab/gitaly-secret \
     token="$GITLAB_GITALY_TOKEN"
 
   # Praefect DB secret
-  GITLAB_PRAEFECT_DB_PASSWORD="${GITLAB_PRAEFECT_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  GITLAB_PRAEFECT_DB_PASSWORD="${GITLAB_PRAEFECT_DB_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/praefect-dbsecret" "secret" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/gitlab/praefect-dbsecret \
     secret="$GITLAB_PRAEFECT_DB_PASSWORD"
 
   # Praefect internal token
-  GITLAB_PRAEFECT_TOKEN="${GITLAB_PRAEFECT_TOKEN:-$(openssl rand -hex 32)}"
+  GITLAB_PRAEFECT_TOKEN="${GITLAB_PRAEFECT_TOKEN:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/praefect-secret" "token" "openssl rand -hex 32")}"
   vault_exec "$root_token" kv put kv/services/gitlab/praefect-secret \
     token="$GITLAB_PRAEFECT_TOKEN"
 
   # Initial root password
-  GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(openssl rand -base64 24)}"
+  GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/initial-root-password" "password" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/gitlab/initial-root-password \
     password="$GITLAB_ROOT_PASSWORD"
 
-  # OIDC provider (placeholder — setup-keycloak.sh will update with real client secret)
-  GITLAB_OIDC_CLIENT_SECRET="${GITLAB_OIDC_CLIENT_SECRET:-placeholder-update-after-keycloak}"
+  # OIDC provider (read existing secret from Vault or use placeholder)
+  GITLAB_OIDC_CLIENT_SECRET="${GITLAB_OIDC_CLIENT_SECRET:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab" "oidc_client_secret" "echo placeholder-update-after-keycloak")}"
   _oidc_provider=$(cat <<OIDCJSON
 {"name":"openid_connect","label":"Keycloak","args":{"name":"openid_connect","scope":["openid","profile","email"],"response_type":"code","issuer":"https://keycloak.${DOMAIN}/realms/${KC_REALM:-platform}","discovery":true,"client_auth_method":"query","uid_field":"preferred_username","client_options":{"identifier":"gitlab","secret":"${GITLAB_OIDC_CLIENT_SECRET}","redirect_uri":"https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"}}}
 OIDCJSON
@@ -195,22 +201,34 @@ OIDCJSON
     password="$HARBOR_CI_PASSWORD"
 
   # CNPG PostgreSQL credentials
-  GITLAB_DB_USER="${GITLAB_DB_USER:-gitlab}"
-  GITLAB_DB_PASSWORD="${GITLAB_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  GITLAB_DB_USER="${GITLAB_DB_USER:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/gitlab-pg" "username" "echo gitlab")}"
+  GITLAB_DB_PASSWORD="${GITLAB_DB_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/gitlab-pg" "password" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/database/gitlab-pg \
     username="$GITLAB_DB_USER" \
     password="$GITLAB_DB_PASSWORD"
 
-  # CNPG MinIO backup credentials (reuse MinIO root creds)
-  MINIO_ROOT_USER=$(kubectl exec -n vault vault-0 -- env \
-    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
-    vault kv get -field=root-user kv/services/minio/root-credentials 2>/dev/null) || true
-  MINIO_ROOT_PASSWORD=$(kubectl exec -n vault vault-0 -- env \
-    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
-    vault kv get -field=root-password kv/services/minio/root-credentials 2>/dev/null) || true
+  # CNPG MinIO backup credentials (reuse MinIO root creds from Identity bundle)
+  MINIO_ROOT_USER=$(vault_get_field "$root_token" "kv/services/minio/root-credentials" "root-user") || true
+  MINIO_ROOT_PASSWORD=$(vault_get_field "$root_token" "kv/services/minio/root-credentials" "root-password") || true
   vault_exec "$root_token" kv put kv/services/database/cnpg-minio-gitlab \
     ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
     ACCESS_SECRET_KEY="${MINIO_ROOT_PASSWORD}"
+
+  # Store consolidated GitLab credentials in Vault for operator reference
+  vault_exec "$root_token" kv put kv/services/gitlab \
+    postgresql_password="$GITLAB_DB_PASSWORD" \
+    postgresql_username="$GITLAB_DB_USER" \
+    redis_password="$GITLAB_REDIS_PASSWORD" \
+    gitaly_token="$GITLAB_GITALY_TOKEN" \
+    praefect_db_secret="$GITLAB_PRAEFECT_DB_PASSWORD" \
+    root_password="$GITLAB_ROOT_PASSWORD" \
+    shell_secret="pending-helm-generates" \
+    oidc_client_id="gitlab" \
+    oidc_client_secret="$GITLAB_OIDC_CLIENT_SECRET" \
+    minio_accesskey="gitlab-minio-admin" \
+    minio_endpoint="http://minio.minio.svc.cluster.local:9000"
 
   # Create Vault K8s auth roles and policies for gitlab and gitlab-runners namespaces
   for ns in gitlab gitlab-runners; do

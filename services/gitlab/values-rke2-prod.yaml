@@ -24,11 +24,11 @@
 global:
   edition: ee
 
-  ## ── MinIO — enabled for initial deployment ────────────────────────────────
-  ## Replace with external S3-compatible storage for production scale.
-  ## When switching, set enabled: false and configure global.appConfig.object_store
+  ## ── MinIO — using shared MinIO from minio namespace (Bundle 2) ────────────
+  ## Shared MinIO serves Harbor, GitLab, and CNPG backups.
+  ## Dedicated user: gitlab-minio-admin (readwrite policy)
   minio:
-    enabled: true
+    enabled: false
 
   ## ── Hostnames ──────────────────────────────────────────────────────────────
   hosts:
@@ -140,6 +140,32 @@ global:
       providers:
         - secret: gitlab-oidc-secret
           key: provider
+
+    ## ── Object Storage (shared MinIO in minio namespace) ───────────────────
+    ## All GitLab object types use the consolidated object_store config.
+    ## Endpoint: minio.minio.svc.cluster.local:9000 (HTTP, not HTTPS)
+    object_store:
+      enabled: true
+      proxy_download: true
+      connection:
+        secret: gitlab-minio-storage
+        key: connection
+    lfs:
+      bucket: gitlab-lfs
+    artifacts:
+      bucket: gitlab-artifacts
+    uploads:
+      bucket: gitlab-uploads
+    packages:
+      bucket: gitlab-packages
+    externalDiffs:
+      bucket: gitlab-mr-diffs
+    terraformState:
+      bucket: gitlab-terraform
+    ciSecureFiles:
+      bucket: gitlab-ci-secure-files
+    dependencyProxy:
+      bucket: gitlab-dependency-proxy
 
   ## ── Root CA Trust (Vault CA) ──────────────────────────────────────────────
   certificates:
