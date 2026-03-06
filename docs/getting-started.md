@@ -45,6 +45,39 @@ The Redis operators must be pre-installed:
 | Redis operator (Spotahome) | Harbor (Valkey Sentinel) | Must be pre-installed |
 | Redis operator (OpsTree) | GitLab (Redis Sentinel) | Must be pre-installed |
 
+### Installing Cluster Operators
+
+Before deploying any bundles, install the Redis operators:
+
+**OpsTree Redis Operator** (required for GitLab Bundle 6):
+
+```bash
+# Add Helm repository
+helm repo add opstree-charts https://charts.opstreelabs.in
+helm repo update
+
+# Install OpsTree Redis Operator (v0.23.0)
+kubectl create ns redis-operator
+helm install redis-operator opstree-charts/redis-operator \
+  --namespace redis-operator \
+  --version 0.23.0
+```
+
+Verify the operator is ready:
+
+```bash
+kubectl -n redis-operator get deploy redis-operator
+# Should show 2 replicas ready
+```
+
+**Note:** Spotahome Redis Operator is not currently used (Harbor uses Valkey Sentinel directly via Helm chart). If you need Spotahome operator support in the future, add it with:
+
+```bash
+# Optional: Spotahome Redis Operator setup (not currently used)
+# helm repo add spotahome https://charts.spotahome.com
+# helm install redis-operator spotahome/redis-operator --namespace redis-operator --create-namespace
+```
+
 ## Step 1: Clone the Repository
 
 ```bash

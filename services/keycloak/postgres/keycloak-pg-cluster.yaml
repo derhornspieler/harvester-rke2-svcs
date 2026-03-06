@@ -8,7 +8,7 @@ metadata:
   namespace: database
 spec:
   instances: 3
-  imageName: harbor.example.com/proxy-ghcr/cloudnative-pg/postgresql:16.6
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
 
   bootstrap:
     initdb:

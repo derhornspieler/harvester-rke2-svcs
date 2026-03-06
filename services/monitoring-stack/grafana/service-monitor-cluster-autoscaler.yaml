@@ -8,9 +8,9 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - kube-system
+      - cluster-autoscaler
   selector:
     matchLabels:
-      app.kubernetes.io/name: rancher-cluster-autoscaler
+      app.kubernetes.io/name: cluster-autoscaler
   endpoints:
     - port: http

@@ -41,8 +41,16 @@ spec:
   nodeSelector:
     workload-type: database
   podSecurityContext:
+    runAsNonRoot: true
     runAsUser: 999
     fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # Redis needs to write RDB/AOF to data volume path
+    capabilities:
+      drop: ["ALL"]
   affinity:
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:

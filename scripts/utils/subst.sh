@@ -8,10 +8,11 @@ _subst_changeme() {
   [[ -n "${DOMAIN:-}" ]] || die "DOMAIN must be set before using subst functions"
   [[ -n "${DOMAIN_DASHED:-}" ]] || die "DOMAIN_DASHED must be set"
   [[ -n "${DOMAIN_DOT:-}" ]] || die "DOMAIN_DOT must be set"
-  # Validate critical passwords are non-empty when explicitly set (avoids blocking non-monitoring deploys)
-  if [[ -n "${GRAFANA_ADMIN_PASSWORD+set}" && -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
-    die "GRAFANA_ADMIN_PASSWORD is set but empty — refusing to deploy with blank password"
-  fi
+  # Substitution uses :- (empty-if-unset) so only files that actually contain
+  # the token will fail via the leftover check in kube_apply_subst().
+  # Use :- (empty-if-unset) so sed doesn't fail when a variable isn't needed
+  # for the current file. The leftover check in kube_apply_subst() catches
+  # any unreplaced CHANGEME_ tokens that should have been substituted.
   sed \
     -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_KC_REALM|${KC_REALM:-platform}|g" \

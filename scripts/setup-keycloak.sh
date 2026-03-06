@@ -17,7 +17,7 @@ fi
 # Domain and Keycloak settings
 DOMAIN="${DOMAIN:?DOMAIN must be set}"
 KC_REALM="${KC_REALM:-platform}"
-KC_URL="https://keycloak.${DOMAIN}"
+KC_URL="${KC_URL:-https://keycloak.${DOMAIN}}"
 
 # Vault init file (to read admin credentials)
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
@@ -85,19 +85,20 @@ done
 # Helper functions
 ###############################################################################
 
-# Pre-cache bootstrap client credentials from Vault (called once at script start)
+# Pre-cache admin credentials from Vault (called once at script start)
+# Uses admin-cli with password grant (works out-of-the-box, no client registration needed)
 _kc_init_credentials() {
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
-  _KC_CLIENT_ID=$(kubectl exec -n vault vault-0 -- env \
+  _KC_ADMIN_USER=$(kubectl exec -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
-    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_ID kv/services/keycloak/admin-secret 2>/dev/null) || true
-  _KC_CLIENT_SECRET=$(kubectl exec -n vault vault-0 -- env \
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_USERNAME kv/services/keycloak/admin-secret 2>/dev/null) || true
+  _KC_ADMIN_PASS=$(kubectl exec -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$_root_token" \
-    vault kv get -field=KC_BOOTSTRAP_ADMIN_CLIENT_SECRET kv/services/keycloak/admin-secret 2>/dev/null) || true
-  [[ -n "$_KC_CLIENT_ID" && -n "$_KC_CLIENT_SECRET" ]] || \
-    die "Could not read bootstrap client credentials from Vault"
-  log_info "Using bootstrap client: ${_KC_CLIENT_ID}"
+    vault kv get -field=KC_BOOTSTRAP_ADMIN_PASSWORD kv/services/keycloak/admin-secret 2>/dev/null) || true
+  [[ -n "$_KC_ADMIN_USER" && -n "$_KC_ADMIN_PASS" ]] || \
+    die "Could not read admin credentials from Vault"
+  log_info "Using admin user: ${_KC_ADMIN_USER}"
 }
 _kc_init_credentials
 
@@ -121,9 +122,10 @@ kc_get_token() {
   for attempt in 1 2 3; do
     token=$(curl -sf --connect-timeout 10 --max-time 30 \
       -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-      -d "grant_type=client_credentials" \
-      -d "client_id=${_KC_CLIENT_ID}" \
-      -d "client_secret=${_KC_CLIENT_SECRET}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
+      -d "grant_type=password" \
+      -d "client_id=admin-cli" \
+      -d "username=${_KC_ADMIN_USER}" \
+      -d "password=${_KC_ADMIN_PASS}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
     if [[ -n "$token" && "$token" != "null" ]]; then
       echo "$token" > "$_KC_TOKEN_FILE"
       date +%s > "$_KC_TOKEN_TIME_FILE"
@@ -221,6 +223,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       emailVerified: true,
       credentials: [{type: "password", value: $pass, temporary: false}]
     }')
+  # Create user in the platform realm (for OIDC login)
   kc_api_create POST "${KC_REALM}/users" -d "$_user_payload"
 
   # Get user ID for later group assignment
@@ -228,7 +231,31 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   if [[ -z "$PLATFORM_ADMIN_ID" || "$PLATFORM_ADMIN_ID" == "null" ]]; then
     die "Failed to retrieve ${PLATFORM_ADMIN_USER} user ID"
   fi
-  log_ok "User ${PLATFORM_ADMIN_USER} created (ID: ${PLATFORM_ADMIN_ID})"
+  log_ok "User ${PLATFORM_ADMIN_USER} created in '${KC_REALM}' realm (ID: ${PLATFORM_ADMIN_ID})"
+
+  # Also create user in master realm with admin role (for Keycloak admin API access)
+  log_info "Creating ${PLATFORM_ADMIN_USER} in master realm with admin role..."
+  kc_api_create POST "master/users" -d "$_user_payload"
+
+  _master_user_id=$(kc_api GET "master/users?username=${PLATFORM_ADMIN_USER}" | jq -r '.[0].id')
+  if [[ -n "$_master_user_id" && "$_master_user_id" != "null" ]]; then
+    # Get the admin role ID in master realm
+    _admin_role_id=$(kc_api GET "master/roles/admin" | jq -r '.id')
+    if [[ -n "$_admin_role_id" && "$_admin_role_id" != "null" ]]; then
+      # Assign admin realm role
+      _token=$(kc_get_token)
+      curl -sk --connect-timeout 10 --max-time 30 -o /dev/null \
+        -X POST "${KC_URL}/admin/realms/master/users/${_master_user_id}/role-mappings/realm" \
+        -H "Authorization: Bearer ${_token}" \
+        -H "Content-Type: application/json" \
+        -d '[{"id":"'"${_admin_role_id}"'","name":"admin"}]'
+      log_ok "${PLATFORM_ADMIN_USER} granted admin role in master realm"
+    else
+      log_warn "Could not find admin role in master realm"
+    fi
+  else
+    log_warn "Could not create/find ${PLATFORM_ADMIN_USER} in master realm"
+  fi
 
   # Store platform admin credentials in Vault
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
@@ -396,8 +423,10 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     log_ok "Seeded Vault kv/oidc/${client_id}"
   done
 
-  # Create Vault policy and K8s auth role for monitoring namespace (ESO)
-  log_info "Creating Vault policy eso-monitoring..."
+  # Create Vault policies and K8s auth roles for ESO in namespaces that need OIDC secrets
+  # monitoring: prometheus, alertmanager, grafana OAuth2-proxy + Grafana OIDC
+  # kube-system: hubble OAuth2-proxy (Cilium observability UI lives in kube-system)
+  log_info "Creating Vault policies for ESO..."
   kubectl exec -i -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 \
     VAULT_TOKEN="$_root_token" \
@@ -416,23 +445,45 @@ path "kv/metadata/services/database/grafana-pg" {
 }
 POLICY
 
-  log_info "Creating Vault K8s auth role eso-monitoring..."
+  kubectl exec -i -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 \
+    VAULT_TOKEN="$_root_token" \
+    vault policy write eso-kube-system - <<POLICY
+path "kv/data/oidc/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/oidc/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+
+  log_info "Creating Vault K8s auth roles for ESO..."
   vault_exec "$_root_token" write auth/kubernetes/role/eso-monitoring \
     bound_service_account_names=eso-secrets \
     bound_service_account_namespaces=monitoring \
     policies=eso-monitoring \
     ttl=1h
 
-  # Create service account and SecretStore in monitoring namespace
-  kubectl create serviceaccount eso-secrets -n monitoring \
-    --dry-run=client -o yaml | kubectl apply -f -
+  vault_exec "$_root_token" write auth/kubernetes/role/eso-kube-system \
+    bound_service_account_names=eso-secrets \
+    bound_service_account_namespaces=kube-system \
+    policies=eso-kube-system \
+    ttl=1h
 
-  kubectl apply -f - <<EOF
+  # Create namespaces, service accounts, and SecretStores
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+  for ns in monitoring kube-system; do
+    kubectl create serviceaccount eso-secrets -n "$ns" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    _eso_role="eso-${ns}"
+    kubectl apply -f - <<EOF
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:
   name: vault-backend
-  namespace: monitoring
+  namespace: ${ns}
 spec:
   provider:
     vault:
@@ -442,10 +493,11 @@ spec:
       auth:
         kubernetes:
           mountPath: kubernetes
-          role: eso-monitoring
+          role: ${_eso_role}
           serviceAccountRef:
             name: eso-secrets
 EOF
+  done
 
   # Apply ExternalSecrets for OAuth2-proxy and Grafana OIDC
   log_info "Applying OIDC ExternalSecrets..."
@@ -516,7 +568,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   # Assign the groups scope as a default scope on all OIDC clients
   _groups_scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | jq -r '.[] | select(.name=="groups") | .id')
   if [[ -n "$_groups_scope_id" && "$_groups_scope_id" != "null" ]]; then
-    for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
+    for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
       _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
       if [[ -n "$_client_uuid" && "$_client_uuid" != "null" ]]; then
         _assign_token=$(kc_get_token)
