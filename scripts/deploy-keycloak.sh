@@ -340,31 +340,41 @@ fi
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: OAuth2-proxy"
 
-  if ! kubectl get ns monitoring &>/dev/null; then
-    log_warn "Monitoring namespace not found — skipping OAuth2-proxy (deploy after Bundle 3)"
-    end_phase "Phase 7: OAuth2-proxy (skipped)"
+  log_info "Applying OAuth2-proxy instances..."
+  log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
+
+  # Ensure target namespaces exist (monitoring for prom/alertmanager, kube-system for hubble)
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+  # vault-root-ca ConfigMap — OAuth2-proxies mount this for OIDC TLS verification
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    for ns in monitoring kube-system; do
+      kubectl create configmap vault-root-ca --namespace="$ns" \
+        --from-file=ca.crt="$ROOT_CA_CERT" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    done
   else
-    log_info "Applying OAuth2-proxy instances..."
-    log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
-
-    # External secrets for OIDC client credentials
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
-
-    # OAuth2-proxy deployments
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
-
-    # Middleware CRDs
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
-
-    end_phase "Phase 7: OAuth2-proxy"
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — OAuth2-proxy OIDC TLS may fail"
   fi
+
+  # External secrets for OIDC client credentials
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
+
+  # OAuth2-proxy deployments
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
+
+  # Middleware CRDs
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
+
+  end_phase "Phase 7: OAuth2-proxy"
 fi
 
 # Phase 8: Monitoring + NetworkPolicies

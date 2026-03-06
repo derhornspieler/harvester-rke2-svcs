@@ -17,7 +17,7 @@ fi
 # Domain and Keycloak settings
 DOMAIN="${DOMAIN:?DOMAIN must be set}"
 KC_REALM="${KC_REALM:-platform}"
-KC_URL="https://keycloak.${DOMAIN}"
+KC_URL="${KC_URL:-https://keycloak.${DOMAIN}}"
 
 # Vault init file (to read admin credentials)
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
@@ -398,8 +398,10 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     log_ok "Seeded Vault kv/oidc/${client_id}"
   done
 
-  # Create Vault policy and K8s auth role for monitoring namespace (ESO)
-  log_info "Creating Vault policy eso-monitoring..."
+  # Create Vault policies and K8s auth roles for ESO in namespaces that need OIDC secrets
+  # monitoring: prometheus, alertmanager, grafana OAuth2-proxy + Grafana OIDC
+  # kube-system: hubble OAuth2-proxy (Cilium observability UI lives in kube-system)
+  log_info "Creating Vault policies for ESO..."
   kubectl exec -i -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 \
     VAULT_TOKEN="$_root_token" \
@@ -418,23 +420,45 @@ path "kv/metadata/services/database/grafana-pg" {
 }
 POLICY
 
-  log_info "Creating Vault K8s auth role eso-monitoring..."
+  kubectl exec -i -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 \
+    VAULT_TOKEN="$_root_token" \
+    vault policy write eso-kube-system - <<POLICY
+path "kv/data/oidc/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/oidc/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+
+  log_info "Creating Vault K8s auth roles for ESO..."
   vault_exec "$_root_token" write auth/kubernetes/role/eso-monitoring \
     bound_service_account_names=eso-secrets \
     bound_service_account_namespaces=monitoring \
     policies=eso-monitoring \
     ttl=1h
 
-  # Create service account and SecretStore in monitoring namespace
-  kubectl create serviceaccount eso-secrets -n monitoring \
-    --dry-run=client -o yaml | kubectl apply -f -
+  vault_exec "$_root_token" write auth/kubernetes/role/eso-kube-system \
+    bound_service_account_names=eso-secrets \
+    bound_service_account_namespaces=kube-system \
+    policies=eso-kube-system \
+    ttl=1h
 
-  kubectl apply -f - <<EOF
+  # Create namespaces, service accounts, and SecretStores
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+  for ns in monitoring kube-system; do
+    kubectl create serviceaccount eso-secrets -n "$ns" \
+      --dry-run=client -o yaml | kubectl apply -f -
+
+    _eso_role="eso-${ns}"
+    kubectl apply -f - <<EOF
 apiVersion: external-secrets.io/v1
 kind: SecretStore
 metadata:
   name: vault-backend
-  namespace: monitoring
+  namespace: ${ns}
 spec:
   provider:
     vault:
@@ -444,10 +468,11 @@ spec:
       auth:
         kubernetes:
           mountPath: kubernetes
-          role: eso-monitoring
+          role: ${_eso_role}
           serviceAccountRef:
             name: eso-secrets
 EOF
+  done
 
   # Apply ExternalSecrets for OAuth2-proxy and Grafana OIDC
   log_info "Applying OIDC ExternalSecrets..."
