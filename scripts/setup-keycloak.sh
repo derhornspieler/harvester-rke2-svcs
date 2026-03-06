@@ -297,8 +297,8 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
   for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
     redirect_uri="${CLIENT_REDIRECTS[$client_id]}"
-    # ArgoCD v2.14 does not actually send PKCE params — leave empty
-    if [[ "$client_id" == "argocd" ]]; then
+    # ArgoCD v2.14 and GitLab omniauth do not send PKCE params — leave empty
+    if [[ "$client_id" == "argocd" || "$client_id" == "gitlab" ]]; then
       pkce_method=""
     else
       pkce_method="S256"
