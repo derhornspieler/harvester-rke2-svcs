@@ -240,7 +240,7 @@ kubectl -n keycloak exec -it <keycloak-pod> -- \
 - OAuth2-proxy credentials not synced (ESO issue, check Vault kv/services/oauth2-proxy-hubble)
 - Keycloak Hubble client not created or redirect_uri mismatch
 - Middleware name in HTTPRoute doesn't match actual Middleware resource
-- NetworkPolicy blocks traffic between namespaces (verify `keycloak → kube-system:80`)
+- Network connectivity issue between namespaces (verify `keycloak → kube-system:80`)
 
 ### Hubble UI Shows "No Data" or Empty Flows
 
@@ -248,37 +248,7 @@ kubectl -n keycloak exec -it <keycloak-pod> -- \
 
 This is a Hubble relay/metrics issue, not a UI ingress issue. See `services/cilium/README.md` troubleshooting section.
 
-## Network Security
-
-### NetworkPolicy
-
-Hubble UI resides in `kube-system` namespace. The default-deny policy in `services/monitoring-stack/networkpolicy.yaml` allows:
-
-```yaml
-# Allow Traefik to reach Hubble UI (from kube-system to itself)
-- from:
-    - namespaceSelector:
-        matchLabels:
-          name: kube-system
-  ports:
-    - protocol: TCP
-      port: 80
-```
-
-And allows OAuth2-proxy in `keycloak` namespace:
-
-```yaml
-# OAuth2-proxy in keycloak namespace → Hubble UI in kube-system
-- from:
-    - namespaceSelector:
-        matchLabels:
-          name: keycloak
-  ports:
-    - protocol: TCP
-      port: 80
-```
-
-### RBAC
+## RBAC
 
 Hubble UI pod runs with minimal permissions (no special RBAC needed for UI).
 

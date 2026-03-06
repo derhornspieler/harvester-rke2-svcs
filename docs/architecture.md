@@ -141,89 +141,16 @@ graph TB
 
 ## Network Security
 
-### Network Policy Strategy
+### Network Policy Status
 
-All service namespaces implement a default-deny-ingress policy with explicit allow rules. This ensures microsegmentation at the network layer:
+NetworkPolicies are currently disabled. They were removed due to conflicts with CNPG operator communication during rolling cluster upgrades. They will be re-evaluated in a future iteration when the deployment strategy can accommodate network segmentation without operational friction.
 
-- **Default-deny**: Every namespace with `NetworkPolicy` blocks ingress unless explicitly allowed
-- **Traefik ingress**: RKE2's Traefik in `kube-system` namespace routes external traffic to services via Gateway API
-- **Service-to-service**: Allowed only for declared dependencies (Prometheus scraping, Keycloak OIDC, etc.)
-- **Pod anti-affinity**: All replicated workloads spread across nodes to improve resilience
+For now, network security relies on:
 
-```mermaid
-graph TB
-    subgraph "kube-system"
-        Traefik["RKE2 Traefik<br/>(Gateway listener)"]
-    end
-
-    subgraph "Default-Deny Namespaces"
-        vault["vault"]
-        cm["cert-manager"]
-        eso["external-secrets"]
-        monitoring["monitoring"]
-        keycloak["keycloak"]
-        database["database"]
-        minio["minio"]
-        harbor["harbor"]
-        argocd["argocd"]
-        rollouts["argo-rollouts"]
-        workflows["argo-workflows"]
-        gitlab["gitlab"]
-        runners["gitlab-runners"]
-    end
-
-    Traefik -->|"8200"| vault
-    Traefik -->|"3000,9090,9093"| monitoring
-    Traefik -->|"8080"| keycloak
-    Traefik -->|"80,443"| harbor
-    Traefik -->|"8080"| argocd
-    Traefik -->|"8181,8080,8443,22"| gitlab
-
-    monitoring -->|"scrapes all"| vault
-    monitoring -->|"9402"| cm
-    monitoring -->|"8080"| eso
-    monitoring -->|"9000"| keycloak
-    monitoring -->|"9090,9121"| harbor
-    monitoring -->|"8082-8084"| argocd
-    monitoring -->|"9121,9168"| gitlab
-    monitoring -->|"9187"| database
-    monitoring -->|"9000"| minio
-
-    style Traefik fill:#ef6c00,color:#fff
-    style vault fill:#f57c00,color:#fff
-    style cm fill:#1565c0,color:#fff
-    style eso fill:#1565c0,color:#fff
-    style monitoring fill:#e65100,color:#fff
-    style keycloak fill:#7b1fa2,color:#fff
-    style database fill:#388e3c,color:#fff
-    style minio fill:#f57c00,color:#fff
-    style harbor fill:#1565c0,color:#fff
-    style argocd fill:#ef6c00,color:#fff
-    style rollouts fill:#ef6c00,color:#fff
-    style workflows fill:#ef6c00,color:#fff
-    style gitlab fill:#e65100,color:#fff
-    style runners fill:#e65100,color:#fff
-```
-
-### Network Policy Files
-
-Each bundle includes NetworkPolicy resources applied during its respective deployment phase:
-
-| Bundle | Namespace(s) | NetworkPolicy File | Phase |
-|--------|-------------|--------------------|-------|
-| 1 | vault, cert-manager, external-secrets | `services/{vault,cert-manager,external-secrets}/networkpolicy.yaml` | 7 |
-| 2 | keycloak, database | `services/keycloak/{,postgres}/networkpolicy.yaml` | 8 |
-| 3 | monitoring | `services/monitoring-stack/networkpolicy.yaml` | 6 |
-| 4 | harbor, minio, database | `services/harbor/{,minio}/networkpolicy.yaml` | 8 |
-| 5 | argocd, argo-rollouts, argo-workflows | `services/argo/{argocd,argo-rollouts,argo-workflows}/networkpolicy.yaml` | 7 |
-| 6 | gitlab, gitlab-runners, database | `services/gitlab/{,runners}/networkpolicy.yaml` | 9 |
-
-All NetworkPolicy rules default-deny ingress and explicitly allow:
-- Traefik ingress (from `kube-system` namespace)
-- Service-to-service traffic (e.g., Keycloak PostgreSQL access, Harbor MinIO access)
-- Prometheus scraping (from `monitoring` namespace) — includes Hubble relay metrics on port 4244
-- Alloy log collection (from `monitoring` namespace) — reads Hubble flow logs via hostPath
-- Required inter-component communication
+- **RBAC** — Fine-grained Kubernetes role-based access control per service
+- **TLS** — All external communication encrypted via Gateway API and cert-manager-issued certificates
+- **Pod security standards** — Restricted baseline enforced, containers run non-root
+- **Resource isolation** — Services deployed in dedicated namespaces with minimal cross-namespace dependencies
 
 ---
 
