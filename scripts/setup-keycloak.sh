@@ -568,7 +568,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   # Assign the groups scope as a default scope on all OIDC clients
   _groups_scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | jq -r '.[] | select(.name=="groups") | .id')
   if [[ -n "$_groups_scope_id" && "$_groups_scope_id" != "null" ]]; then
-    for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
+    for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
       _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
       if [[ -n "$_client_uuid" && "$_client_uuid" != "null" ]]; then
         _assign_token=$(kc_get_token)

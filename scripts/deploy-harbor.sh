@@ -186,10 +186,12 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   export HARBOR_ADMIN_PASSWORD HARBOR_MINIO_SECRET_KEY
 
   # Store consolidated Harbor credentials in Vault for operator reference
+  # minio-access-key + minio-secret-key are consumed by harbor-s3-credentials ExternalSecret
   vault_exec "$root_token" kv put kv/services/harbor \
     admin-password="$HARBOR_ADMIN_PASSWORD" \
     db-password="$HARBOR_DB_PASSWORD" \
     redis-password="$HARBOR_REDIS_PASSWORD" \
+    minio-access-key="${MINIO_ROOT_USER}" \
     minio-secret-key="$HARBOR_MINIO_SECRET_KEY"
 
   # Create Vault K8s auth roles and policies for each namespace
@@ -202,12 +204,20 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       ttl=1h
 
     # Write policy via kubectl exec with stdin (vault_exec doesn't support stdin)
+    # Include both base path and wildcard — ESO reads kv/data/services/<ns> (no trailing slash)
+    # as well as kv/data/services/<ns>/subpath for sub-component secrets
     kubectl exec -i -n vault vault-0 -- env \
       VAULT_ADDR=http://127.0.0.1:8200 \
       VAULT_TOKEN="$root_token" \
       vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}" {
+  capabilities = ["read"]
+}
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
+}
+path "kv/metadata/services/${ns}" {
+  capabilities = ["read", "list"]
 }
 path "kv/metadata/services/${ns}/*" {
   capabilities = ["read", "list"]
@@ -243,12 +253,16 @@ EOF
   kubectl apply -f "${REPO_ROOT}/services/harbor/minio/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/postgres/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/valkey/external-secret.yaml"
+  # Harbor-namespace secrets (admin, db, s3 credentials consumed by Helm existingSecret refs)
+  kubectl apply -f "${REPO_ROOT}/services/harbor/external-secrets.yaml"
 
   # Wait for secrets to sync
   log_info "Waiting for ExternalSecrets to sync..."
   sleep 10
   for secret in minio-root-credentials:minio harbor-pg-credentials:database \
-    cnpg-minio-credentials:database harbor-valkey-credentials:harbor; do
+    cnpg-minio-credentials:database harbor-valkey-credentials:harbor \
+    harbor-admin-credentials:harbor harbor-db-credentials:harbor \
+    harbor-s3-credentials:harbor; do
     local_name="${secret%%:*}"
     local_ns="${secret##*:}"
     if kubectl -n "$local_ns" get secret "$local_name" &>/dev/null; then
