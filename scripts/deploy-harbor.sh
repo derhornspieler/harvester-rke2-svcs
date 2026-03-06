@@ -171,11 +171,12 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   HARBOR_MINIO_SECRET_KEY="${HARBOR_MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}"
   export HARBOR_ADMIN_PASSWORD HARBOR_MINIO_SECRET_KEY
 
-  # Store consolidated Harbor credentials in Vault for operator reference
+  # Store consolidated Harbor credentials in Vault (used by ESO existingSecret refs)
   vault_exec "$root_token" kv put kv/services/harbor \
     admin-password="$HARBOR_ADMIN_PASSWORD" \
     db-password="$HARBOR_DB_PASSWORD" \
     redis-password="$HARBOR_REDIS_PASSWORD" \
+    minio-access-key="harbor-minio-admin" \
     minio-secret-key="$HARBOR_MINIO_SECRET_KEY"
 
   # Create Vault K8s auth roles and policies for each namespace
@@ -192,8 +193,14 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       VAULT_ADDR=http://127.0.0.1:8200 \
       VAULT_TOKEN="$root_token" \
       vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}" {
+  capabilities = ["read"]
+}
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
+}
+path "kv/metadata/services/${ns}" {
+  capabilities = ["read", "list"]
 }
 path "kv/metadata/services/${ns}/*" {
   capabilities = ["read", "list"]
@@ -229,12 +236,15 @@ EOF
   kubectl apply -f "${REPO_ROOT}/services/harbor/minio/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/postgres/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/valkey/external-secret.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/harbor/external-secrets.yaml"
 
   # Wait for secrets to sync
   log_info "Waiting for ExternalSecrets to sync..."
   sleep 10
   for secret in minio-root-credentials:minio harbor-pg-credentials:database \
-    cnpg-minio-credentials:database harbor-valkey-credentials:harbor; do
+    cnpg-minio-credentials:database harbor-valkey-credentials:harbor \
+    harbor-admin-credentials:harbor harbor-db-credentials:harbor \
+    harbor-s3-credentials:harbor; do
     local_name="${secret%%:*}"
     local_ns="${secret##*:}"
     if kubectl -n "$local_ns" get secret "$local_name" &>/dev/null; then
@@ -290,38 +300,19 @@ fi
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: Harbor Helm Install"
 
-  # Ensure password env vars are set (read from K8s secrets if Phase 2 was skipped)
-  if [[ -z "${HARBOR_DB_PASSWORD:-}" ]]; then
-    log_info "Reading HARBOR_DB_PASSWORD from K8s secret..."
-    HARBOR_DB_PASSWORD=$(kubectl -n database get secret harbor-pg-credentials \
-      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
-    [[ -n "$HARBOR_DB_PASSWORD" ]] || die "HARBOR_DB_PASSWORD not set and secret not found"
-    export HARBOR_DB_PASSWORD
-  fi
-  if [[ -z "${HARBOR_REDIS_PASSWORD:-}" ]]; then
-    log_info "Reading HARBOR_REDIS_PASSWORD from K8s secret..."
-    HARBOR_REDIS_PASSWORD=$(kubectl -n harbor get secret harbor-valkey-credentials \
-      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d) || true
-    [[ -n "$HARBOR_REDIS_PASSWORD" ]] || die "HARBOR_REDIS_PASSWORD not set and secret not found"
-    export HARBOR_REDIS_PASSWORD
-  fi
-  if [[ -z "${HARBOR_ADMIN_PASSWORD:-}" ]]; then
-    HARBOR_ADMIN_PASSWORD=$(openssl rand -base64 24)
-    export HARBOR_ADMIN_PASSWORD
-  fi
-  if [[ -z "${HARBOR_MINIO_SECRET_KEY:-}" ]]; then
-    log_info "Reading HARBOR_MINIO_SECRET_KEY from K8s secret..."
-    HARBOR_MINIO_SECRET_KEY=$(kubectl -n minio get secret minio-root-credentials \
-      -o jsonpath='{.data.root-password}' 2>/dev/null | base64 -d) || true
-    [[ -n "$HARBOR_MINIO_SECRET_KEY" ]] || die "HARBOR_MINIO_SECRET_KEY not set and secret not found"
-    export HARBOR_MINIO_SECRET_KEY
-  fi
+  # Verify ESO-managed secrets exist (Helm uses existingSecret + lookup)
+  for secret in harbor-valkey-credentials harbor-admin-credentials \
+    harbor-db-credentials harbor-s3-credentials; do
+    kubectl -n harbor get secret "$secret" &>/dev/null \
+      || die "Secret ${secret} not found — run Phase 2 first"
+  done
 
   helm_repo_add goharbor "$HELM_REPO_HARBOR"
-  # Substitute CHANGEME tokens in values file before passing to Helm
+  # Credentials use existingSecret refs (ESO → Vault) — only domain needs substitution
   _harbor_values=$(mktemp /tmp/harbor-values.XXXXXX.yaml)
   trap 'rm -f "$_harbor_values"' EXIT
-  _subst_changeme < "${REPO_ROOT}/services/harbor/harbor-values.yaml" > "$_harbor_values"
+  sed -e "s|CHANGEME_DOMAIN|${DOMAIN}|g" \
+    "${REPO_ROOT}/services/harbor/harbor-values.yaml" > "$_harbor_values"
   chmod 600 "$_harbor_values"
   helm_install_if_needed harbor "$HELM_CHART_HARBOR" harbor \
     --version 1.18.2 \
