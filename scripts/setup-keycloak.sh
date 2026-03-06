@@ -120,7 +120,7 @@ kc_get_token() {
 
   local token attempt
   for attempt in 1 2 3; do
-    token=$(curl -sf --connect-timeout 10 --max-time 30 \
+    token=$(curl -sf --connect-timeout 15 --max-time 60 \
       -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
       -d "grant_type=password" \
       -d "client_id=admin-cli" \
@@ -144,7 +144,7 @@ kc_api() {
   shift 2
   local token
   token=$(kc_get_token)
-  curl -sf --connect-timeout 10 --max-time 30 \
+  curl -sf --connect-timeout 15 --max-time 60 \
     -X "$method" "${KC_URL}/admin/realms/${path}" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
@@ -157,7 +157,7 @@ kc_api_create() {
   shift 2
   local token http_code
   token=$(kc_get_token)
-  http_code=$(curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
+  http_code=$(curl -s --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
     -X "$method" "${KC_URL}/admin/realms/${path}" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
@@ -244,7 +244,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
     if [[ -n "$_admin_role_id" && "$_admin_role_id" != "null" ]]; then
       # Assign admin realm role
       _token=$(kc_get_token)
-      curl -sk --connect-timeout 10 --max-time 30 -o /dev/null \
+      curl -sk --connect-timeout 15 --max-time 60 -o /dev/null \
         -X POST "${KC_URL}/admin/realms/master/users/${_master_user_id}/role-mappings/realm" \
         -H "Authorization: Bearer ${_token}" \
         -H "Content-Type: application/json" \
@@ -588,7 +588,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
       _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
       if [[ -n "$_client_uuid" && "$_client_uuid" != "null" ]]; then
         _assign_token=$(kc_get_token)
-        curl -sk --connect-timeout 10 --max-time 30 -o /dev/null \
+        curl -sk --connect-timeout 15 --max-time 60 -o /dev/null \
           -X PUT "${KC_URL}/admin/realms/${KC_REALM}/clients/${_client_uuid}/default-client-scopes/${_groups_scope_id}" \
           -H "Authorization: Bearer ${_assign_token}"
         log_ok "Assigned groups scope to ${client_id}"
@@ -624,7 +624,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
     else
       # Try to copy the browser flow (some Keycloak versions use different API paths)
       _copy_token=$(kc_get_token)
-      _copy_code=$(curl -s --connect-timeout 10 --max-time 30 -o /dev/null -w "%{http_code}" \
+      _copy_code=$(curl -s --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
         -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/${BROWSER_FLOW}/copy" \
         -H "Authorization: Bearer ${_copy_token}" \
         -H "Content-Type: application/json" \
