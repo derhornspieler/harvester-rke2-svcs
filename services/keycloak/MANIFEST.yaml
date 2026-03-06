@@ -63,45 +63,49 @@ deploy:
   script: scripts/deploy-keycloak.sh
   phases:
     - phase: 1
-      description: Create keycloak namespace
+      description: Shared Data Services (CNPG operator, skip if exists)
+
+    - phase: 2
+      description: Namespaces + Vault secrets + SecretStores
       resources:
         - namespace.yaml
 
-    - phase: 2
-      description: Deploy ExternalSecrets (Vault-synced credentials)
+    - phase: 3
+      description: ESO ExternalSecrets + MinIO
       resources:
         - keycloak/external-secret.yaml
         - postgres/external-secret.yaml
-        - oauth2-proxy/external-secret-prometheus.yaml
-        - oauth2-proxy/external-secret-alertmanager.yaml
-        - oauth2-proxy/external-secret-hubble.yaml
 
-    - phase: 3
+    - phase: 4
       description: Deploy PostgreSQL HA cluster (CNPG) and scheduled backup
       resources:
         - postgres/keycloak-pg-cluster.yaml
         - postgres/keycloak-pg-scheduled-backup.yaml
 
-    - phase: 4
-      description: Deploy Keycloak core (RBAC, Services, Deployment, HPA)
+    - phase: 5
+      description: Deploy Keycloak core (RBAC, Services, Deployment, health check)
       resources:
         - keycloak/rbac.yaml
         - keycloak/service.yaml
         - keycloak/service-headless.yaml
         - keycloak/deployment.yaml
-        - keycloak/hpa.yaml
 
-    - phase: 5
-      description: Deploy Gateway and HTTPRoute for keycloak ingress
+    - phase: 6
+      description: Deploy Gateway, HTTPRoute, and HPA
       resources:
         - gateway.yaml
         - httproute.yaml
+        - keycloak/hpa.yaml
 
-    - phase: 6
+    - phase: 7
       description: >-
         Deploy OAuth2-proxy instances and Traefik
         ForwardAuth middleware
       resources:
+        - oauth2-proxy/external-secret-prometheus.yaml
+        - oauth2-proxy/external-secret-alertmanager.yaml
+        - oauth2-proxy/external-secret-hubble.yaml
+        - oauth2-proxy/external-secret-grafana.yaml
         - oauth2-proxy/prometheus.yaml
         - oauth2-proxy/middleware-prometheus.yaml
         - oauth2-proxy/alertmanager.yaml
@@ -109,7 +113,7 @@ deploy:
         - oauth2-proxy/hubble.yaml
         - oauth2-proxy/middleware-hubble.yaml
 
-    - phase: 7
+    - phase: 8
       description: Deploy monitoring (ServiceMonitor, alerts, Grafana dashboard)
       resources:
         - monitoring/configmap-dashboard-keycloak.yaml
