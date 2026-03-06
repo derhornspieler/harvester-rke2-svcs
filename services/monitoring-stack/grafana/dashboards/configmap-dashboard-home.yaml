@@ -81,7 +81,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -138,7 +138,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -195,7 +195,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -253,7 +253,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -307,7 +307,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -363,7 +363,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "links": [
             {
@@ -433,7 +433,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -543,7 +543,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -638,7 +638,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -718,7 +718,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -808,7 +808,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -893,7 +893,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -978,7 +978,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1063,7 +1063,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1148,7 +1148,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1258,7 +1258,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1343,7 +1343,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1423,7 +1423,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1503,7 +1503,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1583,7 +1583,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1663,7 +1663,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1768,7 +1768,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1868,7 +1868,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -1978,7 +1978,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2080,7 +2080,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2170,7 +2170,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2270,7 +2270,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2360,7 +2360,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2451,7 +2451,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2541,7 +2541,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2631,7 +2631,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2721,7 +2721,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2811,7 +2811,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2901,7 +2901,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -2991,7 +2991,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3055,7 +3055,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3104,7 +3104,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3161,7 +3161,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3218,7 +3218,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3267,7 +3267,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
@@ -3316,7 +3316,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "name"
+            "textMode": "value"
           },
           "targets": [
             {
