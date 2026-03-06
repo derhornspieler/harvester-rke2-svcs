@@ -81,7 +81,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -138,7 +138,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -195,7 +195,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -253,7 +253,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -307,7 +307,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -363,7 +363,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "links": [
             {
@@ -433,7 +433,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -543,7 +543,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -638,7 +638,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -718,7 +718,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -808,7 +808,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -893,7 +893,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -978,7 +978,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1063,7 +1063,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1148,7 +1148,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1258,7 +1258,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1343,7 +1343,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1368,6 +1368,13 @@ data:
             "y": 17
           },
           "id": 34,
+          "links": [
+            {
+              "title": "Grafana Internals",
+              "url": "/admin/metrics",
+              "targetBlank": true
+            }
+          ],
           "fieldConfig": {
             "defaults": {
               "noValue": "0",
@@ -1390,23 +1397,18 @@ data:
                       "text": "DOWN",
                       "color": "red",
                       "index": 1
-                    },
-                    "1": {
-                      "text": "UP",
-                      "color": "green",
-                      "index": 2
                     }
                   }
                 },
                 {
                   "type": "range",
                   "options": {
-                    "from": 2,
+                    "from": 1,
                     "to": 999,
                     "result": {
                       "text": "UP",
                       "color": "green",
-                      "index": 3
+                      "index": 2
                     }
                   }
                 }
@@ -1421,11 +1423,11 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
-              "expr": "up{job=\"grafana\"}",
+              "expr": "count(up{job=\"grafana\"} == 1) OR on() (absent(up{job=\"grafana\"}) * -1) OR on() vector(0)",
               "legendFormat": "",
               "refId": "A"
             }
@@ -1501,7 +1503,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1581,7 +1583,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1661,7 +1663,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1766,7 +1768,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1866,7 +1868,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -1976,7 +1978,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2078,7 +2080,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2168,7 +2170,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2268,7 +2270,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2358,13 +2360,14 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
-              "expr": "count(up{job=\"gitlab-gitlab-exporter\"} == 1) OR on() (absent(up{job=\"gitlab-gitlab-exporter\"}) * -1) OR on() vector(0)",
+              "expr": "count(up{job=\"gitlab-gitlab-exporter\"} == 1) or absent(up{job=\"gitlab-gitlab-exporter\"}) * -1",
               "legendFormat": "",
-              "refId": "A"
+              "refId": "A",
+              "instant": true
             }
           ]
         },
@@ -2448,7 +2451,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2538,7 +2541,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2628,7 +2631,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2718,7 +2721,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2808,7 +2811,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2898,7 +2901,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -2988,7 +2991,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "none",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3052,7 +3055,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3101,7 +3104,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3158,7 +3161,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3215,7 +3218,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3264,7 +3267,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
@@ -3313,7 +3316,7 @@ data:
             },
             "colorMode": "background",
             "graphMode": "area",
-            "textMode": "auto"
+            "textMode": "name"
           },
           "targets": [
             {
