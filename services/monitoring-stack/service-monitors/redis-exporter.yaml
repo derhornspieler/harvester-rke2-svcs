@@ -8,10 +8,11 @@ metadata:
 spec:
   namespaceSelector:
     matchNames:
-      - monitoring
+      - harbor
+      - gitlab
   selector:
     matchLabels:
-      app: oauth2-proxy-redis
+      redis_setup_type: replication
   endpoints:
     - port: exporter
       targetPort: 9121
