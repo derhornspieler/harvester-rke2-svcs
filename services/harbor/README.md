@@ -186,6 +186,17 @@ Traefik chart values.
 | Harbor overview | `grafana-dashboard-harbor` |
 | MinIO overview | `grafana-dashboard-minio` |
 
+## Day-2 Operations
+
+### Clean up stale ReplicaSets
+
+After Helm upgrades or troubleshooting, zero-replica ReplicaSets may accumulate.
+Clean them up periodically:
+
+```bash
+kubectl -n harbor delete rs $(kubectl -n harbor get rs -o jsonpath='{.items[?(@.spec.replicas==0)].metadata.name}')
+```
+
 ## Verify
 
 ```bash

@@ -124,7 +124,8 @@ grafana:
     sessionAffinity: ClientIP
     sessionAffinityConfig:
       clientIP:
-        timeoutSeconds: 1800
+        # 10800s = 3 hours. Do not override via kubectl patch — let Helm manage this value.
+        timeoutSeconds: 10800
   adminUser: admin
   adminPassword: "CHANGEME_GRAFANA_ADMIN_PASSWORD"
   env:
