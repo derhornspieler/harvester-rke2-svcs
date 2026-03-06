@@ -248,7 +248,7 @@ gitlab:
   sidekiq:
     replicas: 2
     minReplicas: 2
-    maxReplicas: 10
+    maxReplicas: 15
     nodeSelector:
       workload-type: compute
     resources:

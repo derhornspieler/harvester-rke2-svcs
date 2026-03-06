@@ -2,32 +2,14 @@
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
-  name: harbor-minio
-  namespace: minio
+  name: vault-data-0
+  namespace: vault
 spec:
   target:
-    pvcName: minio-data
+    pvcName: data-vault-0
   prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   thresholdPercent: 80
-  maxSize: 500Gi
-  increasePercent: 20
-  increaseMinimum: 10Gi
-  pollInterval: 120s
-  cooldownPeriod: 10m
----
-apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
-kind: VolumeAutoscaler
-metadata:
-  name: harbor-pg
-  namespace: database
-spec:
-  target:
-    selector:
-      matchLabels:
-        cnpg.io/cluster: harbor-pg
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
-  thresholdPercent: 80
-  maxSize: 100Gi
+  maxSize: 50Gi
   increasePercent: 25
   increaseMinimum: 5Gi
   pollInterval: 120s
@@ -36,33 +18,31 @@ spec:
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
-  name: harbor-trivy
-  namespace: harbor
+  name: vault-data-1
+  namespace: vault
 spec:
   target:
-    pvcName: data-harbor-trivy-0
+    pvcName: data-vault-1
   prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   thresholdPercent: 80
-  maxSize: 20Gi
+  maxSize: 50Gi
   increasePercent: 25
-  increaseMinimum: 2Gi
+  increaseMinimum: 5Gi
   pollInterval: 120s
   cooldownPeriod: 10m
 ---
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
-  name: harbor-valkey
-  namespace: harbor
+  name: vault-data-2
+  namespace: vault
 spec:
   target:
-    selector:
-      matchLabels:
-        app: harbor-redis
+    pvcName: data-vault-2
   prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
   thresholdPercent: 80
-  maxSize: 10Gi
+  maxSize: 50Gi
   increasePercent: 25
-  increaseMinimum: 1Gi
+  increaseMinimum: 5Gi
   pollInterval: 120s
   cooldownPeriod: 10m
