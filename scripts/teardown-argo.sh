@@ -202,6 +202,13 @@ fi
 if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   start_phase "Phase 4: Namespaces"
 
+  log_info "Deleting orphaned Argo CRDs (block Helm reinstall if left behind)..."
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log_info "[DRY-RUN] kubectl delete crd --selector containing argoproj"
+  else
+    kubectl get crd -o name 2>/dev/null | grep argoproj | xargs -r kubectl delete 2>/dev/null || true
+  fi
+
   for ns in argo-workflows argo-rollouts argocd; do
     log_info "Deleting ${ns} namespace..."
     safe_delete namespace "$ns" --ignore-not-found --wait=true --timeout=120s
