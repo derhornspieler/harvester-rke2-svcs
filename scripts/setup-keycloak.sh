@@ -263,7 +263,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
   # OAuth2-proxy clients need an audience mapper so the token aud claim
   # matches the client_id (oauth2-proxy validates this)
-  local -a OAUTH2_PROXY_CLIENTS=(
+  OAUTH2_PROXY_CLIENTS=(
     prometheus-oidc alertmanager-oidc hubble-oidc
     traefik-oidc rollouts-oidc workflows-oidc
   )
