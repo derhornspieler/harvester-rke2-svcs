@@ -14,13 +14,20 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: /oauth2
+      backendRefs:
+        - name: oauth2-proxy-workflows
+          port: 4180
+    - matches:
+        - path:
+            type: PathPrefix
             value: /
       filters:
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
             kind: Middleware
-            name: basic-auth-workflows
+            name: oauth2-proxy-workflows
       backendRefs:
         - name: argo-workflows-server
           port: 2746

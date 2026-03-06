@@ -289,11 +289,6 @@ fi
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/argo/monitoring/"
-  # NetworkPolicies
-  log_info "Applying NetworkPolicies for Argo services..."
-  kubectl apply -f "${REPO_ROOT}/services/argo/argocd/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/networkpolicy.yaml"
   end_phase "Phase 7: Monitoring + Verify"
 fi
 

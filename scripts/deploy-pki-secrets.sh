@@ -340,11 +340,6 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   else
     log_warn "Skipping monitoring overlays (Bundle 3 not yet deployed)"
   fi
-  # NetworkPolicies
-  log_info "Applying NetworkPolicies for PKI services..."
-  kubectl apply -f "${REPO_ROOT}/services/vault/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/cert-manager/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/external-secrets/networkpolicy.yaml"
   wait_for_tls_secret vault "vault-${DOMAIN_DASHED}-tls" 300
   log_ok "All Kustomize overlays applied"
   end_phase "Phase 7: Kustomize Overlays"

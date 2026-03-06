@@ -45,6 +45,7 @@ spec:
             - --reverse-proxy=true
             - --prompt=login
             - --session-store-type=cookie
+            - --whitelist-domain=.CHANGEME_DOMAIN
           env:
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:

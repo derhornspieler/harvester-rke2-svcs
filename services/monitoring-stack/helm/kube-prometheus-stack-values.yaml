@@ -121,11 +121,20 @@ grafana:
   service:
     port: 3000
     targetPort: 3000
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
   adminUser: admin
   adminPassword: "CHANGEME_GRAFANA_ADMIN_PASSWORD"
   env:
     GF_SERVER_ROOT_URL: https://grafana.CHANGEME_DOMAIN/
     GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /tmp/dashboards/Home/home-overview.json
+    # PostgreSQL database backend (shared sessions across replicas)
+    GF_DATABASE_TYPE: postgres
+    GF_DATABASE_HOST: grafana-pg-rw.database.svc.cluster.local:5432
+    GF_DATABASE_NAME: grafana
+    GF_DATABASE_SSL_MODE: require
     GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
     GF_AUTH_GENERIC_OAUTH_NAME: "Keycloak"
     GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
@@ -147,6 +156,14 @@ grafana:
       secretKeyRef:
         name: grafana-oidc-secret
         key: client-secret
+    GF_DATABASE_USER:
+      secretKeyRef:
+        name: grafana-db-secret
+        key: username
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-db-secret
+        key: password
   resources:
     requests:
       cpu: 500m

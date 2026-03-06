@@ -14,13 +14,20 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: /oauth2
+      backendRefs:
+        - name: oauth2-proxy-prometheus
+          port: 4180
+    - matches:
+        - path:
+            type: PathPrefix
             value: /
       filters:
         - type: ExtensionRef
           extensionRef:
             group: traefik.io
             kind: Middleware
-            name: basic-auth-prometheus
+            name: oauth2-proxy-prometheus
       backendRefs:
         - name: prometheus
           port: 9090

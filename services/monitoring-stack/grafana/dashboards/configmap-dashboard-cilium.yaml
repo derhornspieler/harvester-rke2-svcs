@@ -14,7 +14,7 @@ data:
       "annotations": {"list": []},
       "editable": true,
       "id": null,
-      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": false, "type": "link"}],
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}],
       "panels": [
         {
           "title": "Cilium Agents Up",
@@ -204,6 +204,113 @@ data:
           "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
           "targets": [{"expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{job=\"hubble-relay-metrics\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A"}]
+        },
+        {
+          "title": "Hubble Metrics",
+          "type": "row",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 53},
+          "id": 20,
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "title": "DNS Queries/s",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of DNS queries observed by Hubble, by query type.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 54},
+          "id": 21,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_dns_queries_total[5m])) by (query_type)", "legendFormat": "{{query_type}}", "refId": "A"}]
+        },
+        {
+          "title": "DNS Errors/s",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of DNS responses with non-success return codes.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 54},
+          "id": 22,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_dns_responses_total{rcode!=\"No Error\"}[5m])) by (rcode)", "legendFormat": "{{rcode}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Request Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of HTTP requests observed by Hubble L7 visibility.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 62},
+          "id": 23,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_http_requests_total[5m])) by (method, protocol)", "legendFormat": "{{method}} {{protocol}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Error Rate (5xx)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of HTTP 5xx server error responses.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 62},
+          "id": 24,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_http_responses_total{status=~\"5..\"}[5m])) by (status)", "legendFormat": "{{status}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Latency P99",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "99th percentile HTTP request duration observed by Hubble.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 70},
+          "id": 25,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "histogram_quantile(0.99, sum(rate(hubble_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "A"}]
+        },
+        {
+          "title": "TCP Flags",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "TCP flag events observed by Hubble (SYN, FIN, RST).",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 70},
+          "id": 26,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_tcp_flags_total[5m])) by (flag, family)", "legendFormat": "{{flag}} ({{family}})", "refId": "A"}]
+        },
+        {
+          "title": "Flows Processed by Verdict",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of flows processed by Hubble, grouped by verdict (FORWARDED, DROPPED, etc).",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 78},
+          "id": 27,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_flows_processed_total[5m])) by (verdict)", "legendFormat": "{{verdict}}", "refId": "A"}]
+        },
+        {
+          "title": "Drops by Reason",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Top 10 drop reasons observed by Hubble.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 78},
+          "id": 28,
+          "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "topk(10, sum(rate(hubble_drop_total[5m])) by (reason))", "legendFormat": "{{reason}}", "refId": "A"}]
+        },
+        {
+          "title": "Hubble Lost Events",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of events lost by Hubble. Non-zero indicates ring buffer pressure.",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 86},
+          "id": 29,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_lost_events_total[5m])) by (source)", "legendFormat": "{{source}}", "refId": "A"}]
         }
       ],
       "schemaVersion": 39,

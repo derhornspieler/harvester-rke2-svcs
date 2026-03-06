@@ -223,8 +223,8 @@ data:
           "links": [
             {
               "title": "Node Detail",
-              "url": "/d/node-detail/node-deep-dive?orgId=1",
-              "targetBlank": false
+              "url": "/d/node-deep-dive/node-deep-dive?orgId=1",
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -242,14 +242,7 @@ data:
                   }
                 ]
               },
-              "mappings": [],
-              "links": [
-                {
-                  "title": "Node Detail",
-                  "url": "/d/node-detail/node-deep-dive?orgId=1",
-                  "targetBlank": false
-                }
-              ]
+              "mappings": []
             }
           },
           "options": {
@@ -289,7 +282,7 @@ data:
             {
               "title": "Pod Monitoring",
               "url": "/d/pod-monitoring/pod-monitoring?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -303,14 +296,7 @@ data:
                   }
                 ]
               },
-              "mappings": [],
-              "links": [
-                {
-                  "title": "Pod Monitoring",
-                  "url": "/d/pod-monitoring/pod-monitoring?orgId=1",
-                  "targetBlank": false
-                }
-              ]
+              "mappings": []
             }
           },
           "options": {
@@ -382,8 +368,8 @@ data:
           "links": [
             {
               "title": "View Not-Ready Pods",
-              "url": "/d/node-deep-dive/node-deep-dive?orgId=1&var-node=All",
-              "targetBlank": false
+              "url": "/d/pod-monitoring/pod-monitoring?orgId=1",
+              "targetBlank": true
             }
           ],
           "targets": [
@@ -413,7 +399,7 @@ data:
             {
               "title": "Firing Alerts Dashboard",
               "url": "/d/firing-alerts/firing-alerts?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -436,14 +422,7 @@ data:
                 ]
               },
               "noValue": "0",
-              "mappings": [],
-              "links": [
-                {
-                  "title": "Firing Alerts Dashboard",
-                  "url": "/d/firing-alerts/firing-alerts?orgId=1",
-                  "targetBlank": false
-                }
-              ]
+              "mappings": []
             }
           },
           "options": {
@@ -498,7 +477,7 @@ data:
             {
               "title": "etcd Dashboard",
               "url": "/d/etcd-dashboard/etcd?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -552,13 +531,6 @@ data:
                       "index": 5
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "etcd Dashboard",
-                  "url": "/d/etcd-dashboard/etcd?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -600,7 +572,7 @@ data:
             {
               "title": "API Server Dashboard",
               "url": "/d/apiserver-performance/api-server-performance?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -655,13 +627,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "API Server Dashboard",
-                  "url": "/d/apiserver-performance/api-server-performance?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -702,7 +667,7 @@ data:
             {
               "title": "Traefik Dashboard",
               "url": "/d/traefik-ingress-controller/traefik-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -741,13 +706,6 @@ data:
                       "index": 2
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Traefik Dashboard",
-                  "url": "/d/traefik-ingress-controller/traefik-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -789,7 +747,7 @@ data:
             {
               "title": "CoreDNS Dashboard",
               "url": "/d/coredns-dashboard/coredns?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -839,13 +797,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "CoreDNS Dashboard",
-                  "url": "/d/coredns-dashboard/coredns?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -886,7 +837,7 @@ data:
             {
               "title": "Cilium Dashboard",
               "url": "/d/cilium-cni-overview/cilium-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -930,13 +881,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Cilium Dashboard",
-                  "url": "/d/cilium-cni-overview/cilium-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1023,13 +967,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Prometheus UI",
-                  "url": "https://prometheus.CHANGEME_DOMAIN",
-                  "targetBlank": true
-                }
               ]
             }
           },
@@ -1070,7 +1007,7 @@ data:
             {
               "title": "Loki Dashboard",
               "url": "/d/loki-logs/loki-logs?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1114,13 +1051,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Loki Dashboard",
-                  "url": "/d/loki-logs/loki-logs?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1207,13 +1137,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Alertmanager UI",
-                  "url": "https://alertmanager.CHANGEME_DOMAIN",
-                  "targetBlank": true
-                }
               ]
             }
           },
@@ -1269,7 +1192,7 @@ data:
             {
               "title": "Vault Dashboard",
               "url": "/d/vault-cluster-overview/vault-cluster-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1324,13 +1247,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Vault Dashboard",
-                  "url": "/d/vault-cluster-overview/vault-cluster-overview?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -1371,7 +1287,7 @@ data:
             {
               "title": "cert-manager Dashboard",
               "url": "/d/cert-manager-certificates/cert-manager?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1415,13 +1331,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "cert-manager Dashboard",
-                  "url": "/d/cert-manager-certificates/cert-manager?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1541,7 +1450,7 @@ data:
             {
               "title": "CNPG Dashboard",
               "url": "/d/cnpg-cluster/cloudnativepg-cluster?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1580,13 +1489,6 @@ data:
                       "index": 2
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "CNPG Dashboard",
-                  "url": "/d/cnpg-cluster/cloudnativepg-cluster?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1628,7 +1530,7 @@ data:
             {
               "title": "Node Labeler Dashboard",
               "url": "/d/node-labeler/node-labeler?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1667,13 +1569,6 @@ data:
                       "index": 2
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Node Labeler Dashboard",
-                  "url": "/d/node-labeler/node-labeler?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1715,7 +1610,7 @@ data:
             {
               "title": "Storage Autoscaler Dashboard",
               "url": "/d/storage-autoscaler/storage-autoscaler?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1754,13 +1649,6 @@ data:
                       "index": 2
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Storage Autoscaler Dashboard",
-                  "url": "/d/storage-autoscaler/storage-autoscaler?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -1817,7 +1705,7 @@ data:
             {
               "title": "Harbor Dashboard",
               "url": "/d/harbor-overview/harbor-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1867,13 +1755,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Harbor Dashboard",
-                  "url": "/d/harbor-overview/harbor-overview?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -1914,7 +1795,7 @@ data:
             {
               "title": "Keycloak Dashboard",
               "url": "/d/keycloak-overview/keycloak-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -1974,13 +1855,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Keycloak Dashboard",
-                  "url": "/d/keycloak-overview/keycloak-overview?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -2021,7 +1895,7 @@ data:
             {
               "title": "oauth2-proxy Dashboard",
               "url": "/d/oauth2-proxy-overview/oauth2-proxy-forwardauth?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2091,13 +1965,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "oauth2-proxy Dashboard",
-                  "url": "/d/oauth2-proxy-overview/oauth2-proxy-forwardauth?orgId=1",
-                  "targetBlank": true
-                }
               ]
             }
           },
@@ -2138,7 +2005,7 @@ data:
             {
               "title": "Redis Dashboard",
               "url": "/d/redis-overview/redis-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2200,13 +2067,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Redis Dashboard",
-                  "url": "/d/redis-overview/redis-overview?orgId=1",
-                  "targetBlank": true
-                }
               ]
             }
           },
@@ -2247,7 +2107,7 @@ data:
             {
               "title": "ArgoCD Dashboard",
               "url": "/d/argocd-overview/argocd-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2297,13 +2157,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "ArgoCD Dashboard",
-                  "url": "/d/argocd-overview/argocd-overview?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -2344,7 +2197,7 @@ data:
             {
               "title": "Argo Rollouts Dashboard",
               "url": "/d/argo-rollouts-overview/argo-rollouts-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2404,13 +2257,6 @@ data:
                     }
                   }
                 }
-              ],
-              "links": [
-                {
-                  "title": "Argo Rollouts Dashboard",
-                  "url": "/d/argo-rollouts-overview/argo-rollouts-overview?orgId=1",
-                  "targetBlank": false
-                }
               ]
             }
           },
@@ -2451,7 +2297,7 @@ data:
             {
               "title": "GitLab Dashboard",
               "url": "/d/gitlab-overview/gitlab-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2500,13 +2346,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "GitLab Dashboard",
-                  "url": "/d/gitlab-overview/gitlab-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -2548,7 +2387,7 @@ data:
             {
               "title": "Identity Portal Dashboard",
               "url": "/d/identity-portal/identity-portal?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2597,13 +2436,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Identity Portal Dashboard",
-                  "url": "/d/identity-portal/identity-portal?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -2645,7 +2477,7 @@ data:
             {
               "title": "ESO Dashboard",
               "url": "/d/external-secrets-overview/external-secrets-operator-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2694,13 +2526,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "ESO Dashboard",
-                  "url": "/d/external-secrets-overview/external-secrets-operator-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -2742,7 +2567,7 @@ data:
             {
               "title": "DHI Builder Dashboard",
               "url": "/d/dhi-builder-overview/dhi-builder-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2791,13 +2616,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "DHI Builder Dashboard",
-                  "url": "/d/dhi-builder-overview/dhi-builder-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -2839,7 +2657,7 @@ data:
             {
               "title": "Kasm Dashboard",
               "url": "/d/kasm-overview/kasm-workspaces-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2888,13 +2706,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Kasm Dashboard",
-                  "url": "/d/kasm-overview/kasm-workspaces-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -2936,7 +2747,7 @@ data:
             {
               "title": "LibreNMS Dashboard",
               "url": "/d/librenms-overview/librenms-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -2985,13 +2796,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "LibreNMS Dashboard",
-                  "url": "/d/librenms-overview/librenms-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -3033,7 +2837,7 @@ data:
             {
               "title": "MinIO Dashboard",
               "url": "/d/minio-overview/minio-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -3082,13 +2886,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "MinIO Dashboard",
-                  "url": "/d/minio-overview/minio-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -3130,7 +2927,7 @@ data:
             {
               "title": "Alloy Dashboard",
               "url": "/d/alloy-overview/alloy-log-collector-overview?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -3179,13 +2976,6 @@ data:
                       "index": 3
                     }
                   }
-                }
-              ],
-              "links": [
-                {
-                  "title": "Alloy Dashboard",
-                  "url": "/d/alloy-overview/alloy-log-collector-overview?orgId=1",
-                  "targetBlank": false
                 }
               ]
             }
@@ -3923,7 +3713,7 @@ data:
             {
               "title": "Cluster Autoscaler Dashboard",
               "url": "/d/cluster-autoscaler/cluster-autoscaler?orgId=1",
-              "targetBlank": false
+              "targetBlank": true
             }
           ],
           "fieldConfig": {
@@ -3969,14 +3759,7 @@ data:
                     "value": 1
                   }
                 ]
-              },
-              "links": [
-                {
-                  "title": "Cluster Autoscaler Dashboard",
-                  "url": "/d/cluster-autoscaler/cluster-autoscaler?orgId=1",
-                  "targetBlank": false
-                }
-              ]
+              }
             }
           },
           "options": {

@@ -570,10 +570,6 @@ fi
 if [[ $PHASE_FROM -le 9 && $PHASE_TO -ge 9 ]]; then
   start_phase "Phase 9: Monitoring + Verify"
   kubectl apply -k "${GITLAB_DIR}/monitoring/"
-  # NetworkPolicies
-  log_info "Applying NetworkPolicies for GitLab services..."
-  kubectl apply -f "${REPO_ROOT}/services/gitlab/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/gitlab/runners/networkpolicy.yaml"
 
   # Verify HTTPS endpoint
   log_info "Verifying GitLab HTTPS endpoint..."

@@ -21,5 +21,4 @@ resources:
   # Volume autoscalers (PVC expansion)
   - volume-autoscalers.yaml
   # Monitoring
-  - networkpolicy.yaml
   - monitoring/
