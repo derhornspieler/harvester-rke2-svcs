@@ -38,8 +38,10 @@ fi
 KC_ADMIN_USER="${KC_ADMIN_USER:?KC_ADMIN_USER could not be read from Vault or .env}"
 KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD could not be read from Vault or .env}"
 
-# Breakglass user password — default to the admin password if not set separately
-BREAKGLASS_PASSWORD="${BREAKGLASS_PASSWORD:-${KC_ADMIN_PASSWORD}}"
+# Platform admin user credentials (replaces legacy admin-breakglass)
+PLATFORM_ADMIN_USER="${PLATFORM_ADMIN_USER:-admin.user}"
+PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_EMAIL:-${PLATFORM_ADMIN_USER}@${DOMAIN}}"
+PLATFORM_ADMIN_PASSWORD="${PLATFORM_ADMIN_PASSWORD:-${KC_ADMIN_PASSWORD}}"
 
 # CLI Parsing
 PHASE_FROM=1
@@ -60,9 +62,9 @@ Options:
 
 Phases:
   1  Create realm              Create the "${KC_REALM}" realm
-  2  Create breakglass user    Create admin-breakglass user with password
+  2  Create platform admin     Create ${PLATFORM_ADMIN_USER} user with password
   3  Create OIDC clients       grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc, argocd, harbor, gitlab
-  4  Create groups             platform-admins group, assign breakglass user
+  4  Create groups             platform-admins group, assign platform admin user
   5  Authentication flow       Configure prompt=login custom browser flow
   6  Validation                Print summary of created resources
 EOF
@@ -193,19 +195,28 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
 fi
 
 ###############################################################################
-# Phase 2: Create admin-breakglass user
+# Phase 2: Create platform admin user
 ###############################################################################
 if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
-  start_phase "Phase 2: Create Breakglass User"
-  log_info "Creating user 'admin-breakglass'..."
+  start_phase "Phase 2: Create Platform Admin User"
+  log_info "Creating user '${PLATFORM_ADMIN_USER}'..."
+  # Parse first/last name from username (expects firstname.lastname format)
+  _admin_first=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f1 | sed 's/./\U&/')
+  _admin_last=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f2- | sed 's/./\U&/')
+  [[ -n "$_admin_last" ]] || _admin_last="Admin"
+
   # Use jq to safely construct JSON — prevents injection if password contains " or \
   _user_payload=$(jq -n \
-    --arg pass "$BREAKGLASS_PASSWORD" \
+    --arg user "$PLATFORM_ADMIN_USER" \
+    --arg email "$PLATFORM_ADMIN_EMAIL" \
+    --arg first "$_admin_first" \
+    --arg last "$_admin_last" \
+    --arg pass "$PLATFORM_ADMIN_PASSWORD" \
     '{
-      username: "admin-breakglass",
-      email: ("admin@" + env.DOMAIN),
-      firstName: "Admin",
-      lastName: "Breakglass",
+      username: $user,
+      email: $email,
+      firstName: $first,
+      lastName: $last,
       enabled: true,
       emailVerified: true,
       credentials: [{type: "password", value: $pass, temporary: false}]
@@ -213,12 +224,21 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   kc_api_create POST "${KC_REALM}/users" -d "$_user_payload"
 
   # Get user ID for later group assignment
-  BREAKGLASS_ID=$(kc_api GET "${KC_REALM}/users?username=admin-breakglass" | jq -r '.[0].id')
-  if [[ -z "$BREAKGLASS_ID" || "$BREAKGLASS_ID" == "null" ]]; then
-    die "Failed to retrieve admin-breakglass user ID"
+  PLATFORM_ADMIN_ID=$(kc_api GET "${KC_REALM}/users?username=${PLATFORM_ADMIN_USER}" | jq -r '.[0].id')
+  if [[ -z "$PLATFORM_ADMIN_ID" || "$PLATFORM_ADMIN_ID" == "null" ]]; then
+    die "Failed to retrieve ${PLATFORM_ADMIN_USER} user ID"
   fi
-  log_ok "User admin-breakglass created (ID: ${BREAKGLASS_ID})"
-  end_phase "Phase 2: Create Breakglass User"
+  log_ok "User ${PLATFORM_ADMIN_USER} created (ID: ${PLATFORM_ADMIN_ID})"
+
+  # Store platform admin credentials in Vault
+  [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
+  _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
+  vault_exec "$_root_token" kv put kv/services/keycloak/platform-admin \
+    username="$PLATFORM_ADMIN_USER" \
+    password="$PLATFORM_ADMIN_PASSWORD" \
+    email="$PLATFORM_ADMIN_EMAIL"
+
+  end_phase "Phase 2: Create Platform Admin User"
 fi
 
 ###############################################################################
@@ -240,6 +260,12 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
   for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
     redirect_uri="${CLIENT_REDIRECTS[$client_id]}"
+    # ArgoCD v2.14 does not support PKCE — disable enforcement for it
+    if [[ "$client_id" == "argocd" ]]; then
+      pkce_method=""
+    else
+      pkce_method="S256"
+    fi
     log_info "Creating OIDC client '${client_id}'..."
     kc_api_create POST "${KC_REALM}/clients" -d '{
       "clientId": "'"${client_id}"'",
@@ -254,7 +280,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       "redirectUris": ["'"${redirect_uri}"'"],
       "webOrigins": ["+"],
       "attributes": {
-        "pkce.code.challenge.method": "S256",
+        "pkce.code.challenge.method": "'"${pkce_method}"'",
         "login_theme": "",
         "post.logout.redirect.uris": "+"
       },
@@ -386,7 +412,7 @@ fi
 # Phase 4: Create groups and assign breakglass user
 ###############################################################################
 if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
-  start_phase "Phase 4: Create Groups + Assign Breakglass User"
+  start_phase "Phase 4: Create Groups + Assign Platform Admin"
 
   log_info "Creating group 'platform-admins'..."
   kc_api_create POST "${KC_REALM}/groups" -d '{"name": "platform-admins"}'
@@ -397,15 +423,15 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   fi
   log_ok "Group platform-admins created (ID: ${GROUP_ID})"
 
-  # Retrieve breakglass user ID (in case phase 2 was run separately)
-  BREAKGLASS_ID=$(kc_api GET "${KC_REALM}/users?username=admin-breakglass" | jq -r '.[0].id')
-  if [[ -z "$BREAKGLASS_ID" || "$BREAKGLASS_ID" == "null" ]]; then
-    die "admin-breakglass user not found. Run phase 2 first."
+  # Retrieve platform admin user ID (in case phase 2 was run separately)
+  PLATFORM_ADMIN_ID=$(kc_api GET "${KC_REALM}/users?username=${PLATFORM_ADMIN_USER}" | jq -r '.[0].id')
+  if [[ -z "$PLATFORM_ADMIN_ID" || "$PLATFORM_ADMIN_ID" == "null" ]]; then
+    die "${PLATFORM_ADMIN_USER} user not found. Run phase 2 first."
   fi
 
-  log_info "Assigning admin-breakglass to platform-admins..."
-  kc_api_create PUT "${KC_REALM}/users/${BREAKGLASS_ID}/groups/${GROUP_ID}"
-  log_ok "admin-breakglass assigned to platform-admins"
+  log_info "Assigning ${PLATFORM_ADMIN_USER} to platform-admins..."
+  kc_api_create PUT "${KC_REALM}/users/${PLATFORM_ADMIN_ID}/groups/${GROUP_ID}"
+  log_ok "${PLATFORM_ADMIN_USER} assigned to platform-admins"
 
   # Create groups mapper for the realm so groups appear in tokens
   log_info "Creating 'groups' client scope with groups mapper..."
@@ -509,7 +535,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: Validation"
   log_ok "Keycloak setup complete"
   log_info "Realm: ${KC_REALM}"
-  log_info "Admin user: admin-breakglass"
+  log_info "Platform admin: ${PLATFORM_ADMIN_USER}"
   log_info "OIDC clients: grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc, argocd, harbor, gitlab"
   log_info "Groups: platform-admins"
   log_info "Auth flow: browser-prompt-login (forces re-authentication)"
