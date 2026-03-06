@@ -50,7 +50,7 @@ Phases:
   2  Scrape Configs Secret        Additional Prometheus scrape configs
   3  kube-prometheus-stack         Helm install (Prometheus, Grafana, Alertmanager)
   4  Rules + Monitors + Scaling   Apply rules, ServiceMonitors, HPA, VolumeAutoscalers
-  5  Gateways + Routes + Auth     Ingress routes, basic-auth, dashboards
+  5  Gateways + Routes + Auth     Ingress routes, Traefik dashboard, OAuth2-proxy, dashboards
   6  Verify                        Wait for all components to become ready
 EOF
   exit 0
@@ -103,12 +103,28 @@ if [[ "$VALIDATE_ONLY" == "true" ]]; then
     log_error "Alertmanager not found"
   fi
 
+  log_info "Checking Traefik dashboard..."
+  if kubectl -n kube-system get deployment oauth2-proxy-traefik \
+    -o jsonpath='{.status.readyReplicas}' 2>/dev/null; then
+    echo " replica(s) ready"
+  else
+    log_error "Traefik dashboard OAuth2-proxy not found"
+  fi
+
   log_info "Checking TLS secrets..."
   for secret in "grafana-${DOMAIN_DASHED}-tls" "prometheus-${DOMAIN_DASHED}-tls" "alertmanager-${DOMAIN_DASHED}-tls"; do
     if kubectl -n monitoring get secret "$secret" &>/dev/null; then
       log_ok "TLS secret ${secret} exists"
     else
       log_warn "TLS secret ${secret} not found"
+    fi
+  done
+  # Traefik dashboard TLS is in kube-system (Gateway lives there)
+  for secret in "traefik-${DOMAIN_DASHED}-tls"; do
+    if kubectl -n kube-system get secret "$secret" &>/dev/null; then
+      log_ok "TLS secret ${secret} exists (kube-system)"
+    else
+      log_warn "TLS secret ${secret} not found (kube-system)"
     fi
   done
 
@@ -263,6 +279,17 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   # Service aliases
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/prometheus-service-alias.yaml"
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/alertmanager-service-alias.yaml"
+
+  # Traefik Dashboard — enable API + protect with OAuth2-proxy
+  log_info "Enabling Traefik dashboard with OAuth2-proxy auth..."
+  kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/helmchartconfig.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/external-secret.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/dashboard-service.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/middleware.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/traefik-dashboard/oauth2-proxy.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/traefik-dashboard/gateway.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/traefik-dashboard/httproute.yaml"
+
   # Apply dashboards (some contain CHANGEME_DOMAIN tokens)
   for f in "${REPO_ROOT}"/services/monitoring-stack/grafana/dashboards/configmap-dashboard-*.yaml; do
     kube_apply_subst "$f"
@@ -278,6 +305,8 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   wait_for_tls_secret monitoring "grafana-${DOMAIN_DASHED}-tls" 300
   wait_for_tls_secret monitoring "prometheus-${DOMAIN_DASHED}-tls" 300
   wait_for_tls_secret monitoring "alertmanager-${DOMAIN_DASHED}-tls" 300
+  wait_for_tls_secret kube-system "traefik-${DOMAIN_DASHED}-tls" 300
+  wait_for_deployment kube-system oauth2-proxy-traefik 300s
   end_phase "Phase 6: Verify"
 fi
 
