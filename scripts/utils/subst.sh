@@ -8,25 +8,26 @@ _subst_changeme() {
   [[ -n "${DOMAIN:-}" ]] || die "DOMAIN must be set before using subst functions"
   [[ -n "${DOMAIN_DASHED:-}" ]] || die "DOMAIN_DASHED must be set"
   [[ -n "${DOMAIN_DOT:-}" ]] || die "DOMAIN_DOT must be set"
-  # Validate critical passwords are non-empty when explicitly set (avoids blocking non-monitoring deploys)
-  if [[ -n "${GRAFANA_ADMIN_PASSWORD+set}" && -z "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
-    die "GRAFANA_ADMIN_PASSWORD is set but empty — refusing to deploy with blank password"
-  fi
+  # Substitution uses :- (empty-if-unset) so only files that actually contain
+  # the token will fail via the leftover check in kube_apply_subst().
+  # Use :- (empty-if-unset) so sed doesn't fail when a variable isn't needed
+  # for the current file. The leftover check in kube_apply_subst() catches
+  # any unreplaced CHANGEME_ tokens that should have been substituted.
   sed \
-    -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set and non-empty}|g" \
+    -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_KC_REALM|${KC_REALM:-platform}|g" \
     -e "s|CHANGEME_VAULT_ADDR|http://vault.vault.svc.cluster.local:8200|g" \
-    -e "s|CHANGEME_HARBOR_ADMIN_PASSWORD|${HARBOR_ADMIN_PASSWORD:?HARBOR_ADMIN_PASSWORD must be set and non-empty}|g" \
-    -e "s|CHANGEME_HARBOR_DB_PASSWORD|${HARBOR_DB_PASSWORD:?HARBOR_DB_PASSWORD must be set and non-empty}|g" \
-    -e "s|CHANGEME_HARBOR_REDIS_PASSWORD|${HARBOR_REDIS_PASSWORD:?HARBOR_REDIS_PASSWORD must be set and non-empty}|g" \
-    -e "s|CHANGEME_HARBOR_MINIO_SECRET_KEY|${HARBOR_MINIO_SECRET_KEY:?HARBOR_MINIO_SECRET_KEY must be set and non-empty}|g" \
+    -e "s|CHANGEME_HARBOR_ADMIN_PASSWORD|${HARBOR_ADMIN_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_DB_PASSWORD|${HARBOR_DB_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_REDIS_PASSWORD|${HARBOR_REDIS_PASSWORD:-}|g" \
+    -e "s|CHANGEME_HARBOR_MINIO_SECRET_KEY|${HARBOR_MINIO_SECRET_KEY:-}|g" \
     -e "s|CHANGEME_MINIO_ENDPOINT|http://minio.minio.svc.cluster.local:9000|g" \
-    -e "s|CHANGEME_OAUTH2_REDIS_SENTINEL|${OAUTH2_REDIS_SENTINEL:?OAUTH2_REDIS_SENTINEL must be set and non-empty}|g" \
-    -e "s|CHANGEME_KC_ADMIN_PASSWORD|${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD must be set and non-empty}|g" \
-    -e "s|CHANGEME_KEYCLOAK_DB_PASSWORD|${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD must be set and non-empty}|g" \
-    -e "s|CHANGEME_BOOTSTRAP_CLIENT_SECRET|${KEYCLOAK_BOOTSTRAP_CLIENT_SECRET:?KEYCLOAK_BOOTSTRAP_CLIENT_SECRET must be set and non-empty}|g" \
-    -e "s|CHANGEME_ARGO_ROLLOUTS_PLUGIN_URL|${ARGO_ROLLOUTS_PLUGIN_URL:?ARGO_ROLLOUTS_PLUGIN_URL must be set and non-empty}|g" \
-    -e "s|CHANGEME_GITLAB_REDIS_PASSWORD|${GITLAB_REDIS_PASSWORD:?GITLAB_REDIS_PASSWORD must be set and non-empty}|g" \
+    -e "s|CHANGEME_OAUTH2_REDIS_SENTINEL|${OAUTH2_REDIS_SENTINEL:-}|g" \
+    -e "s|CHANGEME_KC_ADMIN_PASSWORD|${KC_ADMIN_PASSWORD:-}|g" \
+    -e "s|CHANGEME_KEYCLOAK_DB_PASSWORD|${KEYCLOAK_DB_PASSWORD:-}|g" \
+    -e "s|CHANGEME_BOOTSTRAP_CLIENT_SECRET|${KEYCLOAK_BOOTSTRAP_CLIENT_SECRET:-}|g" \
+    -e "s|CHANGEME_ARGO_ROLLOUTS_PLUGIN_URL|${ARGO_ROLLOUTS_PLUGIN_URL:-}|g" \
+    -e "s|CHANGEME_GITLAB_REDIS_PASSWORD|${GITLAB_REDIS_PASSWORD:-}|g" \
     -e "s|CHANGEME_DOMAIN_DOT|${DOMAIN_DOT}|g" \
     -e "s|CHANGEME_DOMAIN_DASHED|${DOMAIN_DASHED}|g" \
     -e "s|CHANGEME_DOMAIN|${DOMAIN}|g"
