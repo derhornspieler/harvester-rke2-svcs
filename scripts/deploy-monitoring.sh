@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/utils/helm.sh"
 source "${SCRIPT_DIR}/utils/wait.sh"
 source "${SCRIPT_DIR}/utils/vault.sh"
 source "${SCRIPT_DIR}/utils/subst.sh"
-source "${SCRIPT_DIR}/utils/basic-auth.sh"
 
 # Load environment
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
