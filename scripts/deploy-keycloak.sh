@@ -116,11 +116,16 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     log_info "Installing CloudNativePG operator..."
     helm_repo_add cnpg "$HELM_REPO_CNPG"
     helm_install_if_needed cnpg "$HELM_CHART_CNPG" cnpg-system \
-      --version 0.23.0 \
+      --version 0.27.0 \
       --set monitoring.podMonitorEnabled=true \
-      --set nodeSelector.workload-type=general \
+      --set nodeSelector.workload-type=database \
       --wait --timeout 5m
-    wait_for_deployment cnpg-system cnpg-cloudnative-pg 300s
+    wait_for_deployment cnpg-system cnpg-controller-manager 300s
+
+    # Apply HPA and PDB for the CNPG operator
+    log_info "Applying CNPG operator HPA and PDB..."
+    kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/hpa.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/pdb.yaml"
   else
     log_info "CNPG operator CRD already exists, skipping install"
   fi
@@ -284,6 +289,10 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   wait_for_pods_ready database "cnpg.io/cluster=keycloak-pg,role=primary" 600
 
   kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/keycloak-pg-scheduled-backup.yaml"
+  # Apply VolumeAutoscaler for keycloak-pg PVCs
+  log_info "Applying VolumeAutoscaler for keycloak-pg..."
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/volume-autoscalers.yaml"
+
   end_phase "Phase 4: PostgreSQL CNPG"
 fi
 

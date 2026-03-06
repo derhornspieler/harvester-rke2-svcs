@@ -39,7 +39,7 @@ export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
 
 # CLI Parsing
 PHASE_FROM=1
-PHASE_TO=7
+PHASE_TO=8
 VALIDATE_ONLY=false
 
 usage() {
@@ -51,7 +51,7 @@ Deploy Argo GitOps platform: ArgoCD, Argo Rollouts, and Argo Workflows.
 Options:
   --phase N       Run only phase N
   --from N        Start from phase N (default: 1)
-  --to N          Stop after phase N (default: 7)
+  --to N          Stop after phase N (default: 8)
   --validate      Health check all components (no changes)
   -h, --help      Show this help
 
@@ -62,7 +62,8 @@ Phases:
   4  Argo Rollouts Helm   Helm install Argo Rollouts
   5  Argo Workflows Helm  Helm install Argo Workflows
   6  Gateways + Auth      Gateways, HTTPRoutes, OAuth2-proxy, AnalysisTemplates
-  7  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
+  7  VolumeAutoscalers    VolumeAutoscaler CRs + PDBs for Argo workloads
+  8  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
 EOF
   exit 0
 }
@@ -276,11 +277,23 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   end_phase "Phase 6: Gateways + Auth + AnalysisTemplates"
 fi
 
-# Phase 7: Monitoring + Verify
+# Phase 7: VolumeAutoscalers + PDBs
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
-  start_phase "Phase 7: Monitoring + Verify"
+  start_phase "Phase 7: VolumeAutoscalers + PDBs"
+  log_info "Applying VolumeAutoscalers for Argo PVCs..."
+  kubectl apply -f "${REPO_ROOT}/services/argo/volume-autoscalers.yaml"
+  log_info "Applying PDBs for ArgoCD stateless workloads..."
+  kubectl apply -f "${REPO_ROOT}/services/argo/argocd/pdbs.yaml"
+  log_info "Applying PDB for Argo Rollouts controller..."
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/pdb.yaml"
+  end_phase "Phase 7: VolumeAutoscalers + PDBs"
+fi
+
+# Phase 8: Monitoring + Verify
+if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
+  start_phase "Phase 8: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/argo/monitoring/"
-  end_phase "Phase 7: Monitoring + Verify"
+  end_phase "Phase 8: Monitoring + Verify"
 fi
 
 log_ok "Argo GitOps platform deployment complete"

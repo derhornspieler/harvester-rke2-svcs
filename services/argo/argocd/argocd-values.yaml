@@ -194,6 +194,13 @@ redis-ha:
         cpu: 50m
         memory: 64Mi
 
+  # Split-brain-fix sidecar container — prevents split-brain during failover
+  splitBrainFix:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
   persistentVolume:
     enabled: true
     size: 8Gi
