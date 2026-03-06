@@ -10,7 +10,6 @@
 - Secrets via ESO + Vault KV v2
 - Each bundle has a deploy script for bootstrap, ArgoCD manages steady-state later
 - GitLab SSH uses TCP Gateway listener (port 22 passthrough)
-- **NetworkPolicies** on all namespaces — default-deny-ingress + explicit allow rules (applied in final phase of each bundle)
 - **Resource requests only, no limits** — allows bursting, prevents artificial OOM kills
 - **HPA enabled** on stateless workloads (Grafana, OAuth2-proxy, ArgoCD server, GitLab Webservice, etc.)
 - **Storage autoscaler** on PVCs that grow (Prometheus TSDB, Loki, Gitaly, MinIO, CNPG WAL)
@@ -61,7 +60,6 @@ Depends on: Bundle 1 (TLS, secrets)
 | Grafana | Dashboards (includes dashboards from source repo), native OIDC |
 | Loki | Log aggregation |
 | Alloy (Grafana Agent) | Log/metric shipping |
-| NetworkPolicy | Default-deny-ingress, allows Traefik and Prometheus scraping |
 
 Depends on: Bundle 1 (TLS, secrets)
 - Optional: Bundle 2 (Identity) for OIDC pre-configuration in Grafana
@@ -76,7 +74,6 @@ Depends on: Bundle 1 (TLS, secrets)
 | MinIO | S3-compatible object storage for Harbor (skip if already deployed in Bundle 2) |
 | CNPG (PostgreSQL) | Harbor database (uses operator from Bundle 2) |
 | Valkey | Harbor caching layer |
-| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping |
 
 Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator, shared MinIO)
 
@@ -89,7 +86,6 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC, CNPG operator,
 | ArgoCD | GitOps engine (declarative service management), OIDC SSO |
 | Argo Rollouts | Blue/green and canary deployment strategies, analysis templates |
 | Argo Workflows | Workflow automation, DAG-based pipelines |
-| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping |
 
 Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Monitoring for AnalysisTemplate queries)
 
@@ -104,7 +100,6 @@ Depends on: Bundle 1 (TLS, secrets), Bundle 2 (Identity for OIDC), Bundle 3 (Mon
 | GitLab Runners | Kubernetes executor (CI jobs run as pods) |
 | CNPG (PostgreSQL) | GitLab database (uses operator from Bundle 2) |
 | Redis Sentinel | GitLab caching/session/queue store |
-| NetworkPolicy | Default-deny-ingress, allows Traefik, Prometheus scraping, SSH on port 22 |
 
 **Notes:**
 - Ultimate license via registration key file (gitignored, from source repo)

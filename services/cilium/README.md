@@ -240,7 +240,7 @@ curl -G "http://loki.monitoring.svc:3100/loki/api/v1/query" --data-urlencode 'qu
 
 - Flow export disabled in HelmChartConfig — verify `hubble.export.static.enabled: true`
 - Alloy DaemonSet not mounted `/var/run/cilium/hubble/` — check volumeMounts and hostPath
-- Loki unreachable from Alloy — check NetworkPolicy allows `monitoring → monitoring:3100`
+- Loki unreachable from Alloy — verify network connectivity between Alloy and Loki (monitoring namespace)
 
 ## Related Services
 
@@ -254,6 +254,5 @@ curl -G "http://loki.monitoring.svc:3100/loki/api/v1/query" --data-urlencode 'qu
 
 ## See Also
 
-- **Network Policies**: `services/monitoring-stack/networkpolicy.yaml` — Must allow `monitoring → kube-system:4244` for relay metrics
 - **Alloy Pipeline**: `services/monitoring-stack/alloy/configmap.yaml` — Processes Hubble flow logs (stage.json, stage.labels)
 - **Architecture Diagram**: `docs/architecture.md` — Full observability stack diagram (Bundle 3)
