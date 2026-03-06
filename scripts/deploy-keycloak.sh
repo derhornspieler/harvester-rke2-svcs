@@ -141,20 +141,28 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
 
-  # Generate random credentials for MinIO
-  MINIO_ROOT_USER="${MINIO_ROOT_USER:-minio-admin}"
-  MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$(openssl rand -base64 24)}"
+  # Read existing credentials from Vault or generate new ones (idempotent)
+  log_info "Reading/generating credentials (Vault-first, no regeneration on re-run)..."
 
-  log_info "Seeding Vault KV secrets..."
+  MINIO_ROOT_USER="${MINIO_ROOT_USER:-$(vault_get_or_generate "$root_token" \
+    "kv/services/minio/root-credentials" "root-user" "echo minio-admin")}"
+  MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/minio/root-credentials" "root-password" "openssl rand -base64 24")}"
+
+  log_info "Storing MinIO credentials in Vault..."
   vault_exec "$root_token" kv put kv/services/minio/root-credentials \
     root-user="$MINIO_ROOT_USER" \
     root-password="$MINIO_ROOT_PASSWORD"
 
   # Keycloak admin credentials (single break-glass admin)
-  KC_ADMIN_USER="${KC_ADMIN_USER:-admin-breakglass}"
-  KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:-$(openssl rand -base64 24)}"
-  KC_ADMIN_CLIENT_ID="${KC_ADMIN_CLIENT_ID:-temp-admin-svc}"
-  KC_ADMIN_CLIENT_SECRET="${KC_ADMIN_CLIENT_SECRET:-$(openssl rand -hex 32)}"
+  KC_ADMIN_USER="${KC_ADMIN_USER:-$(vault_get_or_generate "$root_token" \
+    "kv/services/keycloak/admin-secret" "KC_BOOTSTRAP_ADMIN_USERNAME" "echo admin-breakglass")}"
+  KC_ADMIN_PASSWORD="${KC_ADMIN_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/keycloak/admin-secret" "KC_BOOTSTRAP_ADMIN_PASSWORD" "openssl rand -base64 24")}"
+  KC_ADMIN_CLIENT_ID="${KC_ADMIN_CLIENT_ID:-$(vault_get_or_generate "$root_token" \
+    "kv/services/keycloak/admin-secret" "KC_BOOTSTRAP_ADMIN_CLIENT_ID" "echo temp-admin-svc")}"
+  KC_ADMIN_CLIENT_SECRET="${KC_ADMIN_CLIENT_SECRET:-$(vault_get_or_generate "$root_token" \
+    "kv/services/keycloak/admin-secret" "KC_BOOTSTRAP_ADMIN_CLIENT_SECRET" "openssl rand -hex 32")}"
 
   vault_exec "$root_token" kv put kv/services/keycloak/admin-secret \
     KC_BOOTSTRAP_ADMIN_USERNAME="$KC_ADMIN_USER" \
@@ -163,8 +171,10 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
     KC_BOOTSTRAP_ADMIN_CLIENT_SECRET="$KC_ADMIN_CLIENT_SECRET"
 
   # Keycloak PostgreSQL credentials
-  PG_KC_USER="${PG_KC_USER:-keycloak}"
-  PG_KC_PASSWORD="${PG_KC_PASSWORD:-$(openssl rand -base64 24)}"
+  PG_KC_USER="${PG_KC_USER:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/keycloak-pg" "username" "echo keycloak")}"
+  PG_KC_PASSWORD="${PG_KC_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/keycloak-pg" "password" "openssl rand -base64 24")}"
 
   vault_exec "$root_token" kv put kv/services/keycloak/postgres-secret \
     POSTGRES_USER="$PG_KC_USER" \

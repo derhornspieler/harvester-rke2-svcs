@@ -29,12 +29,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # Prometheus scraping metrics (server, repo-server, application-controller)
+    # Prometheus scraping metrics (server 8083, repo-server 8081/8084, app-controller 8082)
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
       ports:
+        - protocol: TCP
+          port: 8081
         - protocol: TCP
           port: 8082
         - protocol: TCP

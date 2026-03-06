@@ -11,7 +11,7 @@ spec:
       namespace: harbor
       sectionName: https
   hostnames:
-    - "harbor.CHANGEME_DOMAIN"
+    - "harbor.dev.CHANGEME_DOMAIN"
   rules:
     # Core API, Docker v2 registry, callbacks, service endpoints
     - matches:

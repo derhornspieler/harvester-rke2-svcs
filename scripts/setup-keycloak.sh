@@ -61,7 +61,7 @@ Options:
 Phases:
   1  Create realm              Create the "${KC_REALM}" realm
   2  Create breakglass user    Create admin-breakglass user with password
-  3  Create OIDC clients       grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc
+  3  Create OIDC clients       grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc, argocd, harbor, gitlab
   4  Create groups             platform-admins group, assign breakglass user
   5  Authentication flow       Configure prompt=login custom browser flow
   6  Validation                Print summary of created resources
@@ -203,6 +203,9 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
     --arg pass "$BREAKGLASS_PASSWORD" \
     '{
       username: "admin-breakglass",
+      email: ("admin@" + env.DOMAIN),
+      firstName: "Admin",
+      lastName: "Breakglass",
       enabled: true,
       emailVerified: true,
       credentials: [{type: "password", value: $pass, temporary: false}]
@@ -230,9 +233,12 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     ["prometheus-oidc"]="https://prometheus.${DOMAIN}/oauth2/callback"
     ["alertmanager-oidc"]="https://alertmanager.${DOMAIN}/oauth2/callback"
     ["hubble-oidc"]="https://hubble.${DOMAIN}/oauth2/callback"
+    ["argocd"]="https://argo.${DOMAIN}/auth/callback"
+    ["harbor"]="https://harbor.dev.${DOMAIN}/c/oidc/callback"
+    ["gitlab"]="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"
   )
 
-  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc; do
+  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
     redirect_uri="${CLIENT_REDIRECTS[$client_id]}"
     log_info "Creating OIDC client '${client_id}'..."
     kc_api_create POST "${KC_REALM}/clients" -d '{
@@ -252,8 +258,8 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
         "login_theme": "",
         "post.logout.redirect.uris": "+"
       },
-      "defaultClientScopes": ["openid", "profile", "email", "roles"],
-      "optionalClientScopes": ["groups"]
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"],
+      "optionalClientScopes": []
     }'
     log_ok "OIDC client '${client_id}' created"
   done
@@ -263,7 +269,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
 
-  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc; do
+  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
     # Get the internal client UUID from Keycloak
     _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
     if [[ -z "$_client_uuid" || "$_client_uuid" == "null" ]]; then
@@ -278,13 +284,43 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       continue
     fi
 
-    # Generate a cookie-secret for OAuth2-proxy (32-byte base64)
-    _cookie_secret=$(openssl rand -base64 32)
+    # Generate a cookie-secret for OAuth2-proxy (16-byte hex = 32 hex chars)
+    _cookie_secret=$(openssl rand -hex 16)
 
     # Seed into Vault at kv/oidc/<client-id>
     vault_exec "$_root_token" kv put "kv/oidc/${client_id}" \
       client-secret="$_client_secret" \
       cookie-secret="$_cookie_secret"
+
+    # For GitLab: also write the OIDC provider JSON to services/gitlab/oidc-secret
+    if [[ "$client_id" == "gitlab" ]]; then
+      _gitlab_provider=$(jq -nc \
+        --arg secret "$_client_secret" \
+        --arg domain "$DOMAIN" \
+        --arg realm "$KC_REALM" \
+        '{
+          name: "openid_connect",
+          label: "Keycloak",
+          args: {
+            name: "openid_connect",
+            scope: ["openid","profile","email","groups"],
+            response_type: "code",
+            issuer: ("https://keycloak." + $domain + "/realms/" + $realm),
+            discovery: true,
+            client_auth_method: "query",
+            uid_field: "preferred_username",
+            pkce: true,
+            client_options: {
+              identifier: "gitlab",
+              secret: $secret,
+              redirect_uri: ("https://gitlab." + $domain + "/users/auth/openid_connect/callback")
+            }
+          }
+        }')
+      vault_exec "$_root_token" kv put "kv/services/gitlab/oidc-secret" \
+        "provider=${_gitlab_provider}"
+      log_ok "Seeded Vault kv/services/gitlab/oidc-secret"
+    fi
 
     log_ok "Seeded Vault kv/oidc/${client_id}"
   done
@@ -400,6 +436,23 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   }'
   log_ok "Groups client scope created with membership mapper"
 
+  # Assign the groups scope as a default scope on all OIDC clients
+  _groups_scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | jq -r '.[] | select(.name=="groups") | .id')
+  if [[ -n "$_groups_scope_id" && "$_groups_scope_id" != "null" ]]; then
+    for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
+      _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
+      if [[ -n "$_client_uuid" && "$_client_uuid" != "null" ]]; then
+        _assign_token=$(kc_get_token)
+        curl -sk --connect-timeout 10 --max-time 30 -o /dev/null \
+          -X PUT "${KC_URL}/admin/realms/${KC_REALM}/clients/${_client_uuid}/default-client-scopes/${_groups_scope_id}" \
+          -H "Authorization: Bearer ${_assign_token}"
+        log_ok "Assigned groups scope to ${client_id}"
+      fi
+    done
+  else
+    log_warn "Could not find groups scope ID — skipping scope assignment"
+  fi
+
   end_phase "Phase 4: Create Groups + Assign Breakglass User"
 fi
 
@@ -457,7 +510,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   log_ok "Keycloak setup complete"
   log_info "Realm: ${KC_REALM}"
   log_info "Admin user: admin-breakglass"
-  log_info "OIDC clients: grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc"
+  log_info "OIDC clients: grafana, prometheus-oidc, alertmanager-oidc, hubble-oidc, argocd, harbor, gitlab"
   log_info "Groups: platform-admins"
   log_info "Auth flow: browser-prompt-login (forces re-authentication)"
   log_info ""

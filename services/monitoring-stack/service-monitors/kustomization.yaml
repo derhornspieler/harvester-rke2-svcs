@@ -8,3 +8,5 @@ resources:
   - loki.yaml
   - redis-exporter.yaml
   - grafana.yaml
+  - node-labeler.yaml
+  - storage-autoscaler.yaml
