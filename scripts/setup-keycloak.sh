@@ -287,6 +287,21 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     ["harbor"]="https://harbor.dev.${DOMAIN}/c/oidc/callback"
     ["gitlab"]="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"
   )
+  # Post-logout redirect URIs — wildcard per service base URL
+  # Keycloak's "+" shorthand only matches redirectUris exactly, which breaks
+  # logout flows that redirect to / or /login instead of /oauth2/callback
+  declare -A CLIENT_LOGOUT_REDIRECTS=(
+    ["grafana"]="https://grafana.${DOMAIN}/*"
+    ["prometheus-oidc"]="https://prometheus.${DOMAIN}/*"
+    ["alertmanager-oidc"]="https://alertmanager.${DOMAIN}/*"
+    ["hubble-oidc"]="https://hubble.${DOMAIN}/*"
+    ["traefik-oidc"]="https://traefik.${DOMAIN}/*"
+    ["rollouts-oidc"]="https://rollouts.${DOMAIN}/*"
+    ["workflows-oidc"]="https://workflows.${DOMAIN}/*"
+    ["argocd"]="https://argo.${DOMAIN}/*"
+    ["harbor"]="https://harbor.dev.${DOMAIN}/*"
+    ["gitlab"]="https://gitlab.${DOMAIN}/*"
+  )
 
   # OAuth2-proxy clients need an audience mapper so the token aud claim
   # matches the client_id (oauth2-proxy validates this)
@@ -297,6 +312,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
   for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
     redirect_uri="${CLIENT_REDIRECTS[$client_id]}"
+    logout_redirect="${CLIENT_LOGOUT_REDIRECTS[$client_id]}"
     # ArgoCD v2.14 and GitLab omniauth do not send PKCE params — leave empty
     if [[ "$client_id" == "argocd" || "$client_id" == "gitlab" ]]; then
       pkce_method=""
@@ -319,7 +335,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       "attributes": {
         "pkce.code.challenge.method": "'"${pkce_method}"'",
         "login_theme": "",
-        "post.logout.redirect.uris": "+"
+        "post.logout.redirect.uris": "'"${logout_redirect}"'"
       },
       "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"],
       "optionalClientScopes": []
