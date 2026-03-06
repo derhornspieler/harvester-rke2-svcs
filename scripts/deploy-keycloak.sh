@@ -142,6 +142,18 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/keycloak/namespace.yaml"
   kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
 
+  # Create vault-root-ca ConfigMap in keycloak namespace (CA trust for OIDC, TLS)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap in keycloak..."
+    kubectl create configmap vault-root-ca \
+      --namespace=keycloak \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMap not created in keycloak"
+  fi
+
   # Seed Vault KV secrets
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")

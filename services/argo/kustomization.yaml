@@ -12,6 +12,7 @@ resources:
   - argo-rollouts/middleware-oauth2-proxy.yaml
   # Argo Workflows
   - argo-workflows/namespace.yaml
+  - argo-workflows/external-secret-oauth2-proxy.yaml
   - argo-workflows/gateway.yaml
   - argo-workflows/httproute.yaml
   - argo-workflows/middleware-oauth2-proxy.yaml
