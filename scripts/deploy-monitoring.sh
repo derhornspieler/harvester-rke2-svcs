@@ -236,43 +236,29 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   end_phase "Phase 4: Rules + Monitors + Scaling"
 fi
 
-# Phase 5: Gateways + HTTPRoutes + basic-auth
+# Phase 5: Gateways + HTTPRoutes + OAuth2-proxy auth
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
-  start_phase "Phase 5: Gateways + HTTPRoutes + Basic Auth"
+  start_phase "Phase 5: Gateways + HTTPRoutes + OAuth2-proxy Auth"
 
-  # Read/generate basic-auth passwords from Vault (idempotent — no regeneration on re-run)
+  # Grafana admin password from Vault (basic-auth no longer used for Prometheus/Alertmanager)
   VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
   if [[ -f "$VAULT_INIT_FILE" ]]; then
     root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
-    PROM_BASIC_AUTH_PASS="${PROM_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
-      "kv/services/monitoring" "prometheus-basic-auth-password" "openssl rand -base64 24")}"
-    AM_BASIC_AUTH_PASS="${AM_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
-      "kv/services/monitoring" "alertmanager-basic-auth-password" "openssl rand -base64 24")}"
     GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(vault_get_or_generate "$root_token" \
       "kv/services/monitoring" "grafana-admin-password" "openssl rand -base64 24")}"
 
     vault_exec "$root_token" kv put kv/services/monitoring \
-      prometheus-basic-auth-password="$PROM_BASIC_AUTH_PASS" \
-      alertmanager-basic-auth-password="$AM_BASIC_AUTH_PASS" \
       grafana-admin-password="$GRAFANA_ADMIN_PASSWORD"
   else
     log_warn "Vault init file not found — using .env passwords (not stored in Vault)"
-    PROM_BASIC_AUTH_PASS="${PROM_BASIC_AUTH_PASS:?Set PROM_BASIC_AUTH_PASS in .env}"
-    AM_BASIC_AUTH_PASS="${AM_BASIC_AUTH_PASS:?Set AM_BASIC_AUTH_PASS in .env}"
   fi
 
-  # Create basic-auth secrets
-  create_basic_auth_secret monitoring basic-auth-prometheus \
-    "${PROM_BASIC_AUTH_USER:-admin}" "$PROM_BASIC_AUTH_PASS"
-  create_basic_auth_secret monitoring basic-auth-alertmanager \
-    "${AM_BASIC_AUTH_USER:-admin}" "$AM_BASIC_AUTH_PASS"
   # Apply gateways and routes (need domain substitution)
+  # Auth is handled by OAuth2-proxy ForwardAuth middlewares (deployed in setup-keycloak.sh)
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/prometheus/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/prometheus/httproute.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/prometheus/basic-auth-middleware.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/alertmanager/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/alertmanager/httproute.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/alertmanager/basic-auth-middleware.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/grafana/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/grafana/httproute.yaml"
   # Service aliases
@@ -282,7 +268,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   for f in "${REPO_ROOT}"/services/monitoring-stack/grafana/dashboards/configmap-dashboard-*.yaml; do
     kube_apply_subst "$f"
   done
-  end_phase "Phase 5: Gateways + HTTPRoutes + Basic Auth"
+  end_phase "Phase 5: Gateways + HTTPRoutes + OAuth2-proxy Auth"
 fi
 
 # Phase 6: Verify

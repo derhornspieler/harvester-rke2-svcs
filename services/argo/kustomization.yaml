@@ -9,12 +9,12 @@ resources:
   - argo-rollouts/namespace.yaml
   - argo-rollouts/gateway.yaml
   - argo-rollouts/httproute.yaml
-  - argo-rollouts/middleware-basic-auth.yaml
+  - argo-rollouts/middleware-oauth2-proxy.yaml
   # Argo Workflows
   - argo-workflows/namespace.yaml
   - argo-workflows/gateway.yaml
   - argo-workflows/httproute.yaml
-  - argo-workflows/middleware-basic-auth.yaml
+  - argo-workflows/middleware-oauth2-proxy.yaml
   # AnalysisTemplates
   - analysis-templates/success-rate.yaml
   - analysis-templates/latency-check.yaml
