@@ -223,6 +223,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       emailVerified: true,
       credentials: [{type: "password", value: $pass, temporary: false}]
     }')
+  # Create user in the platform realm (for OIDC login)
   kc_api_create POST "${KC_REALM}/users" -d "$_user_payload"
 
   # Get user ID for later group assignment
@@ -230,7 +231,31 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   if [[ -z "$PLATFORM_ADMIN_ID" || "$PLATFORM_ADMIN_ID" == "null" ]]; then
     die "Failed to retrieve ${PLATFORM_ADMIN_USER} user ID"
   fi
-  log_ok "User ${PLATFORM_ADMIN_USER} created (ID: ${PLATFORM_ADMIN_ID})"
+  log_ok "User ${PLATFORM_ADMIN_USER} created in '${KC_REALM}' realm (ID: ${PLATFORM_ADMIN_ID})"
+
+  # Also create user in master realm with admin role (for Keycloak admin API access)
+  log_info "Creating ${PLATFORM_ADMIN_USER} in master realm with admin role..."
+  kc_api_create POST "master/users" -d "$_user_payload"
+
+  _master_user_id=$(kc_api GET "master/users?username=${PLATFORM_ADMIN_USER}" | jq -r '.[0].id')
+  if [[ -n "$_master_user_id" && "$_master_user_id" != "null" ]]; then
+    # Get the admin role ID in master realm
+    _admin_role_id=$(kc_api GET "master/roles/admin" | jq -r '.id')
+    if [[ -n "$_admin_role_id" && "$_admin_role_id" != "null" ]]; then
+      # Assign admin realm role
+      _token=$(kc_get_token)
+      curl -sk --connect-timeout 10 --max-time 30 -o /dev/null \
+        -X POST "${KC_URL}/admin/realms/master/users/${_master_user_id}/role-mappings/realm" \
+        -H "Authorization: Bearer ${_token}" \
+        -H "Content-Type: application/json" \
+        -d '[{"id":"'"${_admin_role_id}"'","name":"admin"}]'
+      log_ok "${PLATFORM_ADMIN_USER} granted admin role in master realm"
+    else
+      log_warn "Could not find admin role in master realm"
+    fi
+  else
+    log_warn "Could not create/find ${PLATFORM_ADMIN_USER} in master realm"
+  fi
 
   # Store platform admin credentials in Vault
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
