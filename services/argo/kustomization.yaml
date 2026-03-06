@@ -22,7 +22,4 @@ resources:
   # Volume autoscalers (PVC expansion)
   - volume-autoscalers.yaml
   # Monitoring
-  - argocd/networkpolicy.yaml
-  - argo-rollouts/networkpolicy.yaml
-  - argo-workflows/networkpolicy.yaml
   - monitoring/

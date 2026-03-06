@@ -4,5 +4,4 @@ resources:
   - namespace.yaml
   - rbac.yaml
   - cluster-issuer.yaml
-  - networkpolicy.yaml
   - monitoring/

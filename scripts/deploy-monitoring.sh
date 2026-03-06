@@ -170,6 +170,41 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       --dry-run=client -o yaml | kubectl apply -f -
   fi
 
+  # 3. Grafana PostgreSQL backend (CNPG cluster in database namespace)
+  VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
+  if [[ -f "$VAULT_INIT_FILE" ]]; then
+    root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
+
+    # Seed Vault with Grafana DB credentials (idempotent)
+    GRAFANA_DB_USER="grafana"
+    GRAFANA_DB_PASS=$(vault_get_or_generate "$root_token" \
+      "kv/services/database/grafana-pg" "password" "openssl rand -base64 24")
+    vault_exec "$root_token" kv put kv/services/database/grafana-pg \
+      username="$GRAFANA_DB_USER" \
+      password="$GRAFANA_DB_PASS"
+    log_ok "Grafana DB credentials seeded in Vault"
+
+    # Apply ExternalSecrets (creates secrets in both database and monitoring namespaces)
+    kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/external-secret.yaml"
+    log_info "Waiting for grafana-pg-credentials ExternalSecret to sync..."
+    kubectl wait --for=condition=SecretSynced externalsecret/grafana-pg-credentials \
+      -n database --timeout=120s
+    kubectl wait --for=condition=SecretSynced externalsecret/grafana-db-secret \
+      -n monitoring --timeout=120s
+    log_ok "Grafana DB ExternalSecrets synced"
+
+    # Apply CNPG Cluster (uses CHANGEME_MINIO_ENDPOINT substitution)
+    kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/grafana-pg-cluster.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/grafana-pg-scheduled-backup.yaml"
+
+    # Wait for CNPG cluster to become ready
+    log_info "Waiting for grafana-pg CNPG cluster to become ready..."
+    kubectl wait --for=condition=Ready cluster/grafana-pg -n database --timeout=300s
+    log_ok "Grafana PostgreSQL cluster ready"
+  else
+    log_warn "Vault init file not found — skipping Grafana PostgreSQL setup"
+  fi
+
   helm_repo_add prometheus-community "$HELM_REPO_PROMETHEUS_STACK"
   # Substitute CHANGEME tokens in values file before passing to helm
   _prom_values=$(mktemp /tmp/prom-values.XXXXXX.yaml)
@@ -198,9 +233,6 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/hpa.yaml"
   # Volume autoscalers (PVC auto-expansion)
   kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/volume-autoscalers.yaml"
-  # NetworkPolicies
-  log_info "Applying monitoring NetworkPolicy..."
-  kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/networkpolicy.yaml"
   end_phase "Phase 4: Rules + Monitors + Scaling"
 fi
 
