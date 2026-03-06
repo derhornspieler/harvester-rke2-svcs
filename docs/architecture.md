@@ -118,7 +118,10 @@ graph TB
 | **Grafana** | Metrics and log visualization, dashboards | `monitoring` | 3 |
 | **Alertmanager** | Alert routing, deduplication, notification | `monitoring` | 3 |
 | **Loki** | Log aggregation (single-binary mode) | `monitoring` | 3 |
-| **Alloy** | Log collection agent (DaemonSet) | `monitoring` | 3 |
+| **Alloy** | Log collection agent (DaemonSet), includes Hubble flow log collection | `monitoring` | 3 |
+| **Cilium** | Network CNI (system chart), HelmChartConfig enables Hubble observability | `kube-system` | RKE2 system |
+| **Hubble Relay** | Aggregates Cilium network events, exposes metrics for Prometheus | `kube-system` | 3 |
+| **Hubble UI** | Web dashboard for network flow visualization, protected by OAuth2-proxy | `kube-system` | 2 |
 | **Harbor** | Container image registry with vulnerability scanning | `harbor` | 4 |
 | **MinIO** | S3-compatible object storage for Harbor | `minio` | 4 |
 | **CNPG PostgreSQL (Harbor)** | HA PostgreSQL cluster for Harbor metadata | `database` | 4 |
@@ -217,8 +220,9 @@ Each bundle includes NetworkPolicy resources applied during its respective deplo
 
 All NetworkPolicy rules default-deny ingress and explicitly allow:
 - Traefik ingress (from `kube-system` namespace)
-- Service-to-service traffic (e.g., Keycloak PostgreSQL access)
-- Prometheus scraping (from `monitoring` namespace)
+- Service-to-service traffic (e.g., Keycloak PostgreSQL access, Harbor MinIO access)
+- Prometheus scraping (from `monitoring` namespace) — includes Hubble relay metrics on port 4244
+- Alloy log collection (from `monitoring` namespace) — reads Hubble flow logs via hostPath
 - Required inter-component communication
 
 ---
@@ -421,8 +425,9 @@ and visualization across all bundles.
 ```mermaid
 graph TB
     subgraph "Data Collection"
-        Alloy["Alloy DaemonSet<br/>(log collection)"]
+        Alloy["Alloy DaemonSet<br/>(pod logs, k8s events,<br/>journal, Hubble flows)"]
         Prom["Prometheus<br/>(metrics scrape)"]
+        Hubble["Hubble Relay<br/>(network events)"]
     end
 
     subgraph "Storage &amp; Processing"
@@ -437,6 +442,7 @@ graph TB
 
     subgraph "Visualization"
         Graf["Grafana<br/>(dashboards)"]
+        HubbleUI["Hubble UI<br/>(flow visualization)"]
     end
 
     subgraph "Scrape Targets"
@@ -448,14 +454,17 @@ graph TB
         KCM["Keycloak metrics"]
         LokiM["Loki metrics"]
         AlloyM["Alloy metrics"]
+        CiliumM["Cilium/Hubble metrics"]
     end
 
     Alloy -->|push logs| Loki
+    Hubble -->|push metrics| Prom
     Prom -->|store| TSDB
     Prom -->|evaluate| Rules
     Rules -->|fire| AM
     Graf -->|query| Loki
     Graf -->|query| TSDB
+    HubbleUI -->|query| Hubble
 
     SMs -->|define targets| Prom
     VaultM --> SMs
@@ -465,11 +474,14 @@ graph TB
     KCM --> SMs
     LokiM --> SMs
     AlloyM --> SMs
+    CiliumM --> SMs
 
     style Alloy fill:#f57c00,color:#fff
     style Prom fill:#e65100,color:#fff
+    style Hubble fill:#1565c0,color:#fff
     style Loki fill:#f57c00,color:#fff
     style Graf fill:#f57c00,color:#fff
+    style HubbleUI fill:#f57c00,color:#fff
     style AM fill:#e65100,color:#fff
 ```
 
@@ -478,12 +490,18 @@ graph TB
 - **Loki** runs in single-binary mode as a StatefulSet. Logs are stored
   locally on PersistentVolumeClaims.
 - **Alloy** replaces Promtail as the log collection agent. Runs as a
-  DaemonSet on every node, scraping pod logs and forwarding to Loki.
+  DaemonSet on every node, scraping pod logs, Kubernetes events, systemd
+  journal, and Hubble network flow logs from each node.
+- **Hubble** (Cilium observability) provides L4/L7 network metrics and flow
+  logs. Relay aggregates metrics, UI provides flow visualization. Flow logs
+  are exported to `/var/run/cilium/hubble/events.log` on each node for Alloy
+  collection.
 - **kube-prometheus-stack** Helm chart provides Prometheus, Grafana,
   Alertmanager, and the Prometheus operator (including CRDs for
   ServiceMonitor, PrometheusRule, etc.).
-- **Basic-auth** protects Prometheus and Alertmanager ingress endpoints
-  via Traefik middleware. Grafana has its own authentication.
+- **OAuth2-proxy** protects Prometheus, Alertmanager, and Hubble UI ingress
+  endpoints via Traefik ForwardAuth middleware (OIDC authentication).
+  Grafana has its own native OIDC integration.
 - **Dashboards** are deployed as ConfigMaps with the
   `grafana_dashboard: "1"` label for auto-discovery by the Grafana sidecar.
 
@@ -501,6 +519,8 @@ Every service includes ServiceMonitors, PrometheusRules, and Grafana dashboards:
 | Keycloak | Keycloak metrics | KeycloakDown, LoginFailureSpike | Login rates, session counts, realm health |
 | Loki | Loki metrics | LokiDown, IngestionErrors | Ingestion rate, query latency, storage |
 | Alloy | Alloy metrics | AlloyDown | Collection rate, pipeline health |
+| Cilium/Hubble | Hubble relay metrics | CiliumAgentDown, CiliumHighDropRate, CiliumEndpointNotReady, CiliumPolicyImportErrors | Endpoint state, packet drops, policy changes, health |
+| Hubble | DNS/HTTP/TCP/flow metrics | HubbleDNSErrorSpike, HubbleHTTPServerErrors, HubbleLostEvents | Flow rates, DNS errors, HTTP 5xx, event loss |
 | CNPG | CNPG controller metrics | PostgreSQLDown, ReplicationLag | Replication lag, connections, WAL |
 | Valkey | Redis exporter metrics | RedisDown, RedisMemoryHigh | Memory usage, hit ratio, connections |
 | ArgoCD | ArgoCD server metrics | ArgoCDDown, SyncFailure | App sync status, repo server health |
