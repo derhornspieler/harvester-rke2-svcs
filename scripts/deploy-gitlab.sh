@@ -195,9 +195,9 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   vault_exec "$root_token" kv put kv/services/gitlab/initial-root-password \
     password="$GITLAB_ROOT_PASSWORD"
 
-  # OIDC provider (read existing secret from Vault or use placeholder)
+  # OIDC provider — read real client-secret from kv/oidc/gitlab (created by deploy-keycloak.sh)
   GITLAB_OIDC_CLIENT_SECRET="${GITLAB_OIDC_CLIENT_SECRET:-$(vault_get_or_generate "$root_token" \
-    "kv/services/gitlab" "oidc_client_secret" "echo placeholder-update-after-keycloak")}"
+    "kv/oidc/gitlab" "client-secret" "echo placeholder-update-after-keycloak")}"
   _oidc_provider=$(cat <<OIDCJSON
 {"name":"openid_connect","label":"Keycloak","args":{"name":"openid_connect","scope":["openid","profile","email"],"response_type":"code","issuer":"https://keycloak.${DOMAIN}/realms/${KC_REALM:-platform}","discovery":true,"client_auth_method":"query","uid_field":"preferred_username","client_options":{"identifier":"gitlab","secret":"${GITLAB_OIDC_CLIENT_SECRET}","redirect_uri":"https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"}}}
 OIDCJSON
@@ -450,9 +450,10 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   int_ca=$(kubectl exec -n vault vault-0 -- env \
     VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
     vault read -field=certificate "pki_int/issuer/${int_issuer}" 2>/dev/null)
+  # update-ca-certificates requires exactly one cert per file with .crt extension
   kubectl -n gitlab create secret generic gitlab-root-ca \
-    --from-literal="gitlab.${DOMAIN}.pem=${root_ca}
-${int_ca}" \
+    --from-literal="aegis-root-ca.crt=${root_ca}" \
+    --from-literal="aegis-intermediate-ca.crt=${int_ca}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   # Ensure gitlab-postgresql-app secret exists in gitlab namespace
@@ -624,6 +625,19 @@ if [[ $PHASE_FROM -le 9 && $PHASE_TO -ge 9 ]]; then
     log_ok "TCPRoute gitlab-ssh is configured"
   else
     log_warn "TCPRoute gitlab-ssh not found"
+  fi
+
+  # Promote OIDC user to admin (idempotent — skips if already admin or user not yet created)
+  GITLAB_ADMIN_OIDC_USER="${GITLAB_ADMIN_OIDC_USER:-alice.morgan}"
+  log_info "Promoting ${GITLAB_ADMIN_OIDC_USER} to GitLab admin (if user exists)..."
+  _toolbox_pod=$(kubectl -n gitlab get pods -l app=toolbox -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  if [[ -n "$_toolbox_pod" ]]; then
+    kubectl -n gitlab exec "$_toolbox_pod" -- \
+      gitlab-rails runner "u = User.find_by_username('${GITLAB_ADMIN_OIDC_USER}'); if u; u.admin = true; u.save!; puts \"#{u.username} promoted to admin\"; else; puts '${GITLAB_ADMIN_OIDC_USER} not found (will be promoted on first OIDC login)'; end" \
+      2>/dev/null && log_ok "${GITLAB_ADMIN_OIDC_USER} admin promotion attempted" \
+      || log_warn "Could not run rails runner — user will need manual promotion after first login"
+  else
+    log_warn "Toolbox pod not found — skipping admin promotion"
   fi
 
   end_phase "Phase 9: Monitoring + Verify"
