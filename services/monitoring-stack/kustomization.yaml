@@ -12,14 +12,12 @@ resources:
   - alloy/configmap.yaml
   - alloy/daemonset.yaml
   - alloy/service.yaml
-  # Prometheus Gateway + basic-auth
+  # Prometheus Gateway + OAuth2-proxy ForwardAuth
   - prometheus/gateway.yaml
   - prometheus/httproute.yaml
-  - prometheus/basic-auth-middleware.yaml
-  # Alertmanager Gateway + basic-auth
+  # Alertmanager Gateway + OAuth2-proxy ForwardAuth
   - alertmanager/gateway.yaml
   - alertmanager/httproute.yaml
-  - alertmanager/basic-auth-middleware.yaml
   # Grafana Gateway
   - grafana/gateway.yaml
   - grafana/httproute.yaml

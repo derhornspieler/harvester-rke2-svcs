@@ -61,7 +61,7 @@ Phases:
   3  ArgoCD Helm          Helm install ArgoCD
   4  Argo Rollouts Helm   Helm install Argo Rollouts
   5  Argo Workflows Helm  Helm install Argo Workflows
-  6  Gateways + Auth      Gateways, HTTPRoutes, basic-auth, AnalysisTemplates
+  6  Gateways + Auth      Gateways, HTTPRoutes, OAuth2-proxy, AnalysisTemplates
   7  Monitoring + Verify  Dashboards, alerts, ServiceMonitors
 EOF
   exit 0
@@ -194,18 +194,11 @@ EOF
   # Seed Argo credentials in Vault (read existing or generate new — idempotent)
   log_info "Reading/generating Argo credentials (Vault-first, no regeneration on re-run)..."
 
-  ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
-    "kv/services/argocd" "rollouts-basic-auth-password" "openssl rand -base64 24")}"
-  WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
-    "kv/services/argocd" "workflows-basic-auth-password" "openssl rand -base64 24")}"
   ARGOCD_OIDC_CLIENT_SECRET="${ARGOCD_OIDC_CLIENT_SECRET:-$(vault_get_or_generate "$root_token" \
     "kv/services/argocd" "oidc-client-secret" "echo placeholder-update-after-keycloak")}"
-  export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
 
   vault_exec "$root_token" kv put kv/services/argocd \
-    oidc-client-secret="$ARGOCD_OIDC_CLIENT_SECRET" \
-    rollouts-basic-auth-password="$ARGO_BASIC_AUTH_PASS" \
-    workflows-basic-auth-password="$WORKFLOWS_BASIC_AUTH_PASS"
+    oidc-client-secret="$ARGOCD_OIDC_CLIENT_SECRET"
 
   end_phase "Phase 2: ESO SecretStores"
 fi
@@ -262,17 +255,15 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   kube_apply_subst "${REPO_ROOT}/services/argo/argocd/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/argo/argocd/httproute.yaml"
 
-  # Rollouts basic-auth
-  create_basic_auth_secret argo-rollouts basic-auth-rollouts admin "$ARGO_BASIC_AUTH_PASS"
+  # Rollouts OAuth2-proxy ForwardAuth (deployed in setup-keycloak.sh)
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-rollouts/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-rollouts/httproute.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/middleware-basic-auth.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/middleware-oauth2-proxy.yaml"
 
-  # Workflows basic-auth
-  create_basic_auth_secret argo-workflows basic-auth-workflows admin "$WORKFLOWS_BASIC_AUTH_PASS"
+  # Workflows OAuth2-proxy ForwardAuth (deployed in setup-keycloak.sh)
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-workflows/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-workflows/httproute.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/middleware-basic-auth.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/middleware-oauth2-proxy.yaml"
 
   # AnalysisTemplates
   kubectl apply -f "${REPO_ROOT}/services/argo/analysis-templates/"
