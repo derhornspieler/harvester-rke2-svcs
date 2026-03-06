@@ -47,10 +47,7 @@ spec:
             - --code-challenge-method=S256
             - --reverse-proxy=true
             - --prompt=login
-            - --session-store-type=redis
-            - --redis-use-sentinel=true
-            - --redis-sentinel-master-name=mymaster
-            - --redis-sentinel-connection-urls=CHANGEME_OAUTH2_REDIS_SENTINEL
+            - --session-store-type=cookie
           env:
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:
@@ -62,11 +59,6 @@ spec:
                 secretKeyRef:
                   name: oauth2-proxy-hubble
                   key: cookie-secret
-            - name: OAUTH2_PROXY_REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: oauth2-proxy-redis-credentials
-                  key: password
           ports:
             - containerPort: 4180
               name: http

@@ -32,9 +32,9 @@ HELM_CHART_ARGOCD="${HELM_CHART_ARGOCD:-oci://ghcr.io/argoproj/argo-helm/argo-cd
 HELM_CHART_ROLLOUTS="${HELM_CHART_ROLLOUTS:-oci://ghcr.io/argoproj/argo-helm/argo-rollouts}"
 HELM_CHART_WORKFLOWS="${HELM_CHART_WORKFLOWS:-oci://ghcr.io/argoproj/argo-helm/argo-workflows}"
 
-# Basic-auth passwords (auto-generate if not set)
-ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-$(openssl rand -base64 24)}"
-WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-$(openssl rand -base64 24)}"
+# Basic-auth passwords — loaded from Vault in Phase 2 (deferred to avoid Vault access before init check)
+ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-}"
+WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-}"
 export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
 
 # CLI Parsing
@@ -190,6 +190,22 @@ spec:
             name: eso-secrets
 EOF
   done
+
+  # Seed Argo credentials in Vault (read existing or generate new — idempotent)
+  log_info "Reading/generating Argo credentials (Vault-first, no regeneration on re-run)..."
+
+  ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
+    "kv/services/argocd" "rollouts-basic-auth-password" "openssl rand -base64 24")}"
+  WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-$(vault_get_or_generate "$root_token" \
+    "kv/services/argocd" "workflows-basic-auth-password" "openssl rand -base64 24")}"
+  ARGOCD_OIDC_CLIENT_SECRET="${ARGOCD_OIDC_CLIENT_SECRET:-$(vault_get_or_generate "$root_token" \
+    "kv/services/argocd" "oidc-client-secret" "echo placeholder-update-after-keycloak")}"
+  export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
+
+  vault_exec "$root_token" kv put kv/services/argocd \
+    oidc-client-secret="$ARGOCD_OIDC_CLIENT_SECRET" \
+    rollouts-basic-auth-password="$ARGO_BASIC_AUTH_PASS" \
+    workflows-basic-auth-password="$WORKFLOWS_BASIC_AUTH_PASS"
 
   end_phase "Phase 2: ESO SecretStores"
 fi

@@ -113,10 +113,10 @@ if [[ "$VALIDATE_ONLY" == "true" ]]; then
   fi
 
   log_info "Checking TLS secret..."
-  if kubectl -n harbor get secret "harbor-${DOMAIN_DASHED}-tls" &>/dev/null; then
-    log_ok "TLS secret harbor-${DOMAIN_DASHED}-tls exists"
+  if kubectl -n harbor get secret "harbor-dev-${DOMAIN_DASHED}-tls" &>/dev/null; then
+    log_ok "TLS secret harbor-dev-${DOMAIN_DASHED}-tls exists"
   else
-    log_warn "TLS secret harbor-${DOMAIN_DASHED}-tls not found"
+    log_warn "TLS secret harbor-dev-${DOMAIN_DASHED}-tls not found"
   fi
 
   end_phase "Validation: Harbor Health Check"
@@ -138,38 +138,45 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
 
-  # Seed Vault KV secrets for Harbor components
-  log_info "Seeding Vault KV secrets for Harbor..."
+  # Read existing credentials from Vault or generate new ones (idempotent)
+  log_info "Reading/generating Harbor credentials (Vault-first, no regeneration on re-run)..."
 
   # Harbor PostgreSQL credentials
-  HARBOR_DB_USER="${HARBOR_DB_USER:-harbor}"
-  HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-$(openssl rand -base64 24)}"
+  HARBOR_DB_USER="${HARBOR_DB_USER:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/harbor-pg" "username" "echo harbor")}"
+  HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/database/harbor-pg" "password" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/database/harbor-pg \
     username="$HARBOR_DB_USER" \
     password="$HARBOR_DB_PASSWORD"
   export HARBOR_DB_PASSWORD
 
-  # CNPG MinIO backup credentials (reuse MinIO root creds)
-  MINIO_ROOT_USER=$(kubectl exec -n vault vault-0 -- env \
-    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
-    vault kv get -field=root-user kv/services/minio/root-credentials 2>/dev/null) || true
-  MINIO_ROOT_PASSWORD=$(kubectl exec -n vault vault-0 -- env \
-    VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$root_token" \
-    vault kv get -field=root-password kv/services/minio/root-credentials 2>/dev/null) || true
+  # CNPG MinIO backup credentials (reuse MinIO root creds from Identity bundle)
+  MINIO_ROOT_USER=$(vault_get_field "$root_token" "kv/services/minio/root-credentials" "root-user") || true
+  MINIO_ROOT_PASSWORD=$(vault_get_field "$root_token" "kv/services/minio/root-credentials" "root-password") || true
   vault_exec "$root_token" kv put kv/services/database/cnpg-minio \
     ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
     ACCESS_SECRET_KEY="${MINIO_ROOT_PASSWORD}"
 
   # Valkey (Redis) password
-  HARBOR_REDIS_PASSWORD="${HARBOR_REDIS_PASSWORD:-$(openssl rand -base64 24)}"
+  HARBOR_REDIS_PASSWORD="${HARBOR_REDIS_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/harbor/valkey" "password" "openssl rand -base64 24")}"
   vault_exec "$root_token" kv put kv/services/harbor/valkey \
     password="$HARBOR_REDIS_PASSWORD"
   export HARBOR_REDIS_PASSWORD
 
   # Harbor admin password and MinIO secret key (for Helm values substitution)
-  HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASSWORD:-$(openssl rand -base64 24)}"
+  HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASSWORD:-$(vault_get_or_generate "$root_token" \
+    "kv/services/harbor" "admin-password" "openssl rand -base64 24")}"
   HARBOR_MINIO_SECRET_KEY="${HARBOR_MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD}}"
   export HARBOR_ADMIN_PASSWORD HARBOR_MINIO_SECRET_KEY
+
+  # Store consolidated Harbor credentials in Vault for operator reference
+  vault_exec "$root_token" kv put kv/services/harbor \
+    admin-password="$HARBOR_ADMIN_PASSWORD" \
+    db-password="$HARBOR_DB_PASSWORD" \
+    redis-password="$HARBOR_REDIS_PASSWORD" \
+    minio-secret-key="$HARBOR_MINIO_SECRET_KEY"
 
   # Create Vault K8s auth roles and policies for each namespace
   for ns in minio database harbor; do
@@ -336,7 +343,7 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/harbor/hpa-core.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/hpa-registry.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/hpa-trivy.yaml"
-  wait_for_tls_secret harbor "harbor-${DOMAIN_DASHED}-tls" 300
+  wait_for_tls_secret harbor "harbor-dev-${DOMAIN_DASHED}-tls" 300
   end_phase "Phase 7: Ingress + HPAs"
 fi
 

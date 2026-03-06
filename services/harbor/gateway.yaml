@@ -17,11 +17,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: harbor.CHANGEME_DOMAIN
+      hostname: harbor.dev.CHANGEME_DOMAIN
       tls:
         mode: Terminate
         certificateRefs:
-          - name: harbor-CHANGEME_DOMAIN_DASHED-tls
+          - name: harbor-dev-CHANGEME_DOMAIN_DASHED-tls
       allowedRoutes:
         namespaces:
           from: Same

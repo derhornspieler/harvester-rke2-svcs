@@ -20,9 +20,32 @@ global:
     workload-type: general
   domain: argo.CHANGEME_DOMAIN
 
-# ArgoCD CM config overrides (OIDC CA trust configured at runtime by setup-keycloak.sh)
+# ArgoCD config overrides
 configs:
-  cm: {}
+  cm:
+    url: https://argo.CHANGEME_DOMAIN
+    oidc.config: |
+      name: Keycloak
+      issuer: https://keycloak.CHANGEME_DOMAIN/realms/CHANGEME_KC_REALM
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+      requestedIDTokenClaims:
+        groups:
+          essential: true
+      enablePKCEAuthentication: true
+  rbac:
+    policy.csv: |
+      g, platform-admins, role:admin
+      g, infra-engineers, role:admin
+      g, senior-developers, role:readonly
+      g, developers, role:readonly
+    policy.default: role:readonly
+    scopes: "[groups]"
 
 ## Controller (Application Controller)
 controller:
@@ -193,7 +216,7 @@ redis-ha:
 redis:
   enabled: false
 
-## Dex (SSO) — disabled, will integrate Keycloak later
+## Dex (SSO) — disabled, using direct OIDC with Keycloak
 dex:
   enabled: false
 

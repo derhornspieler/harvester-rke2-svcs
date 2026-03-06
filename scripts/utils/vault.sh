@@ -56,3 +56,35 @@ vault_is_sealed() {
   status=$(kubectl exec -n vault vault-0 -- vault status -format=json 2>/dev/null | jq -r '.sealed' || echo "true")
   [[ "$status" == "true" ]]
 }
+
+# vault_get_field — read a single field from a Vault KV path
+# Returns the value on stdout, or returns 1 if not found
+vault_get_field() {
+  local root_token="$1"
+  local path="$2"
+  local field="$3"
+  local value
+  value=$(kubectl exec -n vault vault-0 -- env \
+    VAULT_ADDR=http://127.0.0.1:8200 \
+    VAULT_TOKEN="$root_token" \
+    vault kv get -field="$field" "$path" 2>/dev/null) || return 1
+  [[ -n "$value" ]] || return 1
+  printf '%s' "$value"
+}
+
+# vault_get_or_generate — read from Vault if exists, otherwise generate and return
+# Usage: VALUE=$(vault_get_or_generate "$token" "kv/path" "field" "openssl rand -base64 24")
+# Does NOT write to Vault — caller is responsible for storing the value.
+vault_get_or_generate() {
+  local root_token="$1"
+  local path="$2"
+  local field="$3"
+  local gen_cmd="${4:-openssl rand -base64 24}"
+  local value
+  value=$(vault_get_field "$root_token" "$path" "$field" 2>/dev/null) || true
+  if [[ -n "${value:-}" && "${value:-}" != placeholder* ]]; then
+    printf '%s' "$value"
+  else
+    eval "$gen_cmd"
+  fi
+}

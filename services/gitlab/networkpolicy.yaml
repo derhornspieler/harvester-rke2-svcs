@@ -19,6 +19,8 @@ spec:
     - Ingress
   ingress:
     # Traefik ingress controller (runs in kube-system as RKE2 DaemonSet)
+    # 8181=workhorse, 8080=webservice/shell, 2222=gitlab-shell SSH
+    # 8150=KAS (k8s agent), 9000=MinIO (object storage)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -32,10 +34,12 @@ spec:
         - protocol: TCP
           port: 8080
         - protocol: TCP
-          port: 8443
+          port: 2222
         - protocol: TCP
-          port: 22
-    # Prometheus scraping metrics (redis-exporter, gitlab-exporter)
+          port: 8150
+        - protocol: TCP
+          port: 9000
+    # Prometheus scraping metrics (redis-exporter 9121, gitlab-exporter 9168, sidekiq 3807)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -45,6 +49,8 @@ spec:
           port: 9121
         - protocol: TCP
           port: 9168
+        - protocol: TCP
+          port: 3807
     # Intra-namespace communication (webservice <-> gitaly, workhorse, sidekiq, etc.)
     - from:
         - podSelector: {}
