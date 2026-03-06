@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/utils/helm.sh"
 source "${SCRIPT_DIR}/utils/wait.sh"
 source "${SCRIPT_DIR}/utils/vault.sh"
 source "${SCRIPT_DIR}/utils/subst.sh"
-source "${SCRIPT_DIR}/utils/basic-auth.sh"
 
 # Load environment
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
@@ -31,11 +30,6 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
 HELM_CHART_ARGOCD="${HELM_CHART_ARGOCD:-oci://ghcr.io/argoproj/argo-helm/argo-cd}"
 HELM_CHART_ROLLOUTS="${HELM_CHART_ROLLOUTS:-oci://ghcr.io/argoproj/argo-helm/argo-rollouts}"
 HELM_CHART_WORKFLOWS="${HELM_CHART_WORKFLOWS:-oci://ghcr.io/argoproj/argo-helm/argo-workflows}"
-
-# Basic-auth passwords — loaded from Vault in Phase 2 (deferred to avoid Vault access before init check)
-ARGO_BASIC_AUTH_PASS="${ARGO_BASIC_AUTH_PASS:-}"
-WORKFLOWS_BASIC_AUTH_PASS="${WORKFLOWS_BASIC_AUTH_PASS:-}"
-export ARGO_BASIC_AUTH_PASS WORKFLOWS_BASIC_AUTH_PASS
 
 # CLI Parsing
 PHASE_FROM=1
@@ -136,6 +130,20 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/argo/argocd/namespace.yaml"
   kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/namespace.yaml"
   kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/namespace.yaml"
+  # Create vault-root-ca ConfigMap in each Argo namespace (CA trust for OAuth2-proxy, OIDC)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    for ns in argocd argo-rollouts argo-workflows; do
+      log_info "Creating vault-root-ca ConfigMap in ${ns}..."
+      kubectl create configmap vault-root-ca \
+        --namespace="$ns" \
+        --from-file=ca.crt="$ROOT_CA_CERT" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    done
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMaps not created"
+  fi
+
   end_phase "Phase 1: Namespaces"
 fi
 
@@ -261,7 +269,8 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-rollouts/httproute.yaml"
   kubectl apply -f "${REPO_ROOT}/services/argo/argo-rollouts/middleware-oauth2-proxy.yaml"
 
-  # Workflows OAuth2-proxy ForwardAuth (deployed in setup-keycloak.sh)
+  # Workflows OAuth2-proxy ForwardAuth
+  kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/external-secret-oauth2-proxy.yaml"
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-workflows/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/argo/argo-workflows/httproute.yaml"
   kubectl apply -f "${REPO_ROOT}/services/argo/argo-workflows/middleware-oauth2-proxy.yaml"

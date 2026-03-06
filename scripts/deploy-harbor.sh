@@ -130,6 +130,19 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/harbor/namespace.yaml"
   kubectl apply -f "${REPO_ROOT}/services/harbor/minio/namespace.yaml"
   kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
+
+  # Create vault-root-ca ConfigMap in harbor namespace (CA trust for registry TLS)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap in harbor..."
+    kubectl create configmap vault-root-ca \
+      --namespace=harbor \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMap not created in harbor"
+  fi
+
   end_phase "Phase 1: Namespaces"
 fi
 

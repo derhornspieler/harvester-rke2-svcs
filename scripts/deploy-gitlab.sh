@@ -140,6 +140,19 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${GITLAB_DIR}/namespace.yaml"
   kubectl apply -f "${GITLAB_DIR}/runners/namespace.yaml"
   kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
+
+  # Create vault-root-ca ConfigMap in gitlab namespace (CA trust for OIDC, TLS)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap in gitlab..."
+    kubectl create configmap vault-root-ca \
+      --namespace=gitlab \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMap not created in gitlab"
+  fi
+
   end_phase "Phase 1: Namespaces"
 fi
 
@@ -216,6 +229,15 @@ OIDCJSON
     ACCESS_KEY_ID="${MINIO_ROOT_USER}" \
     ACCESS_SECRET_KEY="${MINIO_ROOT_PASSWORD}"
 
+  # GitLab MinIO storage credentials (dedicated access key for object storage)
+  GITLAB_MINIO_ACCESSKEY="${GITLAB_MINIO_ACCESSKEY:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/minio-storage" "accesskey" "echo gitlab-minio-admin")}"
+  GITLAB_MINIO_SECRETKEY="${GITLAB_MINIO_SECRETKEY:-$(vault_get_or_generate "$root_token" \
+    "kv/services/gitlab/minio-storage" "secretkey" "openssl rand -base64 24")}"
+  vault_exec "$root_token" kv put kv/services/gitlab/minio-storage \
+    accesskey="$GITLAB_MINIO_ACCESSKEY" \
+    secretkey="$GITLAB_MINIO_SECRETKEY"
+
   # Store consolidated GitLab credentials in Vault for operator reference
   vault_exec "$root_token" kv put kv/services/gitlab \
     postgresql_password="$GITLAB_DB_PASSWORD" \
@@ -227,7 +249,7 @@ OIDCJSON
     shell_secret="pending-helm-generates" \
     oidc_client_id="gitlab" \
     oidc_client_secret="$GITLAB_OIDC_CLIENT_SECRET" \
-    minio_accesskey="gitlab-minio-admin" \
+    minio_accesskey="$GITLAB_MINIO_ACCESSKEY" \
     minio_endpoint="http://minio.minio.svc.cluster.local:9000"
 
   # Create Vault K8s auth roles and policies for gitlab and gitlab-runners namespaces
@@ -304,6 +326,7 @@ POLICY
   kubectl apply -f "${GITLAB_DIR}/redis/external-secret.yaml"
   kubectl apply -f "${GITLAB_DIR}/oidc/external-secret.yaml"
   kubectl apply -f "${GITLAB_DIR}/root/external-secret.yaml"
+  kubectl apply -f "${GITLAB_DIR}/minio/external-secret-minio-storage.yaml"
 
   # Apply ExternalSecrets in gitlab-runners namespace
   kubectl apply -f "${GITLAB_DIR}/runners/external-secret-harbor-push.yaml"
@@ -317,6 +340,7 @@ POLICY
     gitlab-redis-credentials:gitlab \
     gitlab-oidc-secret:gitlab \
     gitlab-gitlab-initial-root-password:gitlab \
+    gitlab-minio-storage:gitlab \
     harbor-ci-push:gitlab-runners; do
     local_name="${secret%%:*}"
     local_ns="${secret##*:}"
@@ -375,6 +399,11 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     | kubectl -n gitlab apply -f -
 
   kubectl apply -f "${GITLAB_DIR}/cloudnativepg-scheduled-backup.yaml"
+
+  # Deploy PgBouncer connection poolers (transaction-mode pooling for GitLab)
+  log_info "Applying PgBouncer poolers..."
+  kubectl apply -f "${GITLAB_DIR}/pgbouncer-poolers.yaml"
+
   end_phase "Phase 3: PostgreSQL CNPG"
 fi
 
@@ -439,6 +468,7 @@ ${int_ca}" \
   _subst_changeme < "${GITLAB_DIR}/values-rke2-prod.yaml" > "$_gitlab_values"
   chmod 600 "$_gitlab_values"
   helm_install_if_needed gitlab "$HELM_CHART_GITLAB" gitlab \
+    --version 9.9.2 \
     -f "$_gitlab_values" \
     --timeout 30m
   rm -f "$_gitlab_values"
@@ -532,6 +562,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/shared-runner-values.yaml" > "$_shared_values"
   chmod 600 "$_shared_values"
   helm_install_if_needed gitlab-runner-shared "$HELM_CHART_RUNNER" gitlab-runners \
+    --version 0.86.0 \
     -f "$_shared_values" \
     --wait --timeout 5m
   rm -f "$_shared_values"
@@ -542,6 +573,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/security-runner-values.yaml" > "$_security_values"
   chmod 600 "$_security_values"
   helm_install_if_needed gitlab-runner-security "$HELM_CHART_RUNNER" gitlab-runners \
+    --version 0.86.0 \
     -f "$_security_values" \
     --wait --timeout 5m
   rm -f "$_security_values"
@@ -552,6 +584,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/group-runner-values.yaml" > "$_group_values"
   chmod 600 "$_group_values"
   helm_install_if_needed gitlab-runner-group "$HELM_CHART_RUNNER" gitlab-runners \
+    --version 0.86.0 \
     -f "$_group_values" \
     --wait --timeout 5m
   rm -f "$_group_values"
