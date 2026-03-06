@@ -162,6 +162,7 @@ trivy:
     requests:
       cpu: 200m
       memory: 512Mi
+    limits: {}
   nodeSelector:
     workload-type: general
   affinity:

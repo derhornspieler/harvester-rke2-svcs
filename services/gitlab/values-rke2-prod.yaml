@@ -248,7 +248,10 @@ gitlab:
   sidekiq:
     replicas: 2
     minReplicas: 2
-    maxReplicas: 15
+    maxReplicas: 5
+    hpa:
+      cpu:
+        targetAverageValue: 800m
     nodeSelector:
       workload-type: compute
     resources:
