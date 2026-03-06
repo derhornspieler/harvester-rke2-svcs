@@ -256,7 +256,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     ["traefik-oidc"]="https://traefik.${DOMAIN}/oauth2/callback"
     ["rollouts-oidc"]="https://rollouts.${DOMAIN}/oauth2/callback"
     ["workflows-oidc"]="https://workflows.${DOMAIN}/oauth2/callback"
-    ["argocd"]="https://argo.${DOMAIN}/*"
+    ["argocd"]="https://argo.${DOMAIN}/auth/callback"
     ["harbor"]="https://harbor.dev.${DOMAIN}/c/oidc/callback"
     ["gitlab"]="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"
   )
@@ -328,12 +328,12 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   # Timeouts must be long enough for OAuth authorization code flow to complete.
   log_info "Configuring realm session timeouts (no cross-service SSO)..."
   kc_api PUT "${KC_REALM}" -d '{
-    "ssoSessionIdleTimeout": 300,
-    "ssoSessionMaxLifespan": 600,
+    "ssoSessionIdleTimeout": 1800,
+    "ssoSessionMaxLifespan": 3600,
     "accessTokenLifespan": 300,
     "accessCodeLifespan": 120
   }'
-  log_ok "SSO session: 5m idle / 10m max (OAuth2-proxy --prompt=login forces re-auth)"
+  log_ok "SSO session: 30m idle / 1h max (OAuth2-proxy --prompt=login forces re-auth per service)"
 
   # Retrieve generated client secrets and seed them into Vault
   log_info "Seeding OIDC client secrets into Vault..."

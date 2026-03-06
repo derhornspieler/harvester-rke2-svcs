@@ -61,7 +61,7 @@ spec:
 
   ## ── PostgreSQL Image (the database, NOT the operator) ────────────────────
   ## Using CNPG upstream image (includes Barman tools for backup):
-  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
+  imageName: harbor.aegisgroup.ch/proxy-ghcr/cloudnative-pg/postgresql:17.6
 
   ## ── Storage ────────────────────────────────────────────────────────────────
   storage:
@@ -72,7 +72,7 @@ spec:
   postgresql:
     parameters:
       ## Connection limits
-      max_connections: "200"
+      max_connections: "400"
       ## Memory (shared_buffers ~25% of pod memory limit, effective_cache ~75%)
       shared_buffers: "2GB"
       effective_cache_size: "6GB"

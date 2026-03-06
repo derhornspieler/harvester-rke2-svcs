@@ -50,8 +50,12 @@ global:
       namespace: gitlab
 
   ## ── External PostgreSQL (CloudNativePG) ────────────────────────────────────
+  ## Primary (read-write): CNPG -rw service targets only the current primary.
+  ## Read replicas: CNPG -ro service load-balances across standby replicas.
+  ## GitLab Rails routes SELECT queries to replicas via load_balancing.hosts,
+  ## reducing primary load and improving read-heavy workload performance.
   psql:
-    host: gitlab-postgresql-rw.database.svc.cluster.local
+    host: gitlab-pg-pooler-rw.database.svc.cluster.local
     port: 5432
     username: gitlab
     database: gitlabhq_production
@@ -67,6 +71,13 @@ global:
     keepalivesInterval: 10
     keepalivesCount: 3
     tcpUserTimeout: 60000
+    ## ── Read-Replica Load Balancing ──────────────────────────────────────────
+    ## PgBouncer pooler-ro distributes connections across standby replicas.
+    ## Rails checks replication lag and falls back to primary if replicas
+    ## are too far behind (default: 8MB difference or 60s lag).
+    load_balancing:
+      hosts:
+        - gitlab-pg-pooler-ro.database.svc.cluster.local
 
   ## ── External Redis (OpsTree Sentinel HA) ──────────────────────────────────
   ## Sentinel-aware: GitLab discovers the current primary via Sentinel.
@@ -107,7 +118,7 @@ global:
         gitalyReplicas: 3
         maxUnavailable: 1
     psql:
-      host: gitlab-postgresql-rw.database.svc.cluster.local
+      host: gitlab-pg-pooler-rw.database.svc.cluster.local
       port: 5432
       user: praefect
       dbName: praefect
