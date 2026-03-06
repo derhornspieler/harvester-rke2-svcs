@@ -106,7 +106,7 @@ graph LR
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed diagrams
-covering the PKI hierarchy, network security policies, deployment phases, and data flows.
+covering the PKI hierarchy, network architecture, deployment phases, and data flows.
 
 ## Quick Start
 
@@ -256,7 +256,6 @@ docs/                        # Architecture and getting started guides
 - Root CA key (offline, for initial PKI setup only)
 - CNPG operator (auto-installed in Bundle 2, Phase 1 for Keycloak, Harbor, and GitLab PostgreSQL)
 - Redis operators (Spotahome for Harbor, OpsTree for GitLab — must be pre-installed)
-- NetworkPolicy support (included in Cilium, Calico, and other CNI implementations)
 
 ## License
 
