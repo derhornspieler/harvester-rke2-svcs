@@ -265,8 +265,14 @@ OIDCJSON
       VAULT_ADDR=http://127.0.0.1:8200 \
       VAULT_TOKEN="$root_token" \
       vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}" {
+  capabilities = ["read"]
+}
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
+}
+path "kv/metadata/services/${ns}" {
+  capabilities = ["read", "list"]
 }
 path "kv/metadata/services/${ns}/*" {
   capabilities = ["read", "list"]

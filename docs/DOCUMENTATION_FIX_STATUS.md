@@ -89,10 +89,8 @@ KUBECONFIG=~/.kube/config kubectl --context rke2-prod get clusters.postgresql.cn
    - Line 164: Test command
    - Line 194: Troubleshooting symptom
    - Line 261: Hostname customization example
-
 2. `services/cilium/README.md` — Updated 1 reference:
    - Line 35: Observability pipeline diagram
-
 3. Updated `/home/rocky/.claude/projects/-home-rocky-data-harvester-rke2-svcs/memory/MEMORY.md`:
    - Line 23: Hubble architecture description
 
@@ -143,21 +141,25 @@ KUBECONFIG=~/.kube/config kubectl --context rke2-prod -n cluster-autoscaler get 
 ## Documentation Quality Checks
 
 ### Cross-Reference Verification ✅
+
 - All internal documentation links checked
 - No broken references found
 - All file paths are correct and exist in the repo
 
 ### Mermaid Diagram Validation ✅
+
 - All diagrams use proper HTML entities for GitLab compatibility
 - Hubble-related diagrams updated for correct hostname
 - Architecture diagrams render correctly
 
 ### Stale References Cleanup ✅
+
 - No references to NetworkPolicies (removed 2026-03-06)
 - No references to deprecated basic-auth where OAuth2-proxy is used
 - All service hostnames match live cluster (no lingering `dev.` prefixes)
 
 ### Deployment Phase Documentation ✅
+
 - Phase/tier numbering verified in getting-started.md
 - Bundle order matches 2026-03-05 reordering (1→2→3→4→5→6)
 - Deploy script comments synchronized with actual implementation
@@ -191,11 +193,13 @@ Action items addressed: A07, A08, A09, A10, A33
 ## Remaining Tasks
 
 ### A34: Keycloak Dashboard Deployment
+
 - Dashboard ConfigMap is properly configured
 - Deployment is orchestrated separately (platform-developer action)
 - No documentation changes needed
 
 ### Outstanding Issues
+
 None identified during this fix cycle.
 
 ---

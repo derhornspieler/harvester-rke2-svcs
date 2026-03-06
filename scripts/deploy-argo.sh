@@ -167,10 +167,22 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
       VAULT_ADDR=http://127.0.0.1:8200 \
       VAULT_TOKEN="$root_token" \
       vault policy write "eso-${ns}" - <<POLICY
+path "kv/data/services/${ns}" {
+  capabilities = ["read"]
+}
 path "kv/data/services/${ns}/*" {
   capabilities = ["read"]
 }
+path "kv/metadata/services/${ns}" {
+  capabilities = ["read", "list"]
+}
 path "kv/metadata/services/${ns}/*" {
+  capabilities = ["read", "list"]
+}
+path "kv/data/oidc/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/oidc/*" {
   capabilities = ["read", "list"]
 }
 POLICY
