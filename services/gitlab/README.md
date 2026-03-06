@@ -273,6 +273,12 @@ All secrets are stored in Vault KV v2 and synced into Kubernetes via ESO Externa
 | `gitlab-oidc-secret` | `gitlab-oidc-secret` | `services/gitlab/oidc-secret` | gitlab |
 | `harbor-ci-push` | `harbor-ci-push` | `ci/harbor-push` | gitlab-runners |
 
+## Day-2 Operations
+
+| SOP | Description |
+|-----|-------------|
+| [PgBouncer Connection Pooling and Read-Replica Load Balancing](docs/pgbouncer-read-replica-sop.md) | CNPG Pooler CRs, transaction-mode pooling, read/write split, monitoring, and troubleshooting |
+
 ## File structure
 
 ```

@@ -19,7 +19,11 @@ Deployed by `scripts/deploy-pki-secrets.sh` phases 2-4.
 - Alerts: VaultSealed (2m), VaultDown (2m), VaultLeaderLost (10m)
 - Grafana dashboard: seal status, Raft health, barrier ops, commit time
 
-## Unsealing
+## Day-2 Operations
+
+- [Vault Unseal SOP](docs/vault-unseal-sop.md) — step-by-step procedure for unsealing pods after restarts
+
+### Quick Unseal
 
 After pod restart:
 
