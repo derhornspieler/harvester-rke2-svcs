@@ -32,7 +32,7 @@ Hubble Relay (kube-system, 2 replicas)
 Hubble UI (kube-system, 1 replica)
     ↓ OAuth2-proxy ForwardAuth (keycloak)
     ↓
-User access: https://hubble.dev.aegisgroup.ch
+User access: https://hubble.aegisgroup.ch
 ```
 
 ## Configuration

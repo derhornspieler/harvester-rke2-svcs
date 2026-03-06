@@ -19,7 +19,7 @@ Hubble UI provides a graphical interface to explore network flows, policies, and
 ```
 User Browser
     ↓
-GET https://hubble.dev.aegisgroup.ch
+GET https://hubble.aegisgroup.ch
     ↓
 Traefik (kube-system)
     ↓
@@ -80,7 +80,7 @@ spec:
       namespace: kube-system
       sectionName: https
   hostnames:
-    - "hubble.dev.aegisgroup.ch"
+    - "hubble.aegisgroup.ch"
   rules:
     # OAuth2-proxy endpoints (handle login/callback without auth)
     - matches:
@@ -109,7 +109,7 @@ spec:
 
 **Key points:**
 
-- Hostname: `hubble.dev.aegisgroup.ch` (placeholder: `CHANGEME_DOMAIN`)
+- Hostname: `hubble.aegisgroup.ch` (no `dev.` prefix for production environment)
 - Path `/oauth2/*` routed directly to OAuth2-proxy (login/callback flow)
 - Path `/*` routed to Hubble UI with ForwardAuth middleware (validates session)
 
@@ -125,7 +125,7 @@ Before deploying Hubble UI, these must be complete:
 
 2. **Bundle 2 (Identity)**:
    - Keycloak running with realm configured
-   - Hubble OIDC client created (redirect_uri: `https://hubble.dev.aegisgroup.ch/oauth2/callback`)
+   - Hubble OIDC client created (redirect_uri: `https://hubble.aegisgroup.ch/oauth2/callback`)
    - OAuth2-proxy-hubble Secret synced from Vault via ESO
 
 3. **Cilium/Hubble enabled** (via RKE2 HelmChartConfig):
@@ -161,7 +161,7 @@ This is configured as part of Bundle 3 (Monitoring) bootstrap:
 
 5. **Test access**:
    ```bash
-   curl -k https://hubble.dev.aegisgroup.ch/
+   curl -k https://hubble.aegisgroup.ch/
    # Should redirect to Keycloak login
    ```
 
@@ -191,7 +191,7 @@ kubectl -n kube-system get certificate hubble-cert -o yaml
 
 ### HTTPRoute Not Routing
 
-**Symptom**: Requests to `https://hubble.dev.aegisgroup.ch` return 503 or connection refused
+**Symptom**: Requests to `https://hubble.aegisgroup.ch` return 503 or connection refused
 
 **Check:**
 
@@ -258,7 +258,7 @@ OAuth2-proxy requires read-only access to Keycloak and network access to identit
 
 ### Changing Hostname
 
-To use a different hostname (e.g., `network-visibility.dev.aegisgroup.ch`):
+To use a different hostname (e.g., `network-visibility.aegisgroup.ch`):
 
 1. Update Gateway TLS certificate hostname (cert-manager annotation on Gateway or separate Certificate resource)
 2. Update HTTPRoute `hostnames` field
