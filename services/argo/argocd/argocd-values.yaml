@@ -37,7 +37,7 @@ configs:
       requestedIDTokenClaims:
         groups:
           essential: true
-      enablePKCEAuthentication: true
+      enablePKCEAuthentication: false
   rbac:
     policy.csv: |
       g, platform-admins, role:admin

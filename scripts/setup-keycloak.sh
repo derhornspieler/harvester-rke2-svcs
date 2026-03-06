@@ -253,14 +253,24 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     ["prometheus-oidc"]="https://prometheus.${DOMAIN}/oauth2/callback"
     ["alertmanager-oidc"]="https://alertmanager.${DOMAIN}/oauth2/callback"
     ["hubble-oidc"]="https://hubble.${DOMAIN}/oauth2/callback"
-    ["argocd"]="https://argo.${DOMAIN}/auth/callback"
+    ["traefik-oidc"]="https://traefik.${DOMAIN}/oauth2/callback"
+    ["rollouts-oidc"]="https://rollouts.${DOMAIN}/oauth2/callback"
+    ["workflows-oidc"]="https://workflows.${DOMAIN}/oauth2/callback"
+    ["argocd"]="https://argo.${DOMAIN}/*"
     ["harbor"]="https://harbor.dev.${DOMAIN}/c/oidc/callback"
     ["gitlab"]="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback"
   )
 
-  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
+  # OAuth2-proxy clients need an audience mapper so the token aud claim
+  # matches the client_id (oauth2-proxy validates this)
+  local -a OAUTH2_PROXY_CLIENTS=(
+    prometheus-oidc alertmanager-oidc hubble-oidc
+    traefik-oidc rollouts-oidc workflows-oidc
+  )
+
+  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
     redirect_uri="${CLIENT_REDIRECTS[$client_id]}"
-    # ArgoCD v2.14 does not support PKCE — disable enforcement for it
+    # ArgoCD v2.14 does not actually send PKCE params — leave empty
     if [[ "$client_id" == "argocd" ]]; then
       pkce_method=""
     else
@@ -290,12 +300,47 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     log_ok "OIDC client '${client_id}' created"
   done
 
+  # Add audience mappers to OAuth2-proxy clients (token aud must match client_id)
+  log_info "Adding audience mappers to OAuth2-proxy clients..."
+  for client_id in "${OAUTH2_PROXY_CLIENTS[@]}"; do
+    _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
+    if [[ -z "$_client_uuid" || "$_client_uuid" == "null" ]]; then
+      log_warn "Could not find client UUID for ${client_id} — skipping audience mapper"
+      continue
+    fi
+    kc_api_create POST "${KC_REALM}/clients/${_client_uuid}/protocol-mappers/models" -d '{
+      "name": "audience-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "config": {
+        "included.client.audience": "'"${client_id}"'",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "included.custom.audience": "",
+        "userinfo.token.claim": "false"
+      }
+    }'
+    log_ok "Audience mapper added to '${client_id}'"
+  done
+
+  # Disable SSO — set short realm SSO session so each service requires
+  # independent login. Combined with --prompt=login on all OAuth2-proxies.
+  # Timeouts must be long enough for OAuth authorization code flow to complete.
+  log_info "Configuring realm session timeouts (no cross-service SSO)..."
+  kc_api PUT "${KC_REALM}" -d '{
+    "ssoSessionIdleTimeout": 300,
+    "ssoSessionMaxLifespan": 600,
+    "accessTokenLifespan": 300,
+    "accessCodeLifespan": 120
+  }'
+  log_ok "SSO session: 5m idle / 10m max (OAuth2-proxy --prompt=login forces re-auth)"
+
   # Retrieve generated client secrets and seed them into Vault
   log_info "Seeding OIDC client secrets into Vault..."
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
   _root_token="${_root_token:-$(jq -r '.root_token' "$VAULT_INIT_FILE")}"
 
-  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc argocd harbor gitlab; do
+  for client_id in grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab; do
     # Get the internal client UUID from Keycloak
     _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
     if [[ -z "$_client_uuid" || "$_client_uuid" == "null" ]]; then
@@ -361,6 +406,12 @@ path "kv/data/oidc/*" {
   capabilities = ["read"]
 }
 path "kv/metadata/oidc/*" {
+  capabilities = ["read", "list"]
+}
+path "kv/data/services/database/grafana-pg" {
+  capabilities = ["read"]
+}
+path "kv/metadata/services/database/grafana-pg" {
   capabilities = ["read", "list"]
 }
 POLICY

@@ -72,6 +72,9 @@ spec:
             - name: journal
               mountPath: /var/log/journal
               readOnly: true
+            - name: hubble-flows
+              mountPath: /var/run/cilium/hubble
+              readOnly: true
             - name: tmp
               mountPath: /tmp/alloy
       volumes:
@@ -84,5 +87,9 @@ spec:
         - name: journal
           hostPath:
             path: /var/log/journal
+        - name: hubble-flows
+          hostPath:
+            path: /var/run/cilium/hubble
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}

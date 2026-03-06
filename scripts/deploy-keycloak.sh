@@ -356,11 +356,6 @@ if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
     log_warn "Monitoring namespace or CRDs not found — skipping ServiceMonitors/alerts (deploy after Bundle 3)"
   fi
 
-  # NetworkPolicies (always apply)
-  log_info "Applying NetworkPolicies for Identity services..."
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/networkpolicy.yaml"
   end_phase "Phase 8: Monitoring + NetworkPolicies"
 fi
 

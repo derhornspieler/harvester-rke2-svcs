@@ -125,3 +125,52 @@ data:
         target_label  = "node"
       }
     }
+
+    // ============================================================
+    // 4. Hubble flow logs — Cilium network flow export
+    // ============================================================
+    local.file_match "hubble_flows" {
+      path_targets = [{
+        __path__ = "/var/run/cilium/hubble/events.log",
+        job       = "hubble-flows",
+        node      = env("HOSTNAME"),
+      }]
+    }
+
+    loki.source.file "hubble_flows" {
+      targets    = local.file_match.hubble_flows.targets
+      forward_to = [loki.process.hubble_flows.receiver]
+    }
+
+    loki.process "hubble_flows" {
+      stage.json {
+        expressions = {
+          verdict       = "verdict",
+          drop_reason   = "drop_reason",
+          src_namespace = "source.namespace",
+          dst_namespace = "destination.namespace",
+          src_workload  = "source.workload_name",
+          dst_workload  = "destination.workload_name",
+          traffic_dir   = "traffic_direction",
+          flow_type     = "Type",
+        }
+      }
+
+      stage.labels {
+        values = {
+          verdict       = "",
+          drop_reason   = "",
+          src_namespace = "",
+          dst_namespace = "",
+          traffic_dir   = "",
+        }
+      }
+
+      stage.static_labels {
+        values = {
+          source = "hubble",
+        }
+      }
+
+      forward_to = [loki.write.default.receiver]
+    }

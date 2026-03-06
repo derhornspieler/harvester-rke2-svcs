@@ -351,10 +351,6 @@ fi
 if [[ $PHASE_FROM -le 8 && $PHASE_TO -ge 8 ]]; then
   start_phase "Phase 8: Monitoring + Verify"
   kubectl apply -k "${REPO_ROOT}/services/harbor/monitoring/"
-  # NetworkPolicies
-  log_info "Applying NetworkPolicies for Harbor services..."
-  kubectl apply -f "${REPO_ROOT}/services/harbor/networkpolicy.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/harbor/minio/networkpolicy.yaml"
   end_phase "Phase 8: Monitoring + Verify"
 fi
 

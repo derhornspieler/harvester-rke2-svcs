@@ -19,6 +19,4 @@ resources:
   # Volume autoscalers (PVC expansion)
   - volume-autoscalers.yaml
   # Monitoring
-  - networkpolicy.yaml
-  - postgres/networkpolicy.yaml
   - monitoring/

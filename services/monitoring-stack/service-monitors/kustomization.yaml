@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - hubble-relay.yaml
+  - hubble-metrics.yaml
   - cnpg-controller.yaml
   - alloy.yaml
   - loki.yaml
