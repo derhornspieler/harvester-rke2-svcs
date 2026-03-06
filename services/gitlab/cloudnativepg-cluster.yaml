@@ -61,7 +61,7 @@ spec:
 
   ## ── PostgreSQL Image (the database, NOT the operator) ────────────────────
   ## Using CNPG upstream image (includes Barman tools for backup):
-  imageName: harbor.example.com/proxy-ghcr/cloudnative-pg/postgresql:17.6
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
 
   ## ── Storage ────────────────────────────────────────────────────────────────
   storage:

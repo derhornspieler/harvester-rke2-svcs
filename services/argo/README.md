@@ -163,17 +163,16 @@ services/argo/
     argo-rollouts-values.yaml
     gateway.yaml
     httproute.yaml
-    middleware-basic-auth.yaml
     middleware-oauth2-proxy.yaml
     oauth2-proxy.yaml
     external-secret-oauth2-proxy.yaml
-    external-secret-redis.yaml
   argo-workflows/
     namespace.yaml
     argo-workflows-values.yaml
     gateway.yaml
     httproute.yaml
-    middleware-basic-auth.yaml
+    middleware-oauth2-proxy.yaml
+    oauth2-proxy.yaml
   analysis-templates/
     success-rate.yaml
     latency-check.yaml

@@ -13,6 +13,8 @@ resources:
   - postgres/external-secret.yaml
   - postgres/harbor-pg-cluster.yaml
   - postgres/harbor-pg-scheduled-backup.yaml
+  # Harbor credentials (ESO → Vault, used by Helm existingSecret refs)
+  - external-secrets.yaml
   # Valkey Redis Sentinel
   - valkey/external-secret.yaml
   - valkey/replication.yaml

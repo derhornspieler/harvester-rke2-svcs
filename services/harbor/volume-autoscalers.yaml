@@ -36,6 +36,22 @@ spec:
 apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
 kind: VolumeAutoscaler
 metadata:
+  name: harbor-trivy
+  namespace: harbor
+spec:
+  target:
+    pvcName: data-harbor-trivy-0
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 20Gi
+  increasePercent: 25
+  increaseMinimum: 2Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
   name: harbor-valkey
   namespace: harbor
 spec:

@@ -120,10 +120,13 @@ fi
 # Phase 1: cert-manager
 if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: cert-manager"
+  # Apply namespace manifest to ensure labels are set (--create-namespace skips them)
+  kubectl apply -f "${REPO_ROOT}/services/cert-manager/namespace.yaml"
   # Install experimental Gateway API CRDs (TCPRoute, TLSRoute) required by Traefik's experimental channel
+  # CRDs vendored locally (v1.2.1) for airgap compatibility
   log_info "Ensuring experimental Gateway API CRDs are installed..."
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/experimental/gateway.networking.k8s.io_tcproutes.yaml
-  kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml
+  kubectl apply -f "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tcproutes.yaml"
+  kubectl apply -f "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tlsroutes.yaml"
   helm_repo_add jetstack "$HELM_REPO_CERTMANAGER"
   helm_install_if_needed cert-manager "$HELM_CHART_CERTMANAGER" cert-manager \
     --version v1.19.4 \
@@ -132,6 +135,9 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     --set config.kind=ControllerConfiguration \
     --set config.enableGatewayAPI=true \
     --set nodeSelector.workload-type=general \
+    --set cainjector.nodeSelector.workload-type=general \
+    --set webhook.nodeSelector.workload-type=general \
+    --set startupapicheck.nodeSelector.workload-type=general \
     --wait --timeout 5m
   wait_for_deployment cert-manager cert-manager 300s
   end_phase "Phase 1: cert-manager"
@@ -140,6 +146,8 @@ fi
 # Phase 2: Vault
 if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   start_phase "Phase 2: Vault"
+  # Apply namespace manifest to ensure labels are set (--create-namespace skips them)
+  kubectl apply -f "${REPO_ROOT}/services/vault/namespace.yaml"
   helm_repo_add hashicorp "$HELM_REPO_VAULT"
   helm_install_if_needed vault "$HELM_CHART_VAULT" vault \
     --version 0.32.0 \
@@ -311,6 +319,8 @@ fi
 # Phase 6: External Secrets Operator
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   start_phase "Phase 6: External Secrets Operator"
+  # Apply namespace manifest to ensure labels are set (--create-namespace skips them)
+  kubectl apply -f "${REPO_ROOT}/services/external-secrets/namespace.yaml"
   helm_repo_add external-secrets "$HELM_REPO_ESO"
   helm_install_if_needed external-secrets "$HELM_CHART_ESO" external-secrets \
     --version 2.0.1 \
@@ -340,6 +350,10 @@ if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   else
     log_warn "Skipping monitoring overlays (Bundle 3 not yet deployed)"
   fi
+  # Apply VolumeAutoscalers for Vault PVCs
+  log_info "Applying VolumeAutoscalers for Vault PVCs..."
+  kubectl apply -f "${REPO_ROOT}/services/vault/volume-autoscalers.yaml"
+
   wait_for_tls_secret vault "vault-${DOMAIN_DASHED}-tls" 300
   log_ok "All Kustomize overlays applied"
   end_phase "Phase 7: Kustomize Overlays"

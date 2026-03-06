@@ -1,6 +1,6 @@
 # harvester-rke2-svcs
 
-[![CI](https://github.com/<GITHUB_ORG>/harvester-rke2-svcs/actions/workflows/ci.yml/badge.svg)](https://github.com/<GITHUB_ORG>/harvester-rke2-svcs/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![CI](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 Platform services for RKE2 clusters. Deploys six service bundles covering
 PKI/secrets management, monitoring, container registry, identity/SSO, GitOps,

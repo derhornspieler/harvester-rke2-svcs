@@ -85,6 +85,7 @@ kustomize:
     - praefect/external-secret-token.yaml
     - oidc/external-secret.yaml
     - root/external-secret.yaml
+    - pgbouncer-poolers.yaml
     - volume-autoscalers.yaml
     - monitoring/
 

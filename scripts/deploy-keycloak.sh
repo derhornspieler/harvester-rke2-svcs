@@ -116,11 +116,16 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     log_info "Installing CloudNativePG operator..."
     helm_repo_add cnpg "$HELM_REPO_CNPG"
     helm_install_if_needed cnpg "$HELM_CHART_CNPG" cnpg-system \
-      --version 0.23.0 \
+      --version 0.27.0 \
       --set monitoring.podMonitorEnabled=true \
-      --set nodeSelector.workload-type=general \
+      --set nodeSelector.workload-type=database \
       --wait --timeout 5m
-    wait_for_deployment cnpg-system cnpg-cloudnative-pg 300s
+    wait_for_deployment cnpg-system cnpg-controller-manager 300s
+
+    # Apply HPA and PDB for the CNPG operator
+    log_info "Applying CNPG operator HPA and PDB..."
+    kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/hpa.yaml"
+    kubectl apply -f "${REPO_ROOT}/services/cnpg-operator/pdb.yaml"
   else
     log_info "CNPG operator CRD already exists, skipping install"
   fi
@@ -136,6 +141,18 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   kubectl create namespace minio --dry-run=client -o yaml | kubectl apply -f -
   kubectl apply -f "${REPO_ROOT}/services/keycloak/namespace.yaml"
   kubectl create namespace database --dry-run=client -o yaml | kubectl apply -f -
+
+  # Create vault-root-ca ConfigMap in keycloak namespace (CA trust for OIDC, TLS)
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    log_info "Creating vault-root-ca ConfigMap in keycloak..."
+    kubectl create configmap vault-root-ca \
+      --namespace=keycloak \
+      --from-file=ca.crt="$ROOT_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — vault-root-ca ConfigMap not created in keycloak"
+  fi
 
   # Seed Vault KV secrets
   [[ -f "$VAULT_INIT_FILE" ]] || die "Vault init file not found: ${VAULT_INIT_FILE}"
@@ -284,6 +301,10 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   wait_for_pods_ready database "cnpg.io/cluster=keycloak-pg,role=primary" 600
 
   kubectl apply -f "${REPO_ROOT}/services/keycloak/postgres/keycloak-pg-scheduled-backup.yaml"
+  # Apply VolumeAutoscaler for keycloak-pg PVCs
+  log_info "Applying VolumeAutoscaler for keycloak-pg..."
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/volume-autoscalers.yaml"
+
   end_phase "Phase 4: PostgreSQL CNPG"
 fi
 
@@ -319,31 +340,41 @@ fi
 if [[ $PHASE_FROM -le 7 && $PHASE_TO -ge 7 ]]; then
   start_phase "Phase 7: OAuth2-proxy"
 
-  if ! kubectl get ns monitoring &>/dev/null; then
-    log_warn "Monitoring namespace not found — skipping OAuth2-proxy (deploy after Bundle 3)"
-    end_phase "Phase 7: OAuth2-proxy (skipped)"
+  log_info "Applying OAuth2-proxy instances..."
+  log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
+
+  # Ensure target namespaces exist (monitoring for prom/alertmanager, kube-system for hubble)
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+  # vault-root-ca ConfigMap — OAuth2-proxies mount this for OIDC TLS verification
+  ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
+  if [[ -f "$ROOT_CA_CERT" ]]; then
+    for ns in monitoring kube-system; do
+      kubectl create configmap vault-root-ca --namespace="$ns" \
+        --from-file=ca.crt="$ROOT_CA_CERT" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    done
   else
-    log_info "Applying OAuth2-proxy instances..."
-    log_warn "NOTE: Run setup-keycloak.sh BEFORE this phase to create OIDC clients"
-
-    # External secrets for OIDC client credentials
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
-
-    # OAuth2-proxy deployments
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
-    kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
-
-    # Middleware CRDs
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
-    kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
-
-    end_phase "Phase 7: OAuth2-proxy"
+    log_warn "Root CA cert not found at ${ROOT_CA_CERT} — OAuth2-proxy OIDC TLS may fail"
   fi
+
+  # External secrets for OIDC client credentials
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-alertmanager.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-hubble.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/external-secret-grafana.yaml"
+
+  # OAuth2-proxy deployments
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/prometheus.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/alertmanager.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/keycloak/oauth2-proxy/hubble.yaml"
+
+  # Middleware CRDs
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-prometheus.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-alertmanager.yaml"
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/oauth2-proxy/middleware-hubble.yaml"
+
+  end_phase "Phase 7: OAuth2-proxy"
 fi
 
 # Phase 8: Monitoring + NetworkPolicies
