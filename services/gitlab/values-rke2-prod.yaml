@@ -233,6 +233,16 @@ gitlab:
         requests:
           cpu: 200m
           memory: 200Mi
+    livenessProbe:
+      initialDelaySeconds: 120
+      periodSeconds: 30
+      timeoutSeconds: 30
+      failureThreshold: 5
+    readinessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
     deployment:
       strategy:
         type: RollingUpdate
@@ -258,6 +268,16 @@ gitlab:
       requests:
         cpu: 500m
         memory: 2Gi
+    livenessProbe:
+      initialDelaySeconds: 120
+      periodSeconds: 30
+      timeoutSeconds: 30
+      failureThreshold: 5
+    readinessProbe:
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
     deployment:
       strategy:
         type: RollingUpdate
