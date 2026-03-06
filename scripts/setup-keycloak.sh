@@ -112,20 +112,20 @@ kc_get_token() {
   local now cached_time
   now=$(date +%s)
   cached_time=$(cat "$_KC_TOKEN_TIME_FILE" 2>/dev/null || echo "0")
-  # Return cached token if fresh (less than 45s old)
-  if [[ -s "$_KC_TOKEN_FILE" && $(( now - cached_time )) -lt 45 ]]; then
+  # Return cached token if fresh (less than 20s old — master realm token TTL is 300s)
+  if [[ -s "$_KC_TOKEN_FILE" && $(( now - cached_time )) -lt 20 ]]; then
     cat "$_KC_TOKEN_FILE"
     return 0
   fi
 
   local token attempt
   for attempt in 1 2 3; do
-    token=$(curl -sf --connect-timeout 15 --max-time 60 \
+    token=$(curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
       -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
       -d "grant_type=password" \
       -d "client_id=admin-cli" \
       -d "username=${_KC_ADMIN_USER}" \
-      -d "password=${_KC_ADMIN_PASS}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
+      --data-urlencode "password=${_KC_ADMIN_PASS}" 2>/dev/null | jq -r '.access_token' 2>/dev/null) || true
     if [[ -n "$token" && "$token" != "null" ]]; then
       echo "$token" > "$_KC_TOKEN_FILE"
       date +%s > "$_KC_TOKEN_TIME_FILE"
@@ -142,31 +142,46 @@ kc_get_token() {
 kc_api() {
   local method="$1" path="$2"
   shift 2
-  local token
-  token=$(kc_get_token)
-  curl -sf --connect-timeout 15 --max-time 60 \
-    -X "$method" "${KC_URL}/admin/realms/${path}" \
-    -H "Authorization: Bearer ${token}" \
-    -H "Content-Type: application/json" \
-    "$@"
+  local token attempt
+  for attempt in 1 2 3; do
+    token=$(kc_get_token)
+    local result
+    result=$(curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
+      -X "$method" "${KC_URL}/admin/realms/${path}" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      "$@" 2>/dev/null) && { echo "$result"; return 0; }
+    log_warn "kc_api ${method} ${path} attempt ${attempt} failed, retrying..." >&2
+    # Force token refresh on retry
+    echo "0" > "$_KC_TOKEN_TIME_FILE"
+    sleep 2
+  done
+  log_error "kc_api ${method} ${path} failed after 3 attempts" >&2
+  return 1
 }
 
 # Idempotent create — returns 0 on success or 409 (already exists)
 kc_api_create() {
   local method="$1" path="$2"
   shift 2
-  local token http_code
-  token=$(kc_get_token)
-  http_code=$(curl -s --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
-    -X "$method" "${KC_URL}/admin/realms/${path}" \
-    -H "Authorization: Bearer ${token}" \
-    -H "Content-Type: application/json" \
-    "$@")
-  case "$http_code" in
-    200|201|204) return 0 ;;
-    409)         log_info "Resource already exists (409 conflict), skipping"; return 0 ;;
-    *)           die "Keycloak API returned HTTP ${http_code} for ${method} ${path}" ;;
-  esac
+  local token http_code attempt
+  for attempt in 1 2 3; do
+    token=$(kc_get_token)
+    http_code=$(curl -s --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
+      -X "$method" "${KC_URL}/admin/realms/${path}" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      "$@")
+    case "$http_code" in
+      200|201|204) return 0 ;;
+      409)         log_info "Resource already exists (409 conflict), skipping"; return 0 ;;
+      000)         log_warn "Connection dropped (attempt ${attempt}), retrying..." >&2
+                   echo "0" > "$_KC_TOKEN_TIME_FILE"
+                   sleep 2 ;;
+      *)           die "Keycloak API returned HTTP ${http_code} for ${method} ${path}" ;;
+    esac
+  done
+  die "Keycloak API ${method} ${path} failed after 3 attempts (last HTTP: ${http_code})"
 }
 
 ###############################################################################
@@ -244,7 +259,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
     if [[ -n "$_admin_role_id" && "$_admin_role_id" != "null" ]]; then
       # Assign admin realm role
       _token=$(kc_get_token)
-      curl -sk --connect-timeout 15 --max-time 60 -o /dev/null \
+      curl -sk --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null \
         -X POST "${KC_URL}/admin/realms/master/users/${_master_user_id}/role-mappings/realm" \
         -H "Authorization: Bearer ${_token}" \
         -H "Content-Type: application/json" \
@@ -588,7 +603,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
       _client_uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | jq -r '.[0].id')
       if [[ -n "$_client_uuid" && "$_client_uuid" != "null" ]]; then
         _assign_token=$(kc_get_token)
-        curl -sk --connect-timeout 15 --max-time 60 -o /dev/null \
+        curl -sk --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null \
           -X PUT "${KC_URL}/admin/realms/${KC_REALM}/clients/${_client_uuid}/default-client-scopes/${_groups_scope_id}" \
           -H "Authorization: Bearer ${_assign_token}"
         log_ok "Assigned groups scope to ${client_id}"
