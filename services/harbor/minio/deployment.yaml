@@ -19,6 +19,13 @@ spec:
     spec:
       nodeSelector:
         workload-type: database
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: minio
           image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
@@ -45,6 +52,11 @@ spec:
               containerPort: 9000
             - name: console
               containerPort: 9001
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               cpu: 250m

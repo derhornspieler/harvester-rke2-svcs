@@ -75,6 +75,10 @@ vault_get_field() {
 # vault_get_or_generate — read from Vault if exists, otherwise generate and return
 # Usage: VALUE=$(vault_get_or_generate "$token" "kv/path" "field" "openssl rand -base64 24")
 # Does NOT write to Vault — caller is responsible for storing the value.
+#
+# SECURITY: gen_cmd is executed via eval. Callers MUST pass only trusted,
+# hardcoded generator commands (e.g. "openssl rand -base64 24").
+# NEVER pass user-supplied or externally-sourced strings as gen_cmd.
 vault_get_or_generate() {
   local root_token="$1"
   local path="$2"
