@@ -29,9 +29,9 @@ VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
 # Organization name (already in env from PKI bundle)
 ORG="${ORG:-My Organization}"
 
-# Helm chart source
-HELM_CHART_HARBOR="${HELM_CHART_HARBOR:-goharbor/harbor}"
-HELM_REPO_HARBOR="${HELM_REPO_HARBOR:-https://helm.goharbor.io}"
+# Validate required env vars (all sourced from .env — no fallbacks)
+require_env DOMAIN HELM_CHART_HARBOR HELM_REPO_HARBOR HELM_VERSION_HARBOR \
+  HARBOR_ADMIN_PASSWORD HARBOR_DB_PASSWORD HARBOR_REDIS_PASSWORD HARBOR_MINIO_SECRET_KEY
 
 # CLI Parsing
 PHASE_FROM=1
@@ -352,7 +352,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   _subst_changeme < "${REPO_ROOT}/services/harbor/harbor-values.yaml" > "$_harbor_values"
   chmod 600 "$_harbor_values"
   helm_install_if_needed harbor "$HELM_CHART_HARBOR" harbor \
-    --version "${HELM_VERSION_HARBOR:-1.18.2}" \
+    --version "${HELM_VERSION_HARBOR}" \
     -f "$_harbor_values" \
     --wait --timeout 10m
   rm -f "$_harbor_values"

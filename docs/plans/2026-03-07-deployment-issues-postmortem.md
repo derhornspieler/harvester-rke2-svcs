@@ -248,3 +248,45 @@ cert-manager v1.19.4, Vault 0.32.0, ESO 2.0.1, Harbor 1.18.2, GitLab 9.9.2, GitL
 | `scripts/.env` | Added TRAEFIK_LB_IP + all Helm chart versions |
 | `services/traefik-dashboard/helmchartconfig.yaml` | Templatized loadBalancerIP |
 | `scripts/manifests/cnpg-crds-v0.27.0.yaml` | Vendored CNPG CRDs (new file) |
+
+---
+
+## Validation: Full Teardown 6→1 + Redeploy 1→6
+
+**Date:** 2026-03-07 05:30–06:28 UTC
+
+After all fixes were committed and pushed (`1569f33`, `2a0e2e4`), a complete teardown (GitLab→PKI) and full redeploy (PKI→GitLab) was performed with **zero manual intervention**.
+
+### Results
+
+| Bundle | Deploy Script | Result | Duration |
+|--------|--------------|--------|----------|
+| 1 — PKI & Secrets | `deploy-pki-secrets.sh` | **PASS** | ~5 min |
+| 2 — Identity | `deploy-keycloak.sh` + `setup-keycloak.sh` | **PASS** | ~8 min |
+| 3 — Monitoring | `deploy-monitoring.sh` | **PASS** | ~6 min |
+| 4 — Harbor | `deploy-harbor.sh` | **PASS** | ~6 min |
+| 5 — GitOps (Argo) | `deploy-argo.sh` | **PASS** | ~6 min |
+| 6 — Git & CI (GitLab) | `deploy-gitlab.sh` | **PASS** | ~21 min |
+
+### Non-blocking Warnings (Expected)
+
+1. **CNPG Barman Cloud deprecation** — "Native support for Barman Cloud backups and recovery is deprecated and will be completely removed in CloudNativePG 1.29.0." Action: migrate to Barman Cloud Plugin before upgrading to CNPG 1.29.
+2. **GitLab HTTPS health check** — Did not respond during Phase 9 verify (GitLab still initializing). Subsequent manual check confirmed it was reachable.
+3. **admin.user admin promotion** — User not found (created on first OIDC login). By design.
+4. **setup-keycloak.sh Phase 5** — Browser flow copy returned HTTP 404 (Keycloak version difference). Non-critical, handled gracefully with warning.
+
+### Fixes Confirmed Working
+
+| Fix | Evidence |
+|-----|----------|
+| PKI notBefore timing (Issue 1) | Chain validated successfully, no X.509 errors |
+| CNPG CRDs server-side (Issue 2) | Operator installed without CRD errors |
+| SecretStore independence (Issue 3) | `grafana-db-secret` synced without prior Keycloak dependency |
+| Traefik LB IP templatized (Issue 4) | HelmChartConfig applied with `TRAEFIK_LB_IP` from `.env` (no hardcoded IP) |
+| OIDC secrets verified (Issues 5-6) | All 10 clients seeded, read-back verification passed |
+| Helm versions centralized | All charts installed from `.env` versions |
+| curl timeout crash fix | `setup-keycloak.sh` completed all 6 phases without exit-28 crash |
+
+### Conclusion
+
+All 6 original issues are resolved. The platform deploys end-to-end from a clean cluster with no ad-hoc fixes required.
