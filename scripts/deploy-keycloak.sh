@@ -114,12 +114,19 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   # Install CNPG operator (skip only if the controller is already running)
   # CRDs may persist after teardown, so check the actual deployment not the CRD
   if ! kubectl -n cnpg-system get deployment cnpg-controller-manager &>/dev/null; then
+    # Pre-apply CRDs with --server-side to avoid "too long" annotation errors
+    # Vendored CRDs ensure airgap compatibility and prevent Helm install failures
+    log_info "Pre-applying CNPG CRDs (server-side)..."
+    kubectl apply --server-side --force-conflicts \
+      -f "${SCRIPT_DIR}/manifests/cnpg-crds-v0.27.1.yaml"
+
     log_info "Installing CloudNativePG operator..."
     helm_repo_add cnpg "$HELM_REPO_CNPG"
     helm_install_if_needed cnpg "$HELM_CHART_CNPG" cnpg-system \
-      --version 0.27.0 \
+      --version "${HELM_VERSION_CNPG:-0.27.0}" \
       --set monitoring.podMonitorEnabled=true \
       --set nodeSelector.workload-type=database \
+      --set crds.create=false \
       --wait --timeout 5m
     # Deployment name varies by chart version: cnpg-cloudnative-pg or cnpg-controller-manager
     _cnpg_deploy=$(kubectl -n cnpg-system get deployment -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)

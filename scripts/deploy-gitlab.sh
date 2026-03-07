@@ -474,7 +474,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   _subst_changeme < "${GITLAB_DIR}/values-rke2-prod.yaml" > "$_gitlab_values"
   chmod 600 "$_gitlab_values"
   helm_install_if_needed gitlab "$HELM_CHART_GITLAB" gitlab \
-    --version 9.9.2 \
+    --version "${HELM_VERSION_GITLAB:-9.9.2}" \
     -f "$_gitlab_values" \
     --timeout 30m
   rm -f "$_gitlab_values"
@@ -568,7 +568,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/shared-runner-values.yaml" > "$_shared_values"
   chmod 600 "$_shared_values"
   helm_install_if_needed gitlab-runner-shared "$HELM_CHART_RUNNER" gitlab-runners \
-    --version 0.86.0 \
+    --version "${HELM_VERSION_GITLAB_RUNNER:-0.86.0}" \
     -f "$_shared_values" \
     --wait --timeout 5m
   rm -f "$_shared_values"
@@ -579,7 +579,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/security-runner-values.yaml" > "$_security_values"
   chmod 600 "$_security_values"
   helm_install_if_needed gitlab-runner-security "$HELM_CHART_RUNNER" gitlab-runners \
-    --version 0.86.0 \
+    --version "${HELM_VERSION_GITLAB_RUNNER:-0.86.0}" \
     -f "$_security_values" \
     --wait --timeout 5m
   rm -f "$_security_values"
@@ -590,7 +590,7 @@ ${_int_ca}"
   _subst_changeme < "${GITLAB_DIR}/runners/group-runner-values.yaml" > "$_group_values"
   chmod 600 "$_group_values"
   helm_install_if_needed gitlab-runner-group "$HELM_CHART_RUNNER" gitlab-runners \
-    --version 0.86.0 \
+    --version "${HELM_VERSION_GITLAB_RUNNER:-0.86.0}" \
     -f "$_group_values" \
     --wait --timeout 5m
   rm -f "$_group_values"

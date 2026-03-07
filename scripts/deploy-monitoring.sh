@@ -197,6 +197,69 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       password="$GRAFANA_DB_PASS"
     log_ok "Grafana DB credentials seeded in Vault"
 
+    # Ensure Vault policy, auth role, SA, and SecretStore exist for monitoring + database
+    # (setup-keycloak.sh also creates these, but monitoring must work independently)
+    for _ns in monitoring database; do
+      if ! kubectl -n "$_ns" get secretstore vault-backend &>/dev/null; then
+        log_info "Creating Vault ESO infra for ${_ns} namespace..."
+        kubectl exec -i -n vault vault-0 -- env \
+          VAULT_ADDR=http://127.0.0.1:8200 \
+          VAULT_TOKEN="$root_token" \
+          vault policy write "eso-${_ns}" - <<POLICY
+path "kv/data/services/${_ns}" {
+  capabilities = ["read"]
+}
+path "kv/data/services/${_ns}/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/services/${_ns}" {
+  capabilities = ["read", "list"]
+}
+path "kv/metadata/services/${_ns}/*" {
+  capabilities = ["read", "list"]
+}
+path "kv/data/services/database/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/services/database/*" {
+  capabilities = ["read", "list"]
+}
+path "kv/data/oidc/*" {
+  capabilities = ["read"]
+}
+path "kv/metadata/oidc/*" {
+  capabilities = ["read", "list"]
+}
+POLICY
+        vault_exec "$root_token" write "auth/kubernetes/role/eso-${_ns}" \
+          bound_service_account_names=eso-secrets \
+          "bound_service_account_namespaces=${_ns}" \
+          "policies=eso-${_ns}" \
+          ttl=1h
+        kubectl create serviceaccount eso-secrets -n "$_ns" \
+          --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f - <<EOF
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: ${_ns}
+spec:
+  provider:
+    vault:
+      server: http://vault.vault.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: eso-${_ns}
+          serviceAccountRef:
+            name: eso-secrets
+EOF
+      fi
+    done
+
     # Apply ExternalSecrets (creates secrets in both database and monitoring namespaces)
     kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/external-secret.yaml"
     log_info "Waiting for grafana-pg-credentials ExternalSecret to sync..."
@@ -225,7 +288,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   chmod 600 "$_prom_values"
   _subst_changeme < "${REPO_ROOT}/services/monitoring-stack/helm/kube-prometheus-stack-values.yaml" > "$_prom_values"
   helm_install_if_needed kube-prometheus-stack "$HELM_CHART_PROMETHEUS_STACK" monitoring \
-    --version 72.6.2 \
+    --version "${HELM_VERSION_PROMETHEUS_STACK:-72.6.2}" \
     -f "$_prom_values" \
     --wait --timeout 10m
   rm -f "$_prom_values"
@@ -280,7 +343,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
 
   # Traefik Dashboard — enable API + protect with OAuth2-proxy
   log_info "Enabling Traefik dashboard with OAuth2-proxy auth..."
-  kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/helmchartconfig.yaml"
+  kube_apply_subst "${REPO_ROOT}/services/traefik-dashboard/helmchartconfig.yaml"
   kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/external-secret.yaml"
   kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/dashboard-service.yaml"
   kubectl apply -f "${REPO_ROOT}/services/traefik-dashboard/middleware.yaml"

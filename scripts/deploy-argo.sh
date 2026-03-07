@@ -231,7 +231,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   _subst_changeme < "${REPO_ROOT}/services/argo/argocd/argocd-values.yaml" > "$_argocd_values"
   chmod 600 "$_argocd_values"
   helm_install_if_needed argocd "$HELM_CHART_ARGOCD" argocd \
-    --version 7.8.8 \
+    --version "${HELM_VERSION_ARGOCD:-7.8.8}" \
     -f "$_argocd_values" \
     --wait --timeout 10m
   rm -f "$_argocd_values"
@@ -246,7 +246,7 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   _subst_changeme < "${REPO_ROOT}/services/argo/argo-rollouts/argo-rollouts-values.yaml" > "$_rollouts_values"
   chmod 600 "$_rollouts_values"
   helm_install_if_needed argo-rollouts "$HELM_CHART_ROLLOUTS" argo-rollouts \
-    --version 2.39.1 \
+    --version "${HELM_VERSION_ARGO_ROLLOUTS:-2.39.1}" \
     -f "$_rollouts_values" \
     --wait --timeout 5m
   rm -f "$_rollouts_values"
@@ -261,7 +261,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   _subst_changeme < "${REPO_ROOT}/services/argo/argo-workflows/argo-workflows-values.yaml" > "$_workflows_values"
   chmod 600 "$_workflows_values"
   helm_install_if_needed argo-workflows "$HELM_CHART_WORKFLOWS" argo-workflows \
-    --version 0.45.1 \
+    --version "${HELM_VERSION_ARGO_WORKFLOWS:-0.45.1}" \
     -f "$_workflows_values" \
     --wait --timeout 5m
   rm -f "$_workflows_values"

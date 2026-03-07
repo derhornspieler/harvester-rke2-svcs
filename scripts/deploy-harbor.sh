@@ -352,7 +352,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   _subst_changeme < "${REPO_ROOT}/services/harbor/harbor-values.yaml" > "$_harbor_values"
   chmod 600 "$_harbor_values"
   helm_install_if_needed harbor "$HELM_CHART_HARBOR" harbor \
-    --version 1.18.2 \
+    --version "${HELM_VERSION_HARBOR:-1.18.2}" \
     -f "$_harbor_values" \
     --wait --timeout 10m
   rm -f "$_harbor_values"
