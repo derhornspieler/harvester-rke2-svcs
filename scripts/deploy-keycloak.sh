@@ -28,7 +28,7 @@ KC_REALM="${KC_REALM:-platform}"
 export KC_REALM
 
 # Validate required env vars (all sourced from .env — no fallbacks)
-require_env DOMAIN HELM_CHART_CNPG HELM_REPO_CNPG HELM_VERSION_CNPG \
+require_env DOMAIN HELM_CHART_CNPG HELM_VERSION_CNPG \
   KC_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD
 
 # Validate vendored CNPG CRDs exist for the configured version

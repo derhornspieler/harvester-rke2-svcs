@@ -24,7 +24,7 @@ DOMAIN_DOT="${DOMAIN_DOT:-${DOMAIN//./-dot-}}"
 export DOMAIN DOMAIN_DASHED DOMAIN_DOT
 
 # Validate required env vars (all sourced from .env — no fallbacks)
-require_env DOMAIN HELM_CHART_PROMETHEUS_STACK HELM_REPO_PROMETHEUS_STACK \
+require_env DOMAIN HELM_CHART_PROMETHEUS_STACK \
   HELM_VERSION_PROMETHEUS_STACK TRAEFIK_LB_IP
 
 # CLI Parsing
@@ -197,6 +197,14 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       password="$GRAFANA_DB_PASS"
     log_ok "Grafana DB credentials seeded in Vault"
 
+    # Seed Vault with Grafana admin credentials (needed by grafana-admin-secret ExternalSecret)
+    GRAFANA_ADMIN_PASSWORD=$(vault_get_or_generate "$root_token" \
+      "kv/services/monitoring" "grafana-admin-password" "openssl rand -base64 24")
+    vault_exec "$root_token" kv put kv/services/monitoring \
+      grafana-admin-user="admin" \
+      grafana-admin-password="$GRAFANA_ADMIN_PASSWORD"
+    log_ok "Grafana admin credentials seeded in Vault"
+
     # Ensure Vault policy, auth role, SA, and SecretStore exist for monitoring + database
     # (setup-keycloak.sh also creates these, but monitoring must work independently)
     for _ns in monitoring database; do
@@ -321,20 +329,6 @@ fi
 # Phase 5: Gateways + HTTPRoutes + OAuth2-proxy auth
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   start_phase "Phase 5: Gateways + HTTPRoutes + OAuth2-proxy Auth"
-
-  # Grafana admin password from Vault (basic-auth no longer used for Prometheus/Alertmanager)
-  VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
-  if [[ -f "$VAULT_INIT_FILE" ]]; then
-    root_token=$(jq -r '.root_token' "$VAULT_INIT_FILE")
-    GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(vault_get_or_generate "$root_token" \
-      "kv/services/monitoring" "grafana-admin-password" "openssl rand -base64 24")}"
-
-    vault_exec "$root_token" kv put kv/services/monitoring \
-      grafana-admin-user="admin" \
-      grafana-admin-password="$GRAFANA_ADMIN_PASSWORD"
-  else
-    log_warn "Vault init file not found — using .env passwords (not stored in Vault)"
-  fi
 
   # Apply gateways and routes (need domain substitution)
   # Auth is handled by OAuth2-proxy ForwardAuth middlewares (deployed in setup-keycloak.sh)
