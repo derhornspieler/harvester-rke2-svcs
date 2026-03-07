@@ -35,7 +35,6 @@ ROOT_CA_KEY="${ROOT_CA_KEY:-}"
 
 # Validate required env vars (all sourced from .env — no fallbacks)
 require_env DOMAIN HELM_CHART_CERTMANAGER HELM_CHART_VAULT HELM_CHART_ESO \
-  HELM_REPO_CERTMANAGER HELM_REPO_VAULT HELM_REPO_ESO \
   HELM_VERSION_CERTMANAGER HELM_VERSION_VAULT HELM_VERSION_ESO
 
 # Validate vendored CRDs exist (airgap-safe — must be in scripts/manifests/)
