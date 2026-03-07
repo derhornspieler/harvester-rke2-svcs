@@ -406,11 +406,18 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
       continue
     fi
 
-    # Get the auto-generated client secret
-    _client_secret=$(kc_api GET "${KC_REALM}/clients/${_client_uuid}/client-secret" | jq -r '.value')
+    # Get the auto-generated client secret (retry up to 3 times)
+    _client_secret=""
+    for _secret_attempt in 1 2 3; do
+      _client_secret=$(kc_api GET "${KC_REALM}/clients/${_client_uuid}/client-secret" | jq -r '.value') || true
+      if [[ -n "$_client_secret" && "$_client_secret" != "null" ]]; then
+        break
+      fi
+      log_warn "Attempt ${_secret_attempt}: empty client secret for ${client_id}, retrying..."
+      sleep 2
+    done
     if [[ -z "$_client_secret" || "$_client_secret" == "null" ]]; then
-      log_warn "Could not retrieve client secret for ${client_id}"
-      continue
+      die "Could not retrieve client secret for ${client_id} after 3 attempts"
     fi
 
     # Generate a cookie-secret for OAuth2-proxy (16-byte hex = 32 hex chars)
@@ -420,6 +427,12 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     vault_exec "$_root_token" kv put "kv/oidc/${client_id}" \
       client-secret="$_client_secret" \
       cookie-secret="$_cookie_secret"
+
+    # Verify secret was written correctly (read back and validate non-empty)
+    _verify_secret=$(vault_get_field "$_root_token" "kv/oidc/${client_id}" "client-secret" 2>/dev/null) || true
+    if [[ -z "$_verify_secret" ]]; then
+      die "Vault verification failed: kv/oidc/${client_id} client-secret is empty after write"
+    fi
 
     # For GitLab: also write the OIDC provider JSON to services/gitlab/oidc-secret
     if [[ "$client_id" == "gitlab" ]]; then
