@@ -14,7 +14,6 @@ _subst_changeme() {
   # for the current file. The leftover check in kube_apply_subst() catches
   # any unreplaced CHANGEME_ tokens that should have been substituted.
   sed \
-    -e "s|CHANGEME_GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD:-}|g" \
     -e "s|CHANGEME_KC_REALM|${KC_REALM:-platform}|g" \
     -e "s|CHANGEME_VAULT_ADDR|http://vault.vault.svc.cluster.local:8200|g" \
     -e "s|CHANGEME_HARBOR_ADMIN_PASSWORD|${HARBOR_ADMIN_PASSWORD:-}|g" \

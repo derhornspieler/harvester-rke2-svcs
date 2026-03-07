@@ -23,6 +23,8 @@ global:
 # ArgoCD config overrides
 configs:
   cm:
+    timeout.reconciliation: 180s
+    timeout.reconciliation.jitter: 60s
     url: https://argo.CHANGEME_DOMAIN
     oidc.config: |
       name: Keycloak

@@ -44,3 +44,22 @@ die() {
   log_error "$@"
   exit 1
 }
+
+# require_env — Validate that all listed env vars are set and non-empty.
+# Usage: require_env VAR1 VAR2 VAR3 ...
+# Fails with a complete list of ALL missing vars (not just the first one).
+require_env() {
+  local missing=()
+  for var in "$@"; do
+    if [[ -z "${!var:-}" ]]; then
+      missing+=("$var")
+    fi
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    log_error "Missing required environment variables (check scripts/.env):"
+    for var in "${missing[@]}"; do
+      echo "  - $var" >&2
+    done
+    exit 1
+  fi
+}
