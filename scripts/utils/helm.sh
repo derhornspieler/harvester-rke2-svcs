@@ -11,9 +11,8 @@ export DISABLE_HTTP2=true
 helm_repo_add() {
   local name="$1"
   local url="$2"
-  # OCI registries don't use helm repo add
-  if [[ "$url" == oci://* ]]; then
-    log_info "Helm repo '${name}' is OCI-based, skipping repo add"
+  # OCI registries and empty URLs don't use helm repo add
+  if [[ -z "$url" || "$url" == oci://* ]]; then
     return 0
   fi
   if helm repo list 2>/dev/null | grep -q "^${name}"; then
