@@ -33,13 +33,18 @@ ORG="${ORG:-My Organization}"
 ROOT_CA_CERT="${ROOT_CA_CERT:-${REPO_ROOT}/services/pki/roots/root-ca.pem}"
 ROOT_CA_KEY="${ROOT_CA_KEY:-}"
 
-# Helm chart sources (override with oci:// paths for Harbor or private registries)
-HELM_CHART_CERTMANAGER="${HELM_CHART_CERTMANAGER:-jetstack/cert-manager}"
-HELM_CHART_VAULT="${HELM_CHART_VAULT:-hashicorp/vault}"
-HELM_CHART_ESO="${HELM_CHART_ESO:-external-secrets/external-secrets}"
-HELM_REPO_CERTMANAGER="${HELM_REPO_CERTMANAGER:-https://charts.jetstack.io}"
-HELM_REPO_VAULT="${HELM_REPO_VAULT:-https://helm.releases.hashicorp.com}"
-HELM_REPO_ESO="${HELM_REPO_ESO:-https://charts.external-secrets.io}"
+# Validate required env vars (all sourced from .env — no fallbacks)
+require_env DOMAIN HELM_CHART_CERTMANAGER HELM_CHART_VAULT HELM_CHART_ESO \
+  HELM_REPO_CERTMANAGER HELM_REPO_VAULT HELM_REPO_ESO \
+  HELM_VERSION_CERTMANAGER HELM_VERSION_VAULT HELM_VERSION_ESO
+
+# Validate vendored CRDs exist (airgap-safe — must be in scripts/manifests/)
+for _crd_file in \
+  "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tcproutes.yaml" \
+  "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tlsroutes.yaml"; do
+  [[ -f "$_crd_file" ]] || die "Vendored CRD not found: ${_crd_file}
+  Download from https://github.com/kubernetes-sigs/gateway-api/tree/main/config/crd/experimental"
+done
 
 # CLI Parsing
 PHASE_FROM=1
@@ -129,7 +134,7 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tlsroutes.yaml"
   helm_repo_add jetstack "$HELM_REPO_CERTMANAGER"
   helm_install_if_needed cert-manager "$HELM_CHART_CERTMANAGER" cert-manager \
-    --version "${HELM_VERSION_CERTMANAGER:-v1.19.4}" \
+    --version "${HELM_VERSION_CERTMANAGER}" \
     --set crds.enabled=true \
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
     --set config.kind=ControllerConfiguration \
@@ -150,7 +155,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/vault/namespace.yaml"
   helm_repo_add hashicorp "$HELM_REPO_VAULT"
   helm_install_if_needed vault "$HELM_CHART_VAULT" vault \
-    --version "${HELM_VERSION_VAULT:-0.32.0}" \
+    --version "${HELM_VERSION_VAULT}" \
     -f "${REPO_ROOT}/services/vault/vault-values.yaml" \
     --timeout 5m
   # Vault pods won't be Ready until initialized+unsealed; wait for Running first
@@ -340,7 +345,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/external-secrets/namespace.yaml"
   helm_repo_add external-secrets "$HELM_REPO_ESO"
   helm_install_if_needed external-secrets "$HELM_CHART_ESO" external-secrets \
-    --version "${HELM_VERSION_ESO:-2.0.1}" \
+    --version "${HELM_VERSION_ESO}" \
     --set installCRDs=true \
     --set serviceMonitor.enabled=true \
     --set resources.requests.cpu=100m \

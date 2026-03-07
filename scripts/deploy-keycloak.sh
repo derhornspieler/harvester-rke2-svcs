@@ -27,9 +27,15 @@ export DOMAIN DOMAIN_DASHED DOMAIN_DOT
 KC_REALM="${KC_REALM:-platform}"
 export KC_REALM
 
-# CNPG operator Helm chart
-HELM_CHART_CNPG="${HELM_CHART_CNPG:-cnpg/cloudnative-pg}"
-HELM_REPO_CNPG="${HELM_REPO_CNPG:-https://cloudnative-pg.github.io/charts}"
+# Validate required env vars (all sourced from .env — no fallbacks)
+require_env DOMAIN HELM_CHART_CNPG HELM_REPO_CNPG HELM_VERSION_CNPG \
+  KC_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD
+
+# Validate vendored CNPG CRDs exist for the configured version
+_cnpg_crd_file="${SCRIPT_DIR}/manifests/cnpg-crds-v${HELM_VERSION_CNPG}.yaml"
+[[ -f "$_cnpg_crd_file" ]] || die "Vendored CNPG CRDs not found: ${_cnpg_crd_file}
+  Re-vendor: helm template cnpg ${HELM_CHART_CNPG} --version ${HELM_VERSION_CNPG} \\
+    --set crds.create=true --show-only templates/crds/crds.yaml > ${_cnpg_crd_file}"
 
 # Vault init file
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-${REPO_ROOT}/vault-init.json}"
@@ -118,12 +124,12 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
     # Vendored CRDs ensure airgap compatibility and prevent Helm install failures
     log_info "Pre-applying CNPG CRDs (server-side)..."
     kubectl apply --server-side --force-conflicts \
-      -f "${SCRIPT_DIR}/manifests/cnpg-crds-v0.27.1.yaml"
+      -f "${SCRIPT_DIR}/manifests/cnpg-crds-v${HELM_VERSION_CNPG}.yaml"
 
     log_info "Installing CloudNativePG operator..."
     helm_repo_add cnpg "$HELM_REPO_CNPG"
     helm_install_if_needed cnpg "$HELM_CHART_CNPG" cnpg-system \
-      --version "${HELM_VERSION_CNPG:-0.27.0}" \
+      --version "${HELM_VERSION_CNPG}" \
       --set monitoring.podMonitorEnabled=true \
       --set nodeSelector.workload-type=database \
       --set crds.create=false \

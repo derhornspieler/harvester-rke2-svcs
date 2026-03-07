@@ -23,9 +23,9 @@ DOMAIN_DASHED="${DOMAIN_DASHED:-$(echo "$DOMAIN" | tr '.' '-')}"
 DOMAIN_DOT="${DOMAIN_DOT:-${DOMAIN//./-dot-}}"
 export DOMAIN DOMAIN_DASHED DOMAIN_DOT
 
-# Helm chart sources (override with oci:// paths for Harbor or private registries)
-HELM_CHART_PROMETHEUS_STACK="${HELM_CHART_PROMETHEUS_STACK:-prometheus-community/kube-prometheus-stack}"
-HELM_REPO_PROMETHEUS_STACK="${HELM_REPO_PROMETHEUS_STACK:-https://prometheus-community.github.io/helm-charts}"
+# Validate required env vars (all sourced from .env — no fallbacks)
+require_env DOMAIN HELM_CHART_PROMETHEUS_STACK HELM_REPO_PROMETHEUS_STACK \
+  HELM_VERSION_PROMETHEUS_STACK TRAEFIK_LB_IP
 
 # CLI Parsing
 PHASE_FROM=1
@@ -269,6 +269,12 @@ EOF
       -n monitoring --timeout=120s
     log_ok "Grafana DB ExternalSecrets synced"
 
+    # Grafana admin credentials (synced from Vault for Grafana chart admin.existingSecret)
+    kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/external-secret-admin.yaml"
+    kubectl wait --for=condition=Ready externalsecret/grafana-admin-secret \
+      -n monitoring --timeout=120s
+    log_ok "Grafana admin ExternalSecret synced"
+
     # Apply CNPG Cluster (uses CHANGEME_MINIO_ENDPOINT substitution)
     kube_apply_subst "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/grafana-pg-cluster.yaml"
     kubectl apply -f "${REPO_ROOT}/services/monitoring-stack/grafana/postgres/grafana-pg-scheduled-backup.yaml"
@@ -288,7 +294,7 @@ EOF
   chmod 600 "$_prom_values"
   _subst_changeme < "${REPO_ROOT}/services/monitoring-stack/helm/kube-prometheus-stack-values.yaml" > "$_prom_values"
   helm_install_if_needed kube-prometheus-stack "$HELM_CHART_PROMETHEUS_STACK" monitoring \
-    --version "${HELM_VERSION_PROMETHEUS_STACK:-72.6.2}" \
+    --version "${HELM_VERSION_PROMETHEUS_STACK}" \
     -f "$_prom_values" \
     --wait --timeout 10m
   rm -f "$_prom_values"
@@ -324,6 +330,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
       "kv/services/monitoring" "grafana-admin-password" "openssl rand -base64 24")}"
 
     vault_exec "$root_token" kv put kv/services/monitoring \
+      grafana-admin-user="admin" \
       grafana-admin-password="$GRAFANA_ADMIN_PASSWORD"
   else
     log_warn "Vault init file not found — using .env passwords (not stored in Vault)"
