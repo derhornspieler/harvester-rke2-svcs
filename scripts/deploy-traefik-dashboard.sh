@@ -9,6 +9,10 @@ source "${SCRIPT_DIR}/utils/log.sh"
 source "${SCRIPT_DIR}/utils/wait.sh"
 source "${SCRIPT_DIR}/utils/subst.sh"
 
+# Traefik LoadBalancer IP (must match Cilium L2 pool)
+TRAEFIK_LB_IP="${TRAEFIK_LB_IP:?TRAEFIK_LB_IP must be set (e.g. 172.29.97.2)}"
+export TRAEFIK_LB_IP
+
 # Load environment
 if [[ -f "${SCRIPT_DIR}/.env" ]]; then
   # shellcheck source=/dev/null
@@ -93,7 +97,7 @@ fi
 # Phase 1: HelmChartConfig (Traefik system overrides)
 if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   start_phase "Phase 1: Traefik HelmChartConfig"
-  kubectl apply -f "${DASHBOARD_DIR}/helmchartconfig.yaml"
+  kube_apply_subst "${DASHBOARD_DIR}/helmchartconfig.yaml"
   log_info "HelmChartConfig applied — Traefik will reconcile (may take 30-60s)"
   end_phase "Phase 1: Traefik HelmChartConfig"
 fi

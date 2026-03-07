@@ -129,7 +129,7 @@ if [[ $PHASE_FROM -le 1 && $PHASE_TO -ge 1 ]]; then
   kubectl apply -f "${SCRIPT_DIR}/manifests/gateway.networking.k8s.io_tlsroutes.yaml"
   helm_repo_add jetstack "$HELM_REPO_CERTMANAGER"
   helm_install_if_needed cert-manager "$HELM_CHART_CERTMANAGER" cert-manager \
-    --version v1.19.4 \
+    --version "${HELM_VERSION_CERTMANAGER:-v1.19.4}" \
     --set crds.enabled=true \
     --set config.apiVersion=controller.config.cert-manager.io/v1alpha1 \
     --set config.kind=ControllerConfiguration \
@@ -150,7 +150,7 @@ if [[ $PHASE_FROM -le 2 && $PHASE_TO -ge 2 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/vault/namespace.yaml"
   helm_repo_add hashicorp "$HELM_REPO_VAULT"
   helm_install_if_needed vault "$HELM_CHART_VAULT" vault \
-    --version 0.32.0 \
+    --version "${HELM_VERSION_VAULT:-0.32.0}" \
     -f "${REPO_ROOT}/services/vault/vault-values.yaml" \
     --timeout 5m
   # Vault pods won't be Ready until initialized+unsealed; wait for Running first
@@ -238,7 +238,17 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     | jq -r '.data.csr' > /tmp/vault-intermediate.csr
 
   # Sign the intermediate CSR with the offline Root CA key
+  # Extract root CA's notBefore and set intermediate notBefore 10 seconds later
+  # to prevent chain validation failures when root CA was just generated
   log_info "Signing intermediate CSR with Root CA..."
+  _root_not_before=$(openssl x509 -in "$ROOT_CA_CERT" -noout -startdate \
+    | sed 's/notBefore=//')
+  _root_epoch=$(date -d "$_root_not_before" +%s)
+  _inter_epoch=$(( _root_epoch + 10 ))
+  _inter_not_before=$(date -u -d "@${_inter_epoch}" +"%Y%m%d%H%M%SZ")
+  log_info "Root CA notBefore: ${_root_not_before}"
+  log_info "Intermediate notBefore: ${_inter_not_before} (root + 10s)"
+
   openssl x509 -req -days 5475 \
     -in /tmp/vault-intermediate.csr \
     -CA "$ROOT_CA_CERT" \
@@ -246,6 +256,13 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
     -CAcreateserial \
     -extfile <(printf "basicConstraints=critical,CA:true,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign") \
     -out /tmp/vault-intermediate.pem
+
+  # Validate the signed chain before importing
+  log_info "Validating certificate chain..."
+  if ! openssl verify -CAfile "$ROOT_CA_CERT" /tmp/vault-intermediate.pem; then
+    die "Certificate chain validation failed — intermediate CA not valid against root CA"
+  fi
+  log_ok "Certificate chain valid"
 
   # Create certificate chain
   cat /tmp/vault-intermediate.pem "$ROOT_CA_CERT" > /tmp/vault-intermediate-chain.pem
@@ -323,7 +340,7 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/external-secrets/namespace.yaml"
   helm_repo_add external-secrets "$HELM_REPO_ESO"
   helm_install_if_needed external-secrets "$HELM_CHART_ESO" external-secrets \
-    --version 2.0.1 \
+    --version "${HELM_VERSION_ESO:-2.0.1}" \
     --set installCRDs=true \
     --set serviceMonitor.enabled=true \
     --set resources.requests.cpu=100m \
