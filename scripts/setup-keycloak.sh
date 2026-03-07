@@ -171,13 +171,13 @@ kc_api_create() {
       -X "$method" "${KC_URL}/admin/realms/${path}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      "$@")
+      "$@" 2>/dev/null) || true
     case "$http_code" in
       200|201|204) return 0 ;;
       409)         log_info "Resource already exists (409 conflict), skipping"; return 0 ;;
-      000)         log_warn "Connection dropped (attempt ${attempt}), retrying..." >&2
+      000|"")      log_warn "Connection dropped or timeout (attempt ${attempt}), retrying..." >&2
                    echo "0" > "$_KC_TOKEN_TIME_FILE"
-                   sleep 2 ;;
+                   sleep 3 ;;
       *)           die "Keycloak API returned HTTP ${http_code} for ${method} ${path}" ;;
     esac
   done
