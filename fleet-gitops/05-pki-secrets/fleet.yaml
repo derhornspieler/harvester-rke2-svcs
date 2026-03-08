@@ -1,0 +1,8 @@
+# 05-pki-secrets: cert-manager, Vault, ESO
+# Must wait for 00-operators (CNPG CRDs needed by Vault init)
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: 00-operators
+targets:
+  - clusterName: rke2-prod
