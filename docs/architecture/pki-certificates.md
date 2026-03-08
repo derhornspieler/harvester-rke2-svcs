@@ -12,7 +12,7 @@ The diagram below shows how certificates flow through the ecosystem, from the pr
 
 ```mermaid
 graph TD
-    RootCA["🔒 Offline Root CA<br/>(30 years, RSA 4096)<br/>nameConstraints: aegisgroup.ch,<br/>cluster.local, RFC1918"]
+    RootCA["🔒 Offline Root CA<br/>(30 years, RSA 4096)<br/>nameConstraints: &lt;DOMAIN&gt;,<br/>cluster.local, RFC1918"]
 
     VaultCA["🔐 Vault Intermediate CA<br/>(15 years, pathlen:0)<br/>Key inside Vault's<br/>encryption barrier"]
 
@@ -58,7 +58,7 @@ Every certificate on the platform follows the same journey:
 Every certificate issued on this platform carries a complete chain of trust:
 
 ```
-Leaf Certificate (e.g., for keycloak.dev.aegisgroup.ch)
+Leaf Certificate (e.g., for keycloak.dev.&lt;DOMAIN&gt;)
     ↓ signed by
 Vault Intermediate CA Certificate
     ↓ signed by
@@ -81,16 +81,16 @@ All services on the platform receive automatically-managed TLS certificates:
 
 | Service | Domain | Valid For | Auto-Renewed | Issuer |
 |---------|--------|-----------|--------------|--------|
-| Vault | vault.dev.aegisgroup.ch | 1 year | Yes | vault-issuer |
-| Keycloak | keycloak.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Harbor | harbor.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| GitLab | gitlab.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Grafana | grafana.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Prometheus | prometheus.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Alertmanager | alertmanager.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| ArgoCD | argocd.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Argo Workflows | workflows.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
-| Argo Rollouts | rollouts.dev.aegisgroup.ch | 90 days | Yes | vault-issuer |
+| Vault | vault.dev.&lt;DOMAIN&gt; | 1 year | Yes | vault-issuer |
+| Keycloak | keycloak.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Harbor | harbor.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| GitLab | gitlab.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Grafana | grafana.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Prometheus | prometheus.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Alertmanager | alertmanager.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| ArgoCD | argocd.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Argo Workflows | workflows.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
+| Argo Rollouts | rollouts.dev.&lt;DOMAIN&gt; | 90 days | Yes | vault-issuer |
 | Internal Services* | *.cluster.local | 90 days | Yes | vault-issuer |
 
 *Internal services (CNPG clusters, Redis, MinIO) use cluster.local certificates for mTLS.
@@ -100,12 +100,14 @@ All services on the platform receive automatically-managed TLS certificates:
 The PKI ecosystem enforces defense in depth:
 
 ### Offline Root CA (Air-Gapped)
+
 - Private key stored physically offline, never on any computer connected to the network
 - Only used once during initial setup to sign the Vault intermediate
 - 30-year validity ensures the root CA outlives any potential compromise
 - Unreachable — eliminating entire classes of network attacks
 
 ### Vault Intermediate CA (Protected)
+
 - Private key generated and stored inside Vault
 - Key never exported to disk or to any other system
 - Protected by Vault's barrier encryption (AES-256-GCM)
@@ -113,20 +115,23 @@ The PKI ecosystem enforces defense in depth:
 - Audit log records every certificate signed
 
 ### nameConstraints (Capability Limiting)
+
 The Root CA certificate includes name constraints that restrict what domains can ever be signed:
-- `aegisgroup.ch` and all subdomains
+- `&lt;DOMAIN&gt;` and all subdomains
 - `cluster.local` and all subdomains (for internal mTLS)
 - RFC 1918 private IP ranges
 
 These constraints are cryptographically enforced — even if the Root CA key were compromised, no certificate for `example.com` or any external domain could ever be issued.
 
 ### pathlen:0 (No Sub-Intermediates)
+
 The Vault Intermediate CA has a critical constraint: it can only sign leaf certificates. It cannot create subordinate CAs. This means:
 - No attacker could create a new CA under Vault
 - No service could mint its own certificates
 - All certificate issuance remains under central control
 
 ### Automated Renewal (No Human Intervention)
+
 - cert-manager monitors all certificates continuously
 - At 66% of lifetime, it automatically renews (no manual steps, no break-glass)
 - If renewal fails, alerts fire within 15 minutes
@@ -135,11 +140,13 @@ The Vault Intermediate CA has a critical constraint: it can only sign leaf certi
 ## Operational Characteristics
 
 ### Reliability
+
 - **No single point of failure**: Vault runs as 3 replicas with raft consensus. The loss of one Vault pod does not interrupt certificate signing.
 - **High availability unseal**: Shamir shares are split among offline administrators. No single person can unseal Vault.
 - **Automatic renewal**: Certificates renew continuously in the background. Operators don't need to schedule certificate renewals.
 
 ### Observability
+
 - **Vault audit log**: Every certificate request, CSR, and signing event is logged
 - **Prometheus metrics**: Vault exposes metrics on seal/unseal operations, storage operations, and request times
 - **Grafana dashboard**: Shows seal status, Raft health, certificate issuance rate, and intermediate CA expiration
@@ -150,6 +157,7 @@ The Vault Intermediate CA has a critical constraint: it can only sign leaf certi
   - `CertNotReady`: Certificate resource failed to issue (usually due to Vault communication error)
 
 ### Compliance
+
 - **Cryptographic standards**: RSA 4096 (root), RSA 2048 (intermediate and leaves)
 - **Certificate transparency**: All certificates are logged in Vault's audit backend
 - **Tamper detection**: Vault's seal state provides integrity checking

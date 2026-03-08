@@ -111,6 +111,7 @@ GitLab → Runners (execute jobs) → Harbor (push images) → ArgoCD (deploy)
 ```
 
 ### Data Persistence
+
 ```
 CNPG → GitLab, Keycloak, Harbor, ArgoCD
 Redis → GitLab, Keycloak, Harbor
@@ -142,7 +143,7 @@ Use these exact component names when creating ecosystem documents:
 | Alertmanager | Alertmanager | monitoring/alertmanager-* (StatefulSet) |
 | Hubble | Hubble | cilium/hubble-* (DaemonSet/relay) |
 | CloudNativePG | CloudNativePG | CNPG operator in keycloak/harbor/gitlab |
-| Redis/Valkey Sentinel | Redis/Valkey Sentinel | harbor/valkey-* , gitlab/redis-* (StatefulSets) |
+| Redis/Valkey Sentinel | Redis/Valkey Sentinel | harbor/valkey-\*, gitlab/redis-\* (StatefulSets) |
 | MinIO | MinIO | harbor/minio (StatefulSet) |
 | External Secrets Operator | ESO Controller | external-secrets/external-secrets-webhook |
 | SecretStore | SecretStore | N/A (virtual, per-service CRD) |

@@ -6,7 +6,7 @@ The platform provides complete visibility into everything running on it through 
 
 ---
 
-## Leadership Diagram: How Observability Works
+## Overview Diagram: How Observability Works
 
 The following diagram shows the three observability pipelines converging into a unified view:
 
@@ -54,6 +54,26 @@ graph TD
     class H alerting
     class I operator
 ```
+
+### Future: Log & Metrics Archival to Splunk
+
+```mermaid
+graph LR
+    Prom["Prometheus<br/>(Metrics)"] -.->|future| RS["Remote Write"]
+    Loki["Loki<br/>(Logs)"] -.->|future| FW["Log Forwarder"]
+    RS -.->|archive| Splunk["Splunk<br/>(Long-term Retention<br/>&amp; Compliance)"]
+    FW -.->|archive| Splunk
+
+    classDef current fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef future fill:#6c757d,color:#fff,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    classDef target fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+
+    class Prom,Loki current
+    class RS,FW future
+    class Splunk target
+```
+
+Planned integration to archive metrics and logs to Splunk for long-term retention, compliance reporting, and cross-platform correlation. Prometheus remote-write and Alloy/Loki log forwarding provide native export paths without disrupting current monitoring pipelines.
 
 **The Flow (Plain English):**
 
@@ -184,33 +204,39 @@ Alerts are organized by component and severity. The following table shows all al
 Grafana includes 18 pre-built dashboards, auto-provisioned via ConfigMap. Each dashboard focuses on one component or ecosystem:
 
 ### Platform Overview & Health
+
 1. **Home** — Single-page executive dashboard: cluster status, critical alert count, top error services, recent deployments
 2. **Firing Alerts** — Real-time list of all active alerts, grouped by severity and component, with action links
 
 ### Infrastructure & Kubernetes
+
 3. **API Server** — Request rate, latency percentiles, etcd read/write latency, authentication/authorization decisions
 4. **etcd** — Leader election, commit latency, disk size, backend bytes, defragmentation status
 5. **Node Detail** — Per-node CPU, memory, disk I/O, thermal throttling, kernel OOM kills, network errors
 6. **Pod Monitoring** — Pod count by namespace, restart counts, eviction history, resource requests vs. usage
 
 ### Networking & Security
+
 7. **Cilium / Network Policies** — Policy enforcement rate, denied connections, DNS query rate and failures, L4 vs. L7 protocols
 8. **CoreDNS** — DNS query rate, cache hit ratio, response time distribution, NXDOMAIN vs. success rate
 9. **Traefik** — Request rate by route, latency percentiles, status code distribution, certificate expiry countdown
 
 ### Observability Stack
+
 10. **Loki Logs** — Log volume by service, parser errors, ingester latency, index stats, search query latency
 11. **Loki Stack** — Complete health: ingesters, queriers, distributors, ring consistency, disk usage
 12. **Alloy** — Collection rate (pod logs, journal, K8s events), lag, batch size, error rate, scrape target count
 13. **Prometheus** — Self-monitoring: TSDB size, ingestion rate, query latency, scrape success rate, service discovery
 
 ### Application Services
+
 14. **Vault** — Seal status, auth method usage, token generation rate, policy enforcement, unseal progress
 15. **cert-manager** — Certificate count, expiry distribution, renewal success rate, ACME challenge failures
 16. **OAuth2-proxy** — Authentication success/failure rate, token refresh latency, cookie validation failures, allowed-group decisions
 17. **Harbor** — Image push/pull rate, scan queue depth, storage growth, replication status, vulnerability scanning
 
 ### Data & State
+
 18. **PostgreSQL (CNPG)** — Replication lag, TPS (transactions per second), slow query count, connection count, cache hit ratio, WAL size
 
 ---
@@ -358,7 +384,7 @@ Hubble exposes network flow metrics at:
   - Used by Hubble UI to display individual flow events
   - Filters by namespace, pod, protocol, direction
 
-- **Hubble UI**: `https://hubble.dev.aegisgroup.ch` (behind OAuth2-proxy)
+- **Hubble UI**: `https://hubble.&lt;DOMAIN&gt;` (behind OAuth2-proxy)
   - Shows service topology (which services call which)
   - Flows table (individual requests with latency, status)
   - Network policy enforcement status (allowed/denied rules)

@@ -6,7 +6,7 @@
 
 Code committed to GitLab triggers an automated CI/CD pipeline that builds container images, scans them for security vulnerabilities, pushes them to the Harbor registry, and automatically deploys them to the cluster using ArgoCD with progressive delivery controls. At every stage, security gates prevent insecure code from reaching production. Argo Rollouts gradually shifts traffic to new versions while monitoring health metrics automatically, rolling back on anomalies within seconds.
 
-## Leadership Diagram
+## Overview Diagram
 
 This diagram shows the complete flow from developer to production:
 
@@ -227,7 +227,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://gitlab.aegisgroup.ch/platform/deploy-manifests.git
+    repoURL: https://gitlab.&lt;DOMAIN&gt;/platform/deploy-manifests.git
     path: <service-name>/
     targetRevision: HEAD
   destination:
@@ -325,8 +325,8 @@ stages:
   - promote
 
 variables:
-  REGISTRY: harbor.aegisgroup.ch
-  REGISTRY_PATH: harbor.aegisgroup.ch/library
+  REGISTRY: harbor.&lt;DOMAIN&gt;
+  REGISTRY_PATH: harbor.&lt;DOMAIN&gt;/library
   IMAGE_NAME: $REGISTRY_PATH/$CI_PROJECT_NAME
   IMAGE_TAG: $CI_COMMIT_SHA
 

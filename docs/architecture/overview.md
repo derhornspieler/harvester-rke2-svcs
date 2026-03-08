@@ -184,8 +184,8 @@ The Harvester RKE2 cluster spans 13 nodes optimized for different workload types
 
 ### Domain and TLS
 
-- **Primary domain**: `aegisgroup.ch`
-- **Service FQDNs**: `<service>.dev.aegisgroup.ch` (e.g., `harbor.dev.aegisgroup.ch`, `argocd.dev.aegisgroup.ch`)
+- **Primary domain**: `&lt;DOMAIN&gt;`
+- **Service FQDNs**: `<service>.&lt;DOMAIN&gt;` (e.g., `harbor.&lt;DOMAIN&gt;`, `argocd.&lt;DOMAIN&gt;`)
 - **TLS**: All external ingress encrypted with cert-manager-issued leaf certificates (3-year validity, auto-renewal at 30 days)
 - **Root CA**: Offline, air-gapped; signs Vault intermediate; never touches cluster
 

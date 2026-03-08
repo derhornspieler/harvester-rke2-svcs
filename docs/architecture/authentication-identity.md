@@ -6,7 +6,7 @@ All platform users authenticate through a single identity provider (Keycloak) us
 
 ---
 
-## Leadership Diagram: How Authentication Works
+## Overview Diagram: How Authentication Works
 
 The following diagram shows how users authenticate and access protected services:
 
@@ -51,9 +51,49 @@ graph TD
     class A,B external
 ```
 
+### Authentication Decision Tree
+
+```mermaid
+flowchart TD
+    A["User requests<br/>service URL"] --> B{"Has valid<br/>session cookie?"}
+    B -->|Yes| C{"Cookie<br/>expired?"}
+    B -->|No| D{"Service type?"}
+
+    C -->|No| E["Access granted<br/>Forward to service"]
+    C -->|Yes| F["Clear cookie<br/>Redirect to login"]
+
+    D -->|OAuth2-proxy<br/>Prometheus, Alertmanager, Hubble| G["Traefik forwards to<br/>OAuth2-proxy"]
+    D -->|Native OIDC<br/>Grafana, Harbor, ArgoCD, GitLab| H["Service redirects to<br/>Keycloak directly"]
+
+    G --> I["OAuth2-proxy redirects<br/>to Keycloak login"]
+    H --> I
+    F --> I
+
+    I --> J{"User enters<br/>credentials"}
+    J --> K{"Credentials<br/>valid?"}
+    K -->|No| L["Show error<br/>Allow retry"]
+    L --> J
+    K -->|Yes| M{"User in<br/>required group?"}
+    M -->|No| N["Access denied<br/>403 Forbidden"]
+    M -->|Yes| O["Keycloak issues<br/>OIDC token"]
+    O --> P["Set session cookie<br/>Store in Redis Sentinel"]
+    P --> E
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+    classDef identity fill:#6f42c1,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,C,D,K,M decision
+    class G,H,I,J,P action
+    class E,O success
+    class L,N,F failure
+```
+
 **The Flow (Plain English):**
 
-1. A user visits any protected service URL (e.g., `prometheus.dev.aegisgroup.ch`)
+1. A user visits any protected service URL (e.g., `prometheus.&lt;DOMAIN&gt;`)
 2. The Traefik gateway intercepts the request and checks authentication status:
    - **OAuth2-proxy path** (Prometheus, Alertmanager, Hubble): Unauthenticated requests are redirected to OAuth2-proxy, which redirects the browser to Keycloak's login page
    - **Native OIDC path** (Grafana, Harbor, ArgoCD, GitLab): These services handle OIDC negotiation directly
@@ -326,7 +366,7 @@ kubectl get externalsecrets -n monitoring
 kubectl get externalsecrets -n kube-system
 
 # OIDC discovery endpoint (from outside cluster)
-curl -sf https://keycloak.dev.aegisgroup.ch/realms/platform/.well-known/openid-configuration | jq .
+curl -sf https://keycloak.&lt;DOMAIN&gt;/realms/platform/.well-known/openid-configuration | jq .
 
 # Keycloak readiness
 kubectl exec -n keycloak deploy/keycloak -- curl -sf http://localhost:9000/health/ready
