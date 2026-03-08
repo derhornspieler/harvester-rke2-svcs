@@ -1,0 +1,3 @@
+defaultNamespace: storage-autoscaler
+targets:
+  - clusterName: rke2-prod
