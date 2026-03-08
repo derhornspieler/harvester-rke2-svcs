@@ -1,0 +1,16 @@
+defaultNamespace: gitlab
+helm:
+  releaseName: gitlab
+  chart: oci://harbor.example.com/helm/gitlab
+  version: "9.9.2"
+  valuesFiles:
+    - values.yaml
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: cnpg-gitlab
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: redis-gitlab
+targets:
+  - clusterName: rke2-prod
