@@ -43,16 +43,16 @@ graph TD
 
 ```mermaid
 flowchart TD
-    A["Service needs TLS"] --> B{"Certificate CR\nexists?"}
+    A["Service needs TLS"] --> B{"Certificate CR<br/>exists?"}
     B -->|"No"| C["Create Certificate CR"]
     C --> D["cert-manager detects"]
-    B -->|"Yes"| E{"Expiring soon?\n>66% lifetime"}
-    E -->|"No"| F["Certificate valid\nno action needed"]
+    B -->|"Yes"| E{"Expiring soon?<br/>>66% lifetime"}
+    E -->|"No"| F["Certificate valid<br/>no action needed"]
     E -->|"Yes"| D
-    D --> G["cert-manager requests\nrenewal"]
-    G --> H["Vault signs with\nIntermediate CA"]
-    H --> I["New cert stored\nin K8s Secret"]
-    I --> J["Gateway picks up\nnew cert"]
+    D --> G["cert-manager requests<br/>renewal"]
+    G --> H["Vault signs with<br/>Intermediate CA"]
+    H --> I["New cert stored<br/>in K8s Secret"]
+    I --> J["Gateway picks up<br/>new cert"]
 
     classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
     classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
