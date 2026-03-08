@@ -1,0 +1,3 @@
+defaultNamespace: database
+targets:
+  - clusterName: rke2-prod
