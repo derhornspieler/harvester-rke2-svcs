@@ -39,6 +39,31 @@ graph TD
 - **Green boxes (Services)** = all the applications on the platform. Each one has a TLS certificate signed by the Vault intermediate, and each one trusts the Root CA.
 - **Arrows** = the flow of trust. Services trust the Root CA, which authorized Vault, which authorized cert-manager to issue their certificates.
 
+### Certificate Lifecycle Decision Tree
+
+```mermaid
+flowchart TD
+    A["Service needs TLS"] --> B{"Certificate CR\nexists?"}
+    B -->|"No"| C["Create Certificate CR"]
+    C --> D["cert-manager detects"]
+    B -->|"Yes"| E{"Expiring soon?\n>66% lifetime"}
+    E -->|"No"| F["Certificate valid\nno action needed"]
+    E -->|"Yes"| D
+    D --> G["cert-manager requests\nrenewal"]
+    G --> H["Vault signs with\nIntermediate CA"]
+    H --> I["New cert stored\nin K8s Secret"]
+    I --> J["Gateway picks up\nnew cert"]
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,E decision
+    class C,D,G,H,I action
+    class F,J success
+```
+
 ## How It Works
 
 ### Certificate Lifecycle

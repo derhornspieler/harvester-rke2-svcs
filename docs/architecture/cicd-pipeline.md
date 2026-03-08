@@ -79,6 +79,37 @@ graph LR
     style Prod fill:#28a745,color:#fff
 ```
 
+### Pipeline Decision Tree
+
+```mermaid
+flowchart TD
+    A["Developer pushes code"] --> B{"Gitleaks:\nsecrets found?"}
+    B -->|"Yes"| C["Pipeline FAILS\nNotify developer"]
+    B -->|"No"| D["Build container image"]
+    D --> E{"Trivy:\nvulnerabilities?"}
+    E -->|"Critical/High"| F["Pipeline FAILS"]
+    E -->|"None/Medium/Low"| G["Push to Harbor"]
+    G --> H["ArgoCD detects change"]
+    H --> I{"Deploy strategy?"}
+    I -->|"Canary"| J["Shift 5% traffic"]
+    J --> K{"Prometheus:\nhealthy?"}
+    K -->|"No"| L["Auto rollback"]
+    K -->|"Yes"| M["Shift 50% then 100%"]
+    M --> N["Done"]
+    I -->|"Blue-Green"| O["Switch all traffic"]
+    O --> N
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,E,I,K decision
+    class A,D,G,H,J,O action
+    class M,N success
+    class C,F,L failure
+```
+
 ## How It Works
 
 ### 1. Developer Commits Code
@@ -396,5 +427,5 @@ This ecosystem integrates with:
 ## See Also
 
 - **Services**: [GitLab README](../services/gitlab/README.md), [Harbor README](../services/harbor/README.md), [Argo README](../services/argo/README.md)
-- **Getting Started**: [Deployment guide](../getting-started.md) (Steps 5-6: Bundle 5 & 6 deployment)
+- **Getting Started**: [Deployment guide](../getting-started.md) (Steps 5-6: GitOps &amp; CI/CD deployment)
 - **Platform Overview**: [Architecture overview](./overview.md)

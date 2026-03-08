@@ -56,6 +56,34 @@ graph TD
 - GitLab SSH is a special case: separate port (2222), TCP-based routing, same Traefik
 - All services run inside Kubernetes (plain HTTP) and Traefik handles all encryption
 
+### Request Routing Decision Tree
+
+```mermaid
+flowchart TD
+    A["Request arrives"] --> B{"HTTPS or TCP?"}
+    B -->|"TCP (port 2222)"| C["GitLab SSH"]
+    B -->|"HTTPS"| D{"Hostname matches\na Gateway?"}
+    D -->|"No"| E["404 Not Found"]
+    D -->|"Yes"| F{"Gateway has\nTLS cert?"}
+    F -->|"No"| G["cert-manager\ncreates cert"]
+    G --> H["TLS termination"]
+    F -->|"Yes"| H
+    H --> I{"HTTPRoute has\nauth middleware?"}
+    I -->|"Yes"| J["OAuth2-proxy\nvalidates token"]
+    J --> K["Forward to service"]
+    I -->|"No"| K
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,D,F,I decision
+    class G,H,J action
+    class C,K success
+    class E failure
+```
+
 ---
 
 ## How It Works: A Browser Request
@@ -153,7 +181,7 @@ All Gateways use the same GatewayClass (`traefik`), which tells Kubernetes to us
 
 ### Current State
 
-No NetworkPolicies are deployed on the cluster. This was a deliberate decision made during Bundle 2 (Identity) deployment when NetworkPolicies conflicted with the CNPG operator's rolling upgrade behavior.
+No NetworkPolicies are deployed on the cluster. This was a deliberate decision made during Identity stack deployment when NetworkPolicies conflicted with the CNPG operator's rolling upgrade behavior.
 
 ### Why?
 
