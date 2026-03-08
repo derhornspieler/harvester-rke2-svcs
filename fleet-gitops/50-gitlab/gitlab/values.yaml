@@ -206,11 +206,11 @@ gitlab-runner:
 installCertmanager: false
 
 ## ── cert-manager issuer ──────────────────────────────────────────────────────
-## Disabled — vault-issuer ClusterIssuer handles TLS via Gateway annotations.
-## The issuer subchart creates a Job that gets TTL-cleaned, causing Fleet to
-## report "Modified" permanently. Disabling avoids this.
+## Not functionally used — vault-issuer ClusterIssuer handles TLS.
+## But the subchart has no disable condition, so we must provide email.
+## The issuer Job gets TTL-cleaned; Fleet correctDrift ignores this.
 certmanager-issuer:
-  install: false
+  email: admin@aegisgroup.ch
 
 ## ── Disable bundled NGINX ingress (using Traefik) ────────────────────────────
 nginx-ingress:
