@@ -1,0 +1,73 @@
+# Helm values for GitLab group runner (platform_services group)
+# Chart: gitlab/gitlab-runner
+# Docs: https://docs.gitlab.com/runner/install/kubernetes.html
+
+replicas: 1
+
+## GitLab instance URL — runner registers here
+gitlabUrl: https://gitlab.example.com
+
+## TLS certificates for GitLab instance trust (Vault CA chain)
+certsSecretName: gitlab-runner-certs
+
+## Runner registration token (created by GitLab chart)
+runners:
+  secret: gitlab-gitlab-runner-secret
+  config: |
+    [[runners]]
+      name = "platform-services-k8s-runner"
+      executor = "kubernetes"
+      [runners.kubernetes]
+        namespace = "gitlab-runners"
+        image = "alpine:3.21"
+        service_account = "gitlab-runner-sa"
+        pull_policy = ["if-not-present"]
+        [runners.kubernetes.node_selector]
+          "workload-type" = "compute"
+        [runners.kubernetes.volumes]
+          [[runners.kubernetes.volumes.config_map]]
+            name = "vault-root-ca"
+            mount_path = "/etc/ssl/certs/vault-root-ca.pem"
+            sub_path = "ca.crt"
+            read_only = true
+        [runners.kubernetes.pod_labels]
+          "app.kubernetes.io/managed-by" = "gitlab-runner"
+
+  ## Tags applied to this runner
+  tags: "group,kubernetes,platform-services"
+
+## Runner pod node selector (the runner manager pod itself)
+nodeSelector:
+  workload-type: general
+
+## Use pre-existing RBAC and ServiceAccount (from rbac.yaml)
+rbac:
+  create: false
+
+serviceAccount:
+  create: false
+  name: gitlab-runner-sa
+
+## Mount Root CA into the runner manager pod for GitLab TLS trust
+volumeMounts:
+  - name: vault-root-ca
+    mountPath: /etc/ssl/certs/vault-root-ca.pem
+    subPath: ca.crt
+    readOnly: true
+
+volumes:
+  - name: vault-root-ca
+    secret:
+      secretName: gitlab-runner-certs
+
+## Prometheus metrics
+metrics:
+  enabled: true
+  portName: metrics
+  port: 9252
+
+## Resource requests for the runner manager pod
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi

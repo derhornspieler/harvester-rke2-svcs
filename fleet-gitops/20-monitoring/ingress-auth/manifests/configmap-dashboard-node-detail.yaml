@@ -252,7 +252,7 @@ data:
           "targets": [
             {
               "expr": "rate(node_cpu_seconds_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "{{mode}}",
+              "legendFormat": "{{ "{{mode}}" }}",
               "refId": "A"
             }
           ]
@@ -324,12 +324,12 @@ data:
           "targets": [
             {
               "expr": "rate(node_disk_read_bytes_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Read {{device}}",
+              "legendFormat": "Read {{ "{{device}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(node_disk_written_bytes_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Write {{device}}",
+              "legendFormat": "Write {{ "{{device}}" }}",
               "refId": "B"
             }
           ]
@@ -366,12 +366,12 @@ data:
           "targets": [
             {
               "expr": "rate(node_disk_reads_completed_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Reads {{device}}",
+              "legendFormat": "Reads {{ "{{device}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(node_disk_writes_completed_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Writes {{device}}",
+              "legendFormat": "Writes {{ "{{device}}" }}",
               "refId": "B"
             }
           ]
@@ -399,12 +399,12 @@ data:
           "targets": [
             {
               "expr": "rate(node_network_receive_bytes_total{instance=~\"$instance\",device!~\"lo|veth.*|cali.*|lxc.*\"}[5m]) * 8",
-              "legendFormat": "Receive {{device}}",
+              "legendFormat": "Receive {{ "{{device}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(node_network_transmit_bytes_total{instance=~\"$instance\",device!~\"lo|veth.*|cali.*|lxc.*\"}[5m]) * 8",
-              "legendFormat": "Transmit {{device}}",
+              "legendFormat": "Transmit {{ "{{device}}" }}",
               "refId": "B"
             }
           ]
@@ -432,12 +432,12 @@ data:
           "targets": [
             {
               "expr": "rate(node_network_receive_errs_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Receive Errors {{device}}",
+              "legendFormat": "Receive Errors {{ "{{device}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(node_network_transmit_errs_total{instance=~\"$instance\"}[5m])",
-              "legendFormat": "Transmit Errors {{device}}",
+              "legendFormat": "Transmit Errors {{ "{{device}}" }}",
               "refId": "B"
             }
           ]
@@ -602,7 +602,7 @@ data:
           "id": 16,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "topk(10, sum by (pod) (rate(container_cpu_usage_seconds_total{node=~\"$node\", container!=\"\", container!=\"POD\"}[5m])))", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"expr": "topk(10, sum by (pod) (rate(container_cpu_usage_seconds_total{node=~\"$node\", container!=\"\", container!=\"POD\"}[5m])))", "legendFormat": "{{ "{{pod}}" }}", "refId": "A"}]
         }
       ],
       "schemaVersion": 39,

@@ -1,0 +1,193 @@
+---
+# argocd-gitlab-setup: Creates GitLab deploy token and connects ArgoCD to GitLab
+# Requires: GitLab running, ArgoCD running, Vault accessible
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-gitlab-setup
+  namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-gitlab-setup
+  namespace: argocd
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-gitlab-setup
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: argocd-gitlab-setup
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: argocd-gitlab-setup
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argocd-gitlab-setup
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["vault-init-keys", "gitlab-gitlab-initial-root-password"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argocd-gitlab-setup
+subjects:
+  - kind: ServiceAccount
+    name: argocd-gitlab-setup
+    namespace: argocd
+roleRef:
+  kind: ClusterRole
+  name: argocd-gitlab-setup
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: argocd-gitlab-setup
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-gitlab-setup
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: argocd-gitlab-setup
+    spec:
+      serviceAccountName: argocd-gitlab-setup
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: setup
+          image: docker.io/alpine/k8s:1.32.4
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              DOMAIN="example.com"
+              GITLAB_URL="https://gitlab.${DOMAIN}"
+
+              log()  { echo "[$(date +%H:%M:%S)] $*"; }
+              die()  { log "FATAL: $*"; exit 1; }
+
+              # --- Load Vault root token ---
+              init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
+              ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+              [[ -n "$ROOT_TOKEN" ]] || die "Failed to extract root_token"
+
+              vexec() {
+                kubectl exec -n vault vault-0 -- env \
+                  VAULT_ADDR=http://127.0.0.1:8200 \
+                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  vault "$@"
+              }
+
+              # --- Get GitLab root password ---
+              GITLAB_ROOT_PASS=$(kubectl get secret gitlab-gitlab-initial-root-password -n gitlab -o jsonpath='{.data.password}' | base64 -d)
+              [[ -n "$GITLAB_ROOT_PASS" ]] || die "Could not read GitLab root password"
+
+              # --- Wait for GitLab API ---
+              log "Waiting for GitLab API..."
+              for i in $(seq 1 60); do
+                _code=$(curl -sk -o /dev/null -w "%{http_code}" "${GITLAB_URL}/users/sign_in" 2>/dev/null)
+                if [[ "$_code" == "200" || "$_code" == "302" ]]; then break; fi
+                sleep 5
+              done
+              _code=$(curl -sk -o /dev/null -w "%{http_code}" "${GITLAB_URL}/users/sign_in" 2>/dev/null)
+              [[ "$_code" == "200" || "$_code" == "302" ]] || die "GitLab not ready (HTTP ${_code})"
+              log "GitLab is ready"
+
+              # --- Authenticate as root ---
+              TOKEN=$(curl -sfk --data "grant_type=password&username=root&password=${GITLAB_ROOT_PASS}" \
+                "${GITLAB_URL}/oauth/token" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+              [[ -n "$TOKEN" ]] || die "Could not authenticate as root"
+
+              # --- Check for existing token in Vault ---
+              ARGOCD_PAT=$(vexec kv get -field=pat kv/services/argocd 2>/dev/null) || ARGOCD_PAT=""
+
+              if [[ -z "$ARGOCD_PAT" ]]; then
+                # Create a Personal Access Token for root with repo read access
+                log "Creating GitLab PAT for ArgoCD..."
+                RESP=$(curl -sk -X POST \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  "${GITLAB_URL}/api/v4/users/1/personal_access_tokens" \
+                  -d '{"name":"argocd-deploy","scopes":["read_repository","read_registry","read_api"],"expires_at":"2027-01-01"}')
+
+                ARGOCD_PAT=$(echo "$RESP" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+                [[ -n "$ARGOCD_PAT" ]] || die "Failed to create PAT: ${RESP}"
+
+                # Store in Vault
+                vexec kv put kv/services/argocd \
+                  pat="$ARGOCD_PAT" \
+                  gitlab-url="${GITLAB_URL}"
+                log "PAT created and stored in Vault"
+              else
+                log "Using existing ArgoCD PAT from Vault"
+              fi
+
+              # --- Create ArgoCD repository credential secret ---
+              log "Creating ArgoCD repository credential..."
+              cat <<EOSECRET | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gitlab-repo-creds
+                namespace: argocd
+                labels:
+                  argocd.argoproj.io/secret-type: repo-creds
+              type: Opaque
+              stringData:
+                type: git
+                url: ${GITLAB_URL}
+                username: root
+                password: ${ARGOCD_PAT}
+              EOSECRET
+              log "ArgoCD repository credential created for ${GITLAB_URL}"
+
+              # --- Create default AppProject allowing GitLab repos ---
+              log "Patching default AppProject..."
+              kubectl patch appproject default -n argocd --type=merge -p '{
+                "spec": {
+                  "sourceRepos": ["'"${GITLAB_URL}"'/*", "*"],
+                  "destinations": [{"namespace": "*", "server": "*"}],
+                  "clusterResourceWhitelist": [{"group": "*", "kind": "*"}]
+                }
+              }'
+              log "Default AppProject updated to allow GitLab repos"
+
+              log "ArgoCD-GitLab setup complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

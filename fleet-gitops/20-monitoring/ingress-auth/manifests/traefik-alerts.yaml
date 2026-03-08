@@ -16,7 +16,7 @@ spec:
             severity: critical
           annotations:
             summary: "Traefik is down"
-            description: "Traefik instance on {{ $labels.node }} has been unreachable for more than 2 minutes."
+            description: 'Traefik instance on {{ "{{ $labels.node  }}" }} has been unreachable for more than 2 minutes.'
 
         - alert: TraefikHighErrorRate
           expr: sum(rate(traefik_service_requests_total{code=~"5.."}[5m])) / sum(rate(traefik_service_requests_total[5m])) * 100 > 5
@@ -25,4 +25,4 @@ spec:
             severity: warning
           annotations:
             summary: "Traefik high 5xx error rate"
-            description: 'Traefik 5xx error rate is {{ $value | printf "%.2f" }}% (threshold: 5%).'
+            description: 'Traefik 5xx error rate is {{ "{{ $value | humanizePercentage }}" }} (threshold: 5%).'

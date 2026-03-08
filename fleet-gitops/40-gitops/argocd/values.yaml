@@ -18,17 +18,17 @@
 global:
   nodeSelector:
     workload-type: general
-  domain: argo.CHANGEME_DOMAIN
+  domain: argo.example.com
 
 # ArgoCD config overrides
 configs:
   cm:
     timeout.reconciliation: 180s
     timeout.reconciliation.jitter: 60s
-    url: https://argo.CHANGEME_DOMAIN
+    url: https://argo.example.com
     oidc.config: |
       name: Keycloak
-      issuer: https://keycloak.CHANGEME_DOMAIN/realms/CHANGEME_KC_REALM
+      issuer: https://keycloak.example.com/realms/platform
       clientID: argocd
       clientSecret: $oidc.keycloak.clientSecret
       requestedScopes:

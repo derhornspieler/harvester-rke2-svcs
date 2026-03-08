@@ -57,7 +57,7 @@ data:
           "id": 2,
           "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 3}, {"color": "red", "value": 5}]}}},
           "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "targets": [{"expr": "changes(etcd_server_leader_changes_seen_total{job=\"etcd\"}[1h])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "changes(etcd_server_leader_changes_seen_total{job=\"etcd\"}[1h])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Total DB Size",
@@ -67,7 +67,7 @@ data:
           "id": 3,
           "fieldConfig": {"defaults": {"unit": "bytes", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 4294967296}, {"color": "red", "value": 6442450944}]}}},
           "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "targets": [{"expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Failed Proposals",
@@ -77,7 +77,7 @@ data:
           "id": 4,
           "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 5}]}}},
           "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
-          "targets": [{"expr": "increase(etcd_server_proposals_failed_total{job=\"etcd\"}[1h])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "increase(etcd_server_proposals_failed_total{job=\"etcd\"}[1h])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "gRPC Rate",
@@ -87,7 +87,7 @@ data:
           "id": 5,
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum(rate(grpc_server_started_total{grpc_type=\"unary\",job=\"etcd\"}[5m])) by (grpc_method)", "legendFormat": "{{grpc_method}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(grpc_server_started_total{grpc_type=\"unary\",job=\"etcd\"}[5m])) by (grpc_method)", "legendFormat": "{{ "{{grpc_method}}" }}", "refId": "A"}]
         },
         {
           "title": "Active Streams",
@@ -110,7 +110,7 @@ data:
           "id": 7,
           "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "etcd_mvcc_db_total_size_in_bytes{job=\"etcd\"}", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Disk WAL Fsync Duration",
@@ -120,7 +120,7 @@ data:
           "id": 8,
           "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 0.5}]}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket{job=\"etcd\"}[5m]))", "legendFormat": "p99 {{instance}}", "refId": "A"}]
+          "targets": [{"expr": "histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket{job=\"etcd\"}[5m]))", "legendFormat": "p99 {{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Disk Backend Commit Duration",
@@ -130,7 +130,7 @@ data:
           "id": 9,
           "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 0.25}]}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket{job=\"etcd\"}[5m]))", "legendFormat": "p99 {{instance}}", "refId": "A"}]
+          "targets": [{"expr": "histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket{job=\"etcd\"}[5m]))", "legendFormat": "p99 {{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Raft Proposals",
@@ -155,7 +155,7 @@ data:
           "id": 11,
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "rate(etcd_network_client_grpc_received_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "rate(etcd_network_client_grpc_received_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Client Traffic Out",
@@ -165,7 +165,7 @@ data:
           "id": 12,
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "rate(etcd_network_client_grpc_sent_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "rate(etcd_network_client_grpc_sent_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Peer Traffic In",
@@ -175,7 +175,7 @@ data:
           "id": 13,
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "rate(etcd_network_peer_received_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "rate(etcd_network_peer_received_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Peer Traffic Out",
@@ -185,7 +185,7 @@ data:
           "id": 14,
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "rate(etcd_network_peer_sent_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "rate(etcd_network_peer_sent_bytes_total{job=\"etcd\"}[5m])", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         }
       ],
       "schemaVersion": 39,

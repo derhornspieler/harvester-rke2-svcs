@@ -19,6 +19,7 @@ CHARTS=(
   "harbor|https://helm.goharbor.io|1.18.2"
   "gitlab|https://charts.gitlab.io|9.9.2"
   "gitlab-runner|https://charts.gitlab.io|0.86.0"
+  "redis-operator|https://ot-container-kit.github.io/helm-charts|0.23.0"
 )
 
 # OCI charts (already OCI, just re-tag to Harbor)
