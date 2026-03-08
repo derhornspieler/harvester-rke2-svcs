@@ -52,3 +52,6 @@ Thumbs.db
 # Project memory (local context)
 memory/
 services/pki/roots/root-ca.srl
+
+# Design/planning docs (Claude-generated, local only)
+docs/plans/
