@@ -105,8 +105,8 @@ graph LR
     style Runners fill:#e65100,color:#fff
 ```
 
-See [docs/architecture.md](docs/architecture.md) for detailed diagrams
-covering the PKI hierarchy, network architecture, deployment phases, and data flows.
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the full
+platform architecture with leadership-readable ecosystem diagrams.
 
 ## Quick Start
 
@@ -241,9 +241,19 @@ docs/                        # Architecture and getting started guides
 
 ## Documentation
 
-- [Architecture Overview](docs/architecture.md) -- PKI hierarchy, monitoring
-  pipeline, Harbor storage architecture, identity flow, GitOps platform, GitLab
-  CI/CD architecture, deployment phases, and component relationships
+### Ecosystem Architecture (Leadership-Readable)
+
+- [Platform Overview](docs/architecture/overview.md) -- master diagram, service catalog, bundle dependencies
+- [Authentication & Identity](docs/architecture/authentication-identity.md) -- Keycloak, OIDC, OAuth2-proxy, group-based access
+- [Networking & Ingress](docs/architecture/networking-ingress.md) -- Traefik, Gateway API, TLS termination, traffic flow
+- [PKI & Certificates](docs/architecture/pki-certificates.md) -- Root CA, Vault Intermediate, cert-manager, trust chain
+- [CI/CD Pipeline](docs/architecture/cicd-pipeline.md) -- GitLab, Runners, Harbor, ArgoCD, progressive delivery
+- [Observability & Monitoring](docs/architecture/observability-monitoring.md) -- Prometheus, Grafana, Loki, Alloy, Hubble
+- [Data & Storage](docs/architecture/data-storage.md) -- PostgreSQL HA, Redis Sentinel, MinIO, backup strategy
+- [Secrets & Configuration](docs/architecture/secrets-configuration.md) -- Vault KV, ESO, credential lifecycle
+
+### Operations & Guides
+
 - [Getting Started Guide](docs/getting-started.md) -- step-by-step deployment
   of all six bundles, verification, and troubleshooting
 - [Contributing](CONTRIBUTING.md) -- how to add services, coding conventions,
