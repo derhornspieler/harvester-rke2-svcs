@@ -1,0 +1,84 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-pg
+  namespace: database
+spec:
+  target:
+    selector:
+      matchLabels:
+        cnpg.io/cluster: gitlab-postgresql
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 200Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-0
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitaly-0
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-1
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitaly-1
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-2
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitaly-2
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-redis
+  namespace: gitlab
+spec:
+  target:
+    selector:
+      matchLabels:
+        app: gitlab-redis
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 50Gi
+  increasePercent: 25
+  increaseMinimum: 2Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
