@@ -16,41 +16,41 @@ block-beta
 
     block:security["🔒 Security &amp; PKI"]:2
         RootCA["Offline Root CA"]
-        Vault["Vault HA\n(Secrets + Intermediate CA)"]
-        CertMgr["cert-manager\n(Auto TLS)"]
-        ESO["External Secrets\nOperator"]
+        Vault["Vault HA<br/>(Secrets + Intermediate CA)"]
+        CertMgr["cert-manager<br/>(Auto TLS)"]
+        ESO["External Secrets<br/>Operator"]
     end
 
     block:identity["🔐 Identity &amp; Access"]
-        KC["Keycloak\n(OIDC Provider)"]
-        OAuth["OAuth2-proxy\n(Auth Gateway)"]
+        KC["Keycloak<br/>(OIDC Provider)"]
+        OAuth["OAuth2-proxy<br/>(Auth Gateway)"]
     end
 
     block:monitoring["📊 Observability"]:2
-        Prom["Prometheus\n(Metrics)"]
-        Graf["Grafana\n(Dashboards)"]
-        Loki["Loki\n(Logs)"]
-        Alloy["Alloy\n(Collector)"]
-        Hubble["Hubble\n(Network Flows)"]
-        AM["Alertmanager\n(Alerts)"]
+        Prom["Prometheus<br/>(Metrics)"]
+        Graf["Grafana<br/>(Dashboards)"]
+        Loki["Loki<br/>(Logs)"]
+        Alloy["Alloy<br/>(Collector)"]
+        Hubble["Hubble<br/>(Network Flows)"]
+        AM["Alertmanager<br/>(Alerts)"]
     end
 
     block:platform["🚀 Platform"]
-        ArgoCD["ArgoCD\n(GitOps Deploy)"]
-        Rollouts["Argo Rollouts\n(Canary/Blue-Green)"]
-        Workflows["Argo Workflows\n(Automation)"]
+        ArgoCD["ArgoCD<br/>(GitOps Deploy)"]
+        Rollouts["Argo Rollouts<br/>(Canary/Blue-Green)"]
+        Workflows["Argo Workflows<br/>(Automation)"]
     end
 
     block:cicd["💻 CI/CD"]:2
-        GitLab["GitLab EE\n(Source + Pipelines)"]
-        Runners["GitLab Runners\n(Job Execution)"]
-        Harbor["Harbor\n(Container Registry)"]
+        GitLab["GitLab EE<br/>(Source + Pipelines)"]
+        Runners["GitLab Runners<br/>(Job Execution)"]
+        Harbor["Harbor<br/>(Container Registry)"]
     end
 
     block:data["💾 Data &amp; Storage"]
-        CNPG["PostgreSQL HA\n(3 Clusters)"]
-        Redis["Redis Sentinel\n(Cache)"]
-        MinIO["MinIO\n(Object Storage)"]
+        CNPG["PostgreSQL HA<br/>(3 Clusters)"]
+        Redis["Redis Sentinel<br/>(Cache)"]
+        MinIO["MinIO<br/>(Object Storage)"]
     end
 
     style security fill:#dc3545,color:#fff
