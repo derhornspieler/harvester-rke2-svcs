@@ -1,0 +1,3 @@
+defaultNamespace: minio
+targets:
+  - clusterName: rke2-prod

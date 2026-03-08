@@ -1,0 +1,19 @@
+defaultNamespace: harbor
+helm:
+  releaseName: harbor
+  chart: oci://harbor.aegisgroup.ch/helm/harbor
+  version: "1.18.2"
+  valuesFiles:
+    - values.yaml
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: minio
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: cnpg-harbor
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: valkey
+targets:
+  - clusterName: rke2-prod
