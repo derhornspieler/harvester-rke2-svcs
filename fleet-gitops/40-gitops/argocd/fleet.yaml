@@ -1,0 +1,9 @@
+defaultNamespace: argocd
+helm:
+  releaseName: argocd
+  chart: oci://harbor.example.com/helm/argo-cd
+  version: "9.4.7"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod
