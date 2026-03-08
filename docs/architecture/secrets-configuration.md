@@ -59,13 +59,13 @@ graph TD
 
 ```mermaid
 flowchart TD
-    A["Application needs\ncredential"] --> B{"K8s Secret\nexists?"}
-    B -->|"Yes"| C{"Fresh?\nwithin 15min"}
+    A["Application needs<br/>credential"] --> B{"K8s Secret<br/>exists?"}
+    B -->|"Yes"| C{"Fresh?<br/>within 15min"}
     C -->|"Yes"| D["Use cached secret"]
-    C -->|"No"| E["ESO refreshes\nfrom Vault"]
+    C -->|"No"| E["ESO refreshes<br/>from Vault"]
     E --> F["Updated K8s Secret"]
     F --> D
-    B -->|"No"| G{"ExternalSecret\nCR exists?"}
+    B -->|"No"| G{"ExternalSecret<br/>CR exists?"}
     G -->|"No"| H["Create ExternalSecret CR"]
     H --> I["ESO syncs from Vault"]
     G -->|"Yes"| I

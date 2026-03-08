@@ -62,14 +62,14 @@ graph TD
 flowchart TD
     A["Request arrives"] --> B{"HTTPS or TCP?"}
     B -->|"TCP (port 2222)"| C["GitLab SSH"]
-    B -->|"HTTPS"| D{"Hostname matches\na Gateway?"}
+    B -->|"HTTPS"| D{"Hostname matches<br/>a Gateway?"}
     D -->|"No"| E["404 Not Found"]
-    D -->|"Yes"| F{"Gateway has\nTLS cert?"}
-    F -->|"No"| G["cert-manager\ncreates cert"]
+    D -->|"Yes"| F{"Gateway has<br/>TLS cert?"}
+    F -->|"No"| G["cert-manager<br/>creates cert"]
     G --> H["TLS termination"]
     F -->|"Yes"| H
-    H --> I{"HTTPRoute has\nauth middleware?"}
-    I -->|"Yes"| J["OAuth2-proxy\nvalidates token"]
+    H --> I{"HTTPRoute has<br/>auth middleware?"}
+    I -->|"Yes"| J["OAuth2-proxy<br/>validates token"]
     J --> K["Forward to service"]
     I -->|"No"| K
 
