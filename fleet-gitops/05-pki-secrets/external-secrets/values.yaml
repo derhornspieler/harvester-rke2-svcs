@@ -1,0 +1,7 @@
+crds:
+  createClusterExternalSecret: true
+  createClusterSecretStore: true
+  createPushSecret: true
+
+serviceMonitor:
+  enabled: true
