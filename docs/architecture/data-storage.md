@@ -146,14 +146,16 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 - Backups are incremental when possible (only changed data blocks are backed up)
 - All backups are stored in MinIO under the cluster-specific path
 
-**Backup Retention**
+#### Backup Retention
+
 - Retention policy: `1d` (one day of backups retained)
 - Backups older than 1 day are automatically deleted
 - WAL files for the same retention window are kept alongside backups
 
 ### Recovery Procedure
 
-**Restore to Latest State**
+#### Restore to Latest State
+
 ```
 1. kubectl get cluster -n database <cluster-name> -o yaml > cluster-backup.yaml
 2. Edit cluster-backup.yaml: change metadata.name to <cluster-name>-recovered
@@ -163,11 +165,13 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 6. Update service DNS/connection strings to point to recovered cluster
 ```
 
-**Restore to Specific Point in Time**
+#### Restore to Specific Point in Time
+
 - Include targetTime parameter in bootstrap.recovery section
 - CNPG will restore to the nearest base backup, then replay WAL files until the specified time
 
-**Verification**
+#### Verification
+
 - Check cluster health: `kubectl get cluster <name> -o wide`
 - Verify data by querying the recovered database
 - Validate application connectivity
@@ -178,31 +182,37 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 
 ### PostgreSQL High Availability (CNPG)
 
-**Automatic Failover**
+#### Automatic Failover
+
 - Each PostgreSQL cluster runs 3 replicas (1 primary + 2 read replicas)
 - If the primary fails, CNPG automatically promotes one replica to primary (typically within 10-30 seconds)
 - Applications transparently reconnect to the new primary
 
-**Pod Anti-Affinity**
+#### Pod Anti-Affinity
+
 - Each PostgreSQL pod is pinned to a separate database node (`workload-type: database`)
 - CNPG ensures only one replica per node — if a node fails, one replica is lost but the cluster remains healthy
 
-**Read Scaling**
+#### Read Scaling
+
 - Read replicas are accessible via the `-ro` service endpoint
 - Reporting and monitoring queries can be directed to replicas to reduce primary load
 
-**Node Failure Recovery**
+#### Node Failure Recovery
+
 - If a database node becomes unavailable, CNPG automatically re-creates the pod on a healthy node
 - Data is re-synced from the primary via streaming replication
 
 ### Redis/Valkey High Availability (Sentinel)
 
-**Automatic Master Election**
+#### Automatic Master Election
+
 - Each Redis/Valkey cluster has 3 Sentinel pods watching the primary
 - If the primary becomes unavailable, Sentinels hold an election and promote a replica to primary
 - Promotion typically takes 30-60 seconds
 
-**Session Loss Tolerance**
+#### Session Loss Tolerance
+
 - If a Sentinel node fails, the remaining 2 Sentinels continue monitoring (requires 2/3 quorum)
 - If the entire cluster fails, sessions are lost but the application continues to operate (database contains the authoritative state)
 
@@ -226,47 +236,56 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 
 ### Monitoring & Observability
 
-**PostgreSQL Metrics**
+#### PostgreSQL Metrics
+
 - CNPG exports Prometheus metrics for all clusters
 - Grafana dashboards display replica lag, connection count, transaction rate, and cache hit ratio
 - Alerts fire if any replica falls more than 10MB behind the primary
 
-**Redis/Valkey Metrics**
+#### Redis/Valkey Metrics
+
 - Redis Exporter exposes memory usage, command latency, and keyspace statistics
 - Sentinel-specific metrics track failover count and quorum status
 - Grafana dashboards display cache hit ratio and eviction rate
 
-**MinIO Metrics**
+#### MinIO Metrics
+
 - MinIO exposes object count, bucket size, and S3 request latency
 - Alerts fire if available disk space drops below 10%
 
-**Backup Status**
+#### Backup Status
+
 - CNPG logs all backup operations (start time, duration, size, completion status)
 - Prometheus alerts notify operators if a backup fails or if WAL archival falls behind
 
 ### Capacity Planning
 
-**Storage Growth**
+#### Storage Growth
+
 - PostgreSQL storage is monitored for growth rate per cluster
 - GitLab-pg grows fastest (~500MB/week) due to CI/CD artifacts and project data
 - All PVCs use VolumeAutoscaler CRs to auto-expand at 80% capacity
 
-**Backup Storage**
+#### Backup Storage
+
 - MinIO capacity must accommodate: 1 day × 3 clusters × (base backup + WAL files)
 - Estimate: ~30-50GB per day for typical workload
 - Current allocation: 200Gi (sufficient for 4-5 days of backups)
 
 ### Compliance & Standards
 
-**ACID Guarantees**
+#### ACID Guarantees
+
 - PostgreSQL enforces ACID compliance — all transactions are durable
 - No data loss occurs in normal operation or after planned restarts
 
-**Encryption at Rest**
+#### Encryption at Rest
+
 - All PVCs use Harvester's storage encryption (via LUKS or similar)
 - Backup encryption is inherited from MinIO's storage backend
 
-**Audit Trail**
+#### Audit Trail
+
 - PostgreSQL `log_connections` and `log_disconnections` parameters log all access
 - Vault audit logs track all PKI operations
 - MinIO S3 access logs record all object operations (if enabled)
@@ -354,7 +373,7 @@ gitlab-artifacts/       # CI/CD job artifacts
 
 ### Accessing Databases from Applications
 
-**Connection Strings**
+#### Connection Strings
 
 Each CNPG cluster creates two Kubernetes services:
 
@@ -429,20 +448,24 @@ spec:
 ## Integration with Other Ecosystems
 
 ### PKI & Certificates
+
 - PostgreSQL servers expose metrics on TLS endpoints protected by cert-manager-issued certificates
 - Backup S3 endpoint uses HTTPS (if configured) with certs from Root CA → Vault → cert-manager chain
 
 ### Secrets & Configuration
+
 - All database credentials (passwords, access keys) are stored in Vault KV paths
 - ESO fetches credentials from Vault and injects them as Kubernetes Secrets
 - Applications mount these secrets as environment variables or volume files
 
 ### Observability & Monitoring
+
 - Prometheus scrapes metrics from all PostgreSQL, Redis, and MinIO instances
 - Grafana displays dashboards for database health, replica lag, and backup status
 - Alertmanager notifies on-call engineers if any data service becomes unhealthy
 
 ### CI/CD Pipeline
+
 - GitLab writes artifacts to MinIO buckets (via GitLab Runners)
 - Harbor pushes backup images to MinIO
 - ArgoCD reads backup metadata from MinIO to trigger disaster recovery workflows
@@ -461,16 +484,19 @@ spec:
 ## Runbooks & Operations
 
 ### Runbooks
+
 - [Disaster Recovery: Point-in-Time Restore](../guides/disaster-recovery.md) — Step-by-step guide to recover a database to a specific moment in time
 - [Database Failover Procedure](../guides/day2-operations.md#database-failover) — Manual failover if automatic promotion fails
 - [MinIO Out-of-Space Recovery](../guides/troubleshooting.md#minio-disk-full) — Expand MinIO storage or delete old backups
 
 ### Monitoring Dashboards
+
 - Grafana → CloudNativePG dashboard — Replica lag, transaction rate, checkpoint progress
 - Grafana → Redis dashboard — Memory usage, commands/sec, keyspace statistics
 - Grafana → MinIO dashboard — Object count, bucket size, S3 request latency
 
 ### Alert Policies
+
 - `PostgreSQLReplicaLag` — Fires if any replica is &gt;10MB behind primary
 - `MinIODiskFull` — Fires if available space &lt;10%
 - `BackupFailure` — Fires if daily backup does not complete within 1 hour
