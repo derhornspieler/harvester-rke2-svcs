@@ -392,6 +392,70 @@ if [[ "${DELETE_MODE}" == true ]]; then
   exit 0
 fi
 
+# --- Ensure harbor-helm-ca secret exists on management cluster ---
+# Fleet HelmOps reference this secret to pull OCI charts from Harbor over TLS.
+# The root CA is extracted from the Rancher downstream cluster's kubeconfig
+# (the CA that signed Harbor's TLS certificate).
+ensure_harbor_helm_ca() {
+  local existing
+  existing=$(rancher_api GET "/k8s/clusters/local/api/v1/namespaces/fleet-default/secrets/harbor-helm-ca" 2>/dev/null | \
+    python3 -c "import sys,json; print(json.load(sys.stdin).get('metadata',{}).get('name',''))" 2>/dev/null || echo "")
+  if [[ "${existing}" == "harbor-helm-ca" ]]; then
+    log_ok "harbor-helm-ca secret already exists"
+    return 0
+  fi
+
+  log_info "Creating harbor-helm-ca secret on management cluster..."
+
+  # Extract root CA from Harbor's TLS chain
+  local ca_pem
+  ca_pem=$(echo | openssl s_client -connect "${HARBOR}:443" -showcerts 2>/dev/null | \
+    awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' | \
+    awk 'BEGIN{n=0} /BEGIN CERTIFICATE/{n++} n>=2{print}')
+
+  if [[ -z "${ca_pem}" ]]; then
+    # Fallback: try getting from Rancher cluster provisioning config
+    ca_pem=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+      python3 -c "
+import sys,json,base64
+data=json.load(sys.stdin)
+for c in data.get('data',[]):
+    if c.get('name') not in ('local',''):
+        ca = c.get('caCert','')
+        if ca:
+            print(ca)
+            break
+" 2>/dev/null || echo "")
+  fi
+
+  if [[ -z "${ca_pem}" ]]; then
+    log_warn "Could not extract root CA — harbor-helm-ca must be created manually"
+    return 1
+  fi
+
+  local ca_b64
+  ca_b64=$(echo "${ca_pem}" | base64 -w0)
+
+  local harbor_user="${HARBOR_USER:-admin}"
+  local harbor_pass="${HARBOR_PASS:-Harbor12345}"
+
+  rancher_api POST "/k8s/clusters/local/api/v1/namespaces/fleet-default/secrets" -d "$(jq -n \
+    --arg ca "${ca_b64}" \
+    --arg user "$(echo -n "${harbor_user}" | base64 -w0)" \
+    --arg pass "$(echo -n "${harbor_pass}" | base64 -w0)" \
+    '{
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: {name: "harbor-helm-ca", namespace: "fleet-default"},
+      type: "Opaque",
+      data: {cacerts: $ca, username: $user, password: $pass}
+    }')" > /dev/null 2>&1
+
+  log_ok "Created harbor-helm-ca secret"
+}
+
+ensure_harbor_helm_ca
+
 # Deploy HelmOps
 deployed=0
 failed=0
