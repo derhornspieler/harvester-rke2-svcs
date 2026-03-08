@@ -15,7 +15,7 @@ set -euo pipefail
 #   ./deploy-fleet-bundles.sh --status           # Show bundle deployment status
 #
 # Prerequisites:
-#   - Rancher API access (reads from terraform.tfvars in harvester-rke2-cluster)
+#   - Rancher API access (reads from .env file or environment variables)
 #   - Helm charts already pushed to Harbor (run push-charts.sh first)
 #   - Root CA secret pre-seeded on rke2-prod (for vault-init)
 
@@ -29,8 +29,6 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
-CLUSTER_REPO="${HOME}/code/harvester-rke2-cluster"
-
 # --- Logging ---
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
 log_ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
@@ -38,16 +36,18 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 die()       { log_error "$*"; exit 1; }
 
-# --- Config ---
+# --- Config from .env or environment ---
 load_config() {
-  local tfvars="${CLUSTER_REPO}/terraform.tfvars"
-  [[ -f "${tfvars}" ]] || die "terraform.tfvars not found at ${tfvars}"
+  local env_file="${FLEET_DIR}/.env"
+  if [[ -f "${env_file}" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${env_file}"
+    set +a
+  fi
 
-  RANCHER_URL=$(awk -F'"' '/^rancher_url[[:space:]]/ {print $2}' "${tfvars}")
-  RANCHER_TOKEN=$(awk -F'"' '/^rancher_token[[:space:]]/ {print $2}' "${tfvars}")
-
-  [[ -n "${RANCHER_URL}" ]] || die "rancher_url not found in terraform.tfvars"
-  [[ -n "${RANCHER_TOKEN}" ]] || die "rancher_token not found in terraform.tfvars"
+  [[ -n "${RANCHER_URL:-}" ]] || die "RANCHER_URL not set (export it or add to ${env_file})"
+  [[ -n "${RANCHER_TOKEN:-}" ]] || die "RANCHER_TOKEN not set (export it or add to ${env_file})"
 }
 
 # --- Rancher API ---
