@@ -1,0 +1,50 @@
+stages:
+  - build
+  - scan
+  - push
+  - deploy
+
+variables:
+  REGISTRY: harbor.CHANGEME_DOMAIN
+  IMAGE_NAME: $REGISTRY/library/microservice-demo
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+# Build Docker image with Kaniko
+build:image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script:
+    - |
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
+        --destination "$IMAGE_NAME:$IMAGE_TAG" \
+        --destination "$IMAGE_NAME:latest"
+  only:
+    - main
+
+# Scan image with Trivy
+scan:image:
+  stage: scan
+  image:
+    name: aquasec/trivy:0.58.2
+    entrypoint: [""]
+  script:
+    - trivy image --severity HIGH,CRITICAL "$IMAGE_NAME:$IMAGE_TAG"
+  allow_failure: true
+  only:
+    - main
+
+# Deploy via ArgoCD
+deploy:argocd:
+  stage: deploy
+  image: bitnami/kubectl:1.30
+  script:
+    - kubectl apply -f k8s/argocd-app.yaml
+  environment:
+    name: production
+  only:
+    - main
+  when: manual
