@@ -1,0 +1,9 @@
+defaultNamespace: argo-rollouts
+helm:
+  releaseName: argo-rollouts
+  chart: oci://harbor.aegisgroup.ch/helm/argo-rollouts
+  version: "2.40.6"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod

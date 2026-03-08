@@ -1,0 +1,298 @@
+# ArgoCD Helm values for RKE2 cluster (HA)
+# Chart: argo/argo-cd
+#
+# Deploy:
+#   kubectl apply -f services/argo/argocd/namespace.yaml
+#   helm install argocd argo/argo-cd -n argocd \
+#     -f services/argo/argocd/argocd-values.yaml --wait
+#
+# Post-deploy (IngressRoute + TLS certificate + repo secret):
+#   kubectl apply -f services/argo/argocd/secret-repo.yaml \
+#                 -f services/argo/argocd/certificate.yaml \
+#                 -f services/argo/argocd/ingressroute.yaml
+#
+# Get initial admin password:
+#   kubectl -n argocd get secret argocd-initial-admin-secret \
+#     -o jsonpath='{.data.password}' | base64 -d
+
+global:
+  nodeSelector:
+    workload-type: general
+  domain: argo.CHANGEME_DOMAIN
+
+# ArgoCD config overrides
+configs:
+  cm:
+    timeout.reconciliation: 180s
+    timeout.reconciliation.jitter: 60s
+    url: https://argo.CHANGEME_DOMAIN
+    oidc.config: |
+      name: Keycloak
+      issuer: https://keycloak.CHANGEME_DOMAIN/realms/CHANGEME_KC_REALM
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+      requestedIDTokenClaims:
+        groups:
+          essential: true
+      enablePKCEAuthentication: false
+      rootCA: |
+        -----BEGIN CERTIFICATE-----
+        MIIFkjCCA3qgAwIBAgIUI/qXihl2g5m64Cv/mAQlkL/ZbxQwDQYJKoZIhvcNAQEL
+        BQAwNDEUMBIGA1UECgwLQWVnaXMgR3JvdXAxHDAaBgNVBAMME0FlZ2lzIEdyb3Vw
+        IFJvb3QgQ0EwIBcNMjYwMjIxMjE0NTMzWhgPMjA1NjAyMTQyMTQ1MzNaMDQxFDAS
+        BgNVBAoMC0FlZ2lzIEdyb3VwMRwwGgYDVQQDDBNBZWdpcyBHcm91cCBSb290IENB
+        MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAkKrJFQi2L6xWZVHe5pQa
+        9b7LBnbXsas3l2of6JHw9weTnl7wJefHUcOrcaKUT9SeKL8VVgU4jv3LhPolFQsY
+        2+ibGEAasWorveY34x2oeQIF6LVs6lxwQrm3/Vwvi3jNCKmDGD+n+SPA1+4/jcdc
+        g5PprKptoBQVItec7LT/kVLrrvVEzvwdJ5GqOjDpDSZHUQnimmfWyR6YJVbGZqAq
+        +p/tX/960WLtLEUmXHAi5RWTLpavOyDM1y7CoOtfMi3VlVCPs9hm4dt5Fq9vgTQC
+        xjRE9J8LTl5JfASxPAIcP9E0X29uIVK36hvpib13H/mIWrUNHFuGPTqyvyjNz1MD
+        SMIe6ayVGI1+ng8Xr3LHCpVqPf5buZHl2L33LRE1zmEXIMVG02Ogrk24iW/68frV
+        bG2k1jpZ/I8bbCP+mNp90CjGEZgeQp5gDsJEHp6Cn3XkCF1Th0Idilm5j0Ami3e9
+        uAwGPvuRK4B8x9ROx3aUao76hH4bQNYMPioVIvKjyFhIZO1sBTLJTy3kFmIxCTIP
+        A+NDYsBP0Y2NAf50tk9QzcedJsP7pO9wfS+KTKBxw0uxdml2Zw8u/tPA8X62ug42
+        tOYkSp5STow49Brp5sEywl8dbzU8JXUqAPxvhyetATERNVmUCuHFdaV+MQnVO6QK
+        OtsBYYv3y3gjqx61e2S2jx0CAwEAAaOBmTCBljAPBgNVHRMBAf8EBTADAQH/MA4G
+        A1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQU9dv0+9OSsA/xo/t6ZeaupMdFg5MwVAYD
+        VR0eAQH/BEowSKBGMA+CDWFlZ2lzZ3JvdXAuY2gwD4INY2x1c3Rlci5sb2NhbDAK
+        hwgKAAAA/wAAADAKhwisEAAA//AAADAKhwjAqAAA//8AADANBgkqhkiG9w0BAQsF
+        AAOCAgEANB9V/s5k66kgTG27+4b+52wCqI7daDB/eJNQeryka/ojrkxC5p8EGGtO
+        lktWD58jFzmpLpuf1kwhggKDjD1kedri01vrshfx1ckj0a/z02NFvPA9edCxaVJ2
+        ZcGfzjhHuk99XKtC3Pk9x7mwnzxb4HllSzBYKsszsmrhQ/fEnORVwG/9Cl8iL4Z8
+        cUnZZoGNf8SEEsPvVpKEuxnv742mF0kN2k6txe3XxEvZGdgIeBxJDi/aZ1J7h2px
+        t0zurz+vPLDRL3c1oloB2WepfuIGYJiMFQDnnRzVPI2FrA638Kmby/gKtNP9YYhP
+        aKLPZ+SPV0qGE747DVkkHMFbvbl7M/9y64QAPmod22YjGCCT4DKH1UY76zdZdSCV
+        +I1luSuyvHIrisclqpFlp/u1NXgtoR6cwoGJNyASst0klaPKe6T4ba8OYCuhQgEr
+        Lx+q2JT5wz1zPVBkvf07ZfHTHRkO1cvTmD4tOsuntt2v5I1VP/izdSwbowLh91Eh
+        FsIZMPy69KYMRj/UdOWdErbKeLjuHpEmQMG1xfpOCVBbD41m76Dqf31Lwe09lUVZ
+        835iO2x0T+e1vCpjuKrOmZd1I5ReXjvc21DF9DvT9uoevkk9fYR6+48rK2i68fJ0
+        BDBYrJLOPdzmOzpF36/P4Ky25kcG3IaYall075aS2YsjbHUCCDg=
+        -----END CERTIFICATE-----
+  rbac:
+    policy.csv: |
+      g, platform-admins, role:admin
+      g, infra-engineers, role:admin
+      g, senior-developers, role:readonly
+      g, developers, role:readonly
+    policy.default: role:readonly
+    policy.matchMode: glob
+    scopes: "[groups]"
+  params:
+    # TLS terminated at Traefik — run server in plaintext mode
+    server.insecure: true
+  # Trust Keycloak CA for OIDC and repo connections
+  tls:
+    certificates:
+      keycloak.aegisgroup.ch: |
+        -----BEGIN CERTIFICATE-----
+        MIIFkjCCA3qgAwIBAgIUI/qXihl2g5m64Cv/mAQlkL/ZbxQwDQYJKoZIhvcNAQEL
+        BQAwNDEUMBIGA1UECgwLQWVnaXMgR3JvdXAxHDAaBgNVBAMME0FlZ2lzIEdyb3Vw
+        IFJvb3QgQ0EwIBcNMjYwMjIxMjE0NTMzWhgPMjA1NjAyMTQyMTQ1MzNaMDQxFDAS
+        BgNVBAoMC0FlZ2lzIEdyb3VwMRwwGgYDVQQDDBNBZWdpcyBHcm91cCBSb290IENB
+        MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAkKrJFQi2L6xWZVHe5pQa
+        9b7LBnbXsas3l2of6JHw9weTnl7wJefHUcOrcaKUT9SeKL8VVgU4jv3LhPolFQsY
+        2+ibGEAasWorveY34x2oeQIF6LVs6lxwQrm3/Vwvi3jNCKmDGD+n+SPA1+4/jcdc
+        g5PprKptoBQVItec7LT/kVLrrvVEzvwdJ5GqOjDpDSZHUQnimmfWyR6YJVbGZqAq
+        +p/tX/960WLtLEUmXHAi5RWTLpavOyDM1y7CoOtfMi3VlVCPs9hm4dt5Fq9vgTQC
+        xjRE9J8LTl5JfASxPAIcP9E0X29uIVK36hvpib13H/mIWrUNHFuGPTqyvyjNz1MD
+        SMIe6ayVGI1+ng8Xr3LHCpVqPf5buZHl2L33LRE1zmEXIMVG02Ogrk24iW/68frV
+        bG2k1jpZ/I8bbCP+mNp90CjGEZgeQp5gDsJEHp6Cn3XkCF1Th0Idilm5j0Ami3e9
+        uAwGPvuRK4B8x9ROx3aUao76hH4bQNYMPioVIvKjyFhIZO1sBTLJTy3kFmIxCTIP
+        A+NDYsBP0Y2NAf50tk9QzcedJsP7pO9wfS+KTKBxw0uxdml2Zw8u/tPA8X62ug42
+        tOYkSp5STow49Brp5sEywl8dbzU8JXUqAPxvhyetATERNVmUCuHFdaV+MQnVO6QK
+        OtsBYYv3y3gjqx61e2S2jx0CAwEAAaOBmTCBljAPBgNVHRMBAf8EBTADAQH/MA4G
+        A1UdDwEB/wQEAwIBBjAdBgNVHQ4EFgQU9dv0+9OSsA/xo/t6ZeaupMdFg5MwVAYD
+        VR0eAQH/BEowSKBGMA+CDWFlZ2lzZ3JvdXAuY2gwD4INY2x1c3Rlci5sb2NhbDAK
+        hwgKAAAA/wAAADAKhwisEAAA//AAADAKhwjAqAAA//8AADANBgkqhkiG9w0BAQsF
+        AAOCAgEANB9V/s5k66kgTG27+4b+52wCqI7daDB/eJNQeryka/ojrkxC5p8EGGtO
+        lktWD58jFzmpLpuf1kwhggKDjD1kedri01vrshfx1ckj0a/z02NFvPA9edCxaVJ2
+        ZcGfzjhHuk99XKtC3Pk9x7mwnzxb4HllSzBYKsszsmrhQ/fEnORVwG/9Cl8iL4Z8
+        cUnZZoGNf8SEEsPvVpKEuxnv742mF0kN2k6txe3XxEvZGdgIeBxJDi/aZ1J7h2px
+        t0zurz+vPLDRL3c1oloB2WepfuIGYJiMFQDnnRzVPI2FrA638Kmby/gKtNP9YYhP
+        aKLPZ+SPV0qGE747DVkkHMFbvbl7M/9y64QAPmod22YjGCCT4DKH1UY76zdZdSCV
+        +I1luSuyvHIrisclqpFlp/u1NXgtoR6cwoGJNyASst0klaPKe6T4ba8OYCuhQgEr
+        Lx+q2JT5wz1zPVBkvf07ZfHTHRkO1cvTmD4tOsuntt2v5I1VP/izdSwbowLh91Eh
+        FsIZMPy69KYMRj/UdOWdErbKeLjuHpEmQMG1xfpOCVBbD41m76Dqf31Lwe09lUVZ
+        835iO2x0T+e1vCpjuKrOmZd1I5ReXjvc21DF9DvT9uoevkk9fYR6+48rK2i68fJ0
+        BDBYrJLOPdzmOzpF36/P4Ky25kcG3IaYall075aS2YsjbHUCCDg=
+        -----END CERTIFICATE-----
+
+## Controller (Application Controller)
+controller:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-application-controller
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## Server (API + UI)
+server:
+  replicas: 2
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 50
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-server
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+  # Disable built-in ingress — using Traefik IngressRoute
+  ingress:
+    enabled: false
+
+## Repo Server
+repoServer:
+  replicas: 2
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 50
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-repo-server
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## ApplicationSet Controller
+applicationSet:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## Redis HA (required for HA ArgoCD) — using Valkey image
+redis-ha:
+  enabled: true
+
+  image:
+    repository: valkey/valkey
+    tag: 8-alpine
+
+  replicas: 3
+
+  haproxy:
+    enabled: true
+    image:
+      repository: docker.io/library/haproxy
+      tag: 2.9.4-alpine
+    affinity: |
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: redis-ha-haproxy
+              topologyKey: kubernetes.io/hostname
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  redis:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  sentinel:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+  persistentVolume:
+    enabled: true
+    size: 8Gi
+    storageClass: harvester
+
+  nodeSelector:
+    workload-type: general
+
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: redis-ha
+            topologyKey: kubernetes.io/hostname
+
+# Disable single-instance Redis (using redis-ha instead)
+redis:
+  enabled: false
+
+## Dex (SSO) — disabled, using direct OIDC with Keycloak
+dex:
+  enabled: false
+
+## Notifications — disabled for now
+notifications:
+  enabled: false

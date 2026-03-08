@@ -1,0 +1,9 @@
+defaultNamespace: argo-workflows
+helm:
+  releaseName: argo-workflows
+  chart: oci://harbor.aegisgroup.ch/helm/argo-workflows
+  version: "0.47.4"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod
