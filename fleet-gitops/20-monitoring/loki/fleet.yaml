@@ -1,0 +1,3 @@
+defaultNamespace: monitoring
+targets:
+  - clusterName: rke2-prod
