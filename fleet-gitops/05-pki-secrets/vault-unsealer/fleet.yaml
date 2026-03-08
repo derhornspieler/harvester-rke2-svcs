@@ -1,0 +1,7 @@
+defaultNamespace: vault
+helm:
+  chart: oci://harbor.aegisgroup.ch/fleet/pki-vault-unsealer
+  version: "1.0.2"
+  releaseName: pki-vault-unsealer
+dependsOn:
+  - name: pki-vault-init

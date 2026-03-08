@@ -6,7 +6,9 @@ extraArgs:
   - --enable-gateway-api
 
 # Prometheus ServiceMonitor
+# Disabled: CRDs from kube-prometheus-stack may not be available yet
+# Re-enable once monitoring is deployed
 prometheus:
-  enabled: true
+  enabled: false
   servicemonitor:
-    enabled: true
+    enabled: false

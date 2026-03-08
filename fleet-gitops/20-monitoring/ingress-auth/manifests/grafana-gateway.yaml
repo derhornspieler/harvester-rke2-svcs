@@ -19,11 +19,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: grafana.CHANGEME_DOMAIN
+      hostname: grafana.aegisgroup.ch
       tls:
         mode: Terminate
         certificateRefs:
-          - name: grafana-CHANGEME_DOMAIN_DASHED-tls
+          - name: grafana-aegisgroup-ch-tls
       allowedRoutes:
         namespaces:
           from: Same

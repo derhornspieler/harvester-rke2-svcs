@@ -15,8 +15,8 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Redis instance {{ $labels.job }} is down"
-            description: "Redis exporter {{ $labels.instance }} ({{ $labels.job }}) has been unreachable for more than 2 minutes."
+            summary: 'Redis instance {{ "{{ $labels.job  }}" }} is down'
+            description: 'Redis exporter {{ "{{ $labels.instance  }}" }} ({{ "{{ $labels.job  }}" }}) has been unreachable for more than 2 minutes.'
 
         - alert: RedisHighMemory
           expr: (redis_memory_used_bytes{job=~"harbor-redis|gitlab-redis"} / redis_memory_max_bytes{job=~"harbor-redis|gitlab-redis"} * 100 > 80) and redis_memory_max_bytes{job=~"harbor-redis|gitlab-redis"} > 0
@@ -24,8 +24,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Redis {{ $labels.job }} memory usage is high"
-            description: 'Redis {{ $labels.instance }} ({{ $labels.job }}) memory usage is at {{ $value | printf "%.1f" }}% of max for more than 10 minutes.'
+            summary: 'Redis {{ "{{ $labels.job  }}" }} memory usage is high'
+            description: 'Redis {{ "{{ $labels.instance  }}" }} ({{ "{{ $labels.job  }}" }}) memory usage is at {{ "{{ $value | humanizePercentage }}" }}% of max for more than 10 minutes.'
 
         - alert: RedisHighClientCount
           expr: (redis_connected_clients{job="harbor-redis"} > 200) or (redis_connected_clients{job="gitlab-redis"} > 1000)
@@ -33,8 +33,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Redis {{ $labels.job }} high client count"
-            description: 'Redis {{ $labels.instance }} ({{ $labels.job }}) has {{ $value }} connected clients.'
+            summary: 'Redis {{ "{{ $labels.job  }}" }} high client count'
+            description: 'Redis {{ "{{ $labels.instance  }}" }} ({{ "{{ $labels.job  }}" }}) has {{ "{{ $value  }}" }} connected clients.'
 
         - alert: RedisKeyEviction
           expr: rate(redis_evicted_keys_total{job=~"harbor-redis|gitlab-redis"}[5m]) > 0
@@ -42,5 +42,5 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Redis {{ $labels.job }} is evicting keys"
-            description: 'Redis {{ $labels.instance }} ({{ $labels.job }}) is evicting keys at {{ $value | printf "%.1f" }}/sec due to memory pressure.'
+            summary: 'Redis {{ "{{ $labels.job  }}" }} is evicting keys'
+            description: 'Redis {{ "{{ $labels.instance  }}" }} ({{ "{{ $labels.job  }}" }}) is evicting keys at {{ "{{ $value | humanize }}" }}/sec due to memory pressure.'

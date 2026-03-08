@@ -19,11 +19,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: alertmanager.CHANGEME_DOMAIN
+      hostname: alertmanager.aegisgroup.ch
       tls:
         mode: Terminate
         certificateRefs:
-          - name: alertmanager-CHANGEME_DOMAIN_DASHED-tls
+          - name: alertmanager-aegisgroup-ch-tls
       allowedRoutes:
         namespaces:
           from: Same

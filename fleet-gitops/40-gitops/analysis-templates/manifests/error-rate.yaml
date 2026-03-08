@@ -13,12 +13,12 @@ spec:
     - name: error-rate
       interval: 30s
       count: 5
-      successCondition: result[0] < asFloat(args.max-error-rate)
+      successCondition: "result[0] < asFloat(args.max-error-rate)"
       failureLimit: 2
       provider:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            sum(rate(http_requests_total{service="{{args.service-name}}",namespace="{{args.namespace}}",code=~"5.."}[2m]))
+            sum(rate(http_requests_total{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}",code=~"5.."}[2m]))
             /
-            sum(rate(http_requests_total{service="{{args.service-name}}",namespace="{{args.namespace}}"}[2m]))
+            sum(rate(http_requests_total{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}"}[2m]))

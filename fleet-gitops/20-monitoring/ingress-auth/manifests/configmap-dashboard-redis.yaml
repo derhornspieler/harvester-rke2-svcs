@@ -77,12 +77,12 @@ data:
           "targets": [
             {
               "expr": "redis_instance_info{job=~\"$cluster\", role=\"master\"} * 0",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "redis_instance_info{job=~\"$cluster\", role=\"slave\"} * 0 + 1",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{ "{{pod}}" }}",
               "refId": "B"
             }
           ]
@@ -322,7 +322,7 @@ data:
           "targets": [
             {
               "expr": "rate(redis_commands_processed_total{job=~\"$cluster\"}[5m])",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{ "{{pod}}" }}",
               "refId": "A"
             }
           ]
@@ -363,7 +363,7 @@ data:
           "targets": [
             {
               "expr": "rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m]) / (rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m]) + rate(redis_keyspace_misses_total{job=~\"$cluster\"}[5m]))",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{ "{{pod}}" }}",
               "refId": "A"
             }
           ]
@@ -395,17 +395,17 @@ data:
           "targets": [
             {
               "expr": "redis_memory_used_bytes{job=~\"$cluster\"}",
-              "legendFormat": "used {{pod}}",
+              "legendFormat": "used {{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "redis_memory_max_bytes{job=~\"$cluster\"} > 0",
-              "legendFormat": "limit {{pod}}",
+              "legendFormat": "limit {{ "{{pod}}" }}",
               "refId": "B"
             },
             {
               "expr": "redis_memory_used_rss_bytes{job=~\"$cluster\"}",
-              "legendFormat": "rss {{pod}}",
+              "legendFormat": "rss {{ "{{pod}}" }}",
               "refId": "C"
             }
           ]
@@ -435,12 +435,12 @@ data:
           "targets": [
             {
               "expr": "redis_connected_clients{job=~\"$cluster\"}",
-              "legendFormat": "{{pod}}",
+              "legendFormat": "{{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "redis_blocked_clients{job=~\"$cluster\"}",
-              "legendFormat": "blocked {{pod}}",
+              "legendFormat": "blocked {{ "{{pod}}" }}",
               "refId": "B"
             }
           ]
@@ -472,12 +472,12 @@ data:
           "targets": [
             {
               "expr": "rate(redis_evicted_keys_total{job=~\"$cluster\"}[5m])",
-              "legendFormat": "evicted {{pod}}",
+              "legendFormat": "evicted {{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(redis_expired_keys_total{job=~\"$cluster\"}[5m])",
-              "legendFormat": "expired {{pod}}",
+              "legendFormat": "expired {{ "{{pod}}" }}",
               "refId": "B"
             }
           ]
@@ -508,12 +508,12 @@ data:
           "targets": [
             {
               "expr": "rate(redis_net_input_bytes_total{job=~\"$cluster\"}[5m])",
-              "legendFormat": "rx {{pod}}",
+              "legendFormat": "rx {{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "rate(redis_net_output_bytes_total{job=~\"$cluster\"}[5m])",
-              "legendFormat": "tx {{pod}}",
+              "legendFormat": "tx {{ "{{pod}}" }}",
               "refId": "B"
             }
           ]
@@ -545,12 +545,12 @@ data:
           "targets": [
             {
               "expr": "redis_master_repl_offset{job=~\"$cluster\"}",
-              "legendFormat": "master offset {{pod}}",
+              "legendFormat": "master offset {{ "{{pod}}" }}",
               "refId": "A"
             },
             {
               "expr": "redis_slave_repl_offset{job=~\"$cluster\"}",
-              "legendFormat": "replica offset {{pod}}",
+              "legendFormat": "replica offset {{ "{{pod}}" }}",
               "refId": "B"
             }
           ]
@@ -580,7 +580,7 @@ data:
           "targets": [
             {
               "expr": "redis_db_keys{job=~\"$cluster\", db=~\"$db\"}",
-              "legendFormat": "{{db}} ({{pod}})",
+              "legendFormat": "{{ "{{db}}" }} ({{ "{{pod}}" }})",
               "refId": "A"
             }
           ]

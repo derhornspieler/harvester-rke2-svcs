@@ -110,7 +110,7 @@ data:
           "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 2}, {"color": "red", "value": 10}]}, "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
           "targets": [
-            {"expr": "histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket{route=~\"loki_api_v1_query.*\"}[5m])) by (le, route))", "legendFormat": "p99 {{route}}", "refId": "A"}
+            {"expr": "histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket{route=~\"loki_api_v1_query.*\"}[5m])) by (le, route))", "legendFormat": "p99 {{ "{{route}}" }}", "refId": "A"}
           ]
         },
         {
@@ -122,7 +122,7 @@ data:
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
           "targets": [
-            {"expr": "sum(rate(loki_request_duration_seconds_count[5m])) by (status_code)", "legendFormat": "{{status_code}}", "refId": "A"}
+            {"expr": "sum(rate(loki_request_duration_seconds_count[5m])) by (status_code)", "legendFormat": "{{ "{{status_code}}" }}", "refId": "A"}
           ]
         },
         {

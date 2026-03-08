@@ -9,7 +9,7 @@ spec:
       namespace: monitoring
       sectionName: https
   hostnames:
-    - "alertmanager.CHANGEME_DOMAIN"
+    - "alertmanager.aegisgroup.ch"
   rules:
     - matches:
         - path:

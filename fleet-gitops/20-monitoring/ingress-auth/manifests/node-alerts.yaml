@@ -15,8 +15,8 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Node exporter down on {{ $labels.node }}"
-            description: "Node exporter on {{ $labels.node }} has been unreachable for more than 2 minutes."
+            summary: 'Node exporter down on {{ "{{ $labels.node  }}" }}'
+            description: 'Node exporter on {{ "{{ $labels.node  }}" }} has been unreachable for more than 2 minutes.'
 
         - alert: NodeHighCPU
           expr: 100 - (avg by(node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
@@ -24,8 +24,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "High CPU usage on {{ $labels.node }}"
-            description: "CPU usage on {{ $labels.node }} has been above 90% for 15 minutes (current: {{ $value | printf \"%.1f\" }}%)."
+            summary: 'High CPU usage on {{ "{{ $labels.node  }}" }}'
+            description: 'CPU usage on {{ "{{ $labels.node  }}" }} has been above 90% for 15 minutes (current: {{ "{{ $value | humanizePercentage }}" }}%).'
 
         - alert: NodeHighMemory
           expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
@@ -33,8 +33,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "High memory usage on {{ $labels.node }}"
-            description: "Memory usage on {{ $labels.node }} has been above 90% for 15 minutes (current: {{ $value | printf \"%.1f\" }}%)."
+            summary: 'High memory usage on {{ "{{ $labels.node  }}" }}'
+            description: 'Memory usage on {{ "{{ $labels.node  }}" }} has been above 90% for 15 minutes (current: {{ "{{ $value | humanizePercentage }}" }}%).'
 
         - alert: NodeDiskPressure
           expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 85
@@ -42,8 +42,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "Disk pressure on {{ $labels.node }}"
-            description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.node }} is {{ $value | printf \"%.1f\" }}% full."
+            summary: 'Disk pressure on {{ "{{ $labels.node  }}" }}'
+            description: 'Filesystem {{ "{{ $labels.mountpoint  }}" }} on {{ "{{ $labels.node  }}" }} is {{ "{{ $value | humanizePercentage }}" }}% full.'
 
         - alert: NodeDiskCritical
           expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 95
@@ -51,5 +51,5 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Disk critically full on {{ $labels.node }}"
-            description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.node }} is {{ $value | printf \"%.1f\" }}% full."
+            summary: 'Disk critically full on {{ "{{ $labels.node  }}" }}'
+            description: 'Filesystem {{ "{{ $labels.mountpoint  }}" }} on {{ "{{ $labels.node  }}" }} is {{ "{{ $value | humanizePercentage }}" }}% full.'

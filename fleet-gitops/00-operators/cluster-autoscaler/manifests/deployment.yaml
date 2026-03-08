@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cluster-autoscaler
     app.kubernetes.io/version: "v1.34.3"
-    app.kubernetes.io/managed-by: terraform
+
 spec:
   replicas: 2
   selector:
@@ -60,10 +60,10 @@ spec:
             - --namespace=cluster-autoscaler
             # Scale-down behavior (mirrors cluster-level annotations for
             # defense-in-depth; the annotations take priority if set)
-            - --scale-down-delay-after-add=${scale_down_delay_after_add}
-            - --scale-down-delay-after-delete=${scale_down_delay_after_delete}
-            - --scale-down-unneeded-time=${scale_down_unneeded_time}
-            - --scale-down-utilization-threshold=${scale_down_utilization_threshold}
+            - --scale-down-delay-after-add=10m
+            - --scale-down-delay-after-delete=1m
+            - --scale-down-unneeded-time=10m
+            - --scale-down-utilization-threshold=0.5
             # Safety: never scale below PDB minimums
             - --skip-nodes-with-local-storage=false
             - --balance-similar-node-groups=true

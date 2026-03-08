@@ -2,9 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: keycloak-alerts
-  namespace: monitoring
-  labels:
-    release: kube-prometheus-stack
+  namespace: keycloak
 spec:
   groups:
     - name: keycloak-alerts
@@ -16,7 +14,7 @@ spec:
             severity: critical
           annotations:
             summary: "Keycloak is down"
-            description: "Keycloak instance {{ $labels.instance }} has been unreachable for more than 5 minutes."
+            description: 'Keycloak instance {{ "{{ $labels.instance }}" }} has been unreachable for more than 5 minutes.'
 
         - alert: KeycloakHighLoginFailureRate
           expr: |
@@ -29,7 +27,7 @@ spec:
             severity: warning
           annotations:
             summary: "Keycloak login failure rate > 30%"
-            description: '{{ $value | humanizePercentage }} of OIDC token requests are failing (4xx). Possible brute force attack or misconfigured client.'
+            description: '{{ "{{ $value | humanizePercentage }}" }} of OIDC token requests are failing (4xx). Possible brute force attack or misconfigured client.'
 
         - alert: KeycloakHighTokenLatency
           expr: |
@@ -41,7 +39,7 @@ spec:
             severity: warning
           annotations:
             summary: "Keycloak token request p99 latency > 2s"
-            description: "Keycloak OIDC token request p99 latency is {{ $value | humanizeDuration }}. Authentication may be degraded."
+            description: 'Keycloak OIDC token request p99 latency is {{ "{{ $value | humanizeDuration }}" }}. Authentication may be degraded.'
 
         - alert: KeycloakAllReplicasDown
           expr: |
@@ -62,7 +60,7 @@ spec:
             severity: critical
           annotations:
             summary: "Keycloak returning server errors"
-            description: "Keycloak is returning {{ $value | humanize }} server errors per second (5xx). Internal failures may affect authentication."
+            description: 'Keycloak is returning {{ "{{ $value | humanize }}" }} server errors per second (5xx). Internal failures may affect authentication.'
 
         - alert: KeycloakJvmHeapPressure
           expr: |
@@ -73,7 +71,7 @@ spec:
             severity: warning
           annotations:
             summary: "Keycloak JVM heap usage > 90%"
-            description: "Keycloak instance {{ $labels.instance }} heap is at {{ $value | humanizePercentage }}. Risk of OOM or GC pauses."
+            description: 'Keycloak instance {{ "{{ $labels.instance }}" }} heap is at {{ "{{ $value | humanizePercentage }}" }}. Risk of OOM or GC pauses.'
 
         - alert: KeycloakHighGCPause
           expr: |
@@ -84,4 +82,4 @@ spec:
             severity: warning
           annotations:
             summary: "Keycloak GC pauses averaging > 500ms"
-            description: "Keycloak instance {{ $labels.instance }} average GC pause is {{ $value | humanizeDuration }}. Users may experience authentication delays."
+            description: 'Keycloak instance {{ "{{ $labels.instance }}" }} average GC pause is {{ "{{ $value | humanizeDuration }}" }}. Users may experience authentication delays.'

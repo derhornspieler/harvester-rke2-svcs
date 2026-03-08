@@ -19,11 +19,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: prometheus.CHANGEME_DOMAIN
+      hostname: prometheus.aegisgroup.ch
       tls:
         mode: Terminate
         certificateRefs:
-          - name: prometheus-CHANGEME_DOMAIN_DASHED-tls
+          - name: prometheus-aegisgroup-ch-tls
       allowedRoutes:
         namespaces:
           from: Same

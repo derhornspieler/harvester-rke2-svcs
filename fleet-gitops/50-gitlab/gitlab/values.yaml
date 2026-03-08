@@ -24,6 +24,15 @@
 global:
   edition: ee
 
+  ## ── Enterprise Activation Code (synced from Vault via ESO) ────────────────
+  ## Activation code stored in Vault kv/services/gitlab, synced to K8s secret
+  ## gitlab-license by ExternalSecret, injected as GITLAB_ACTIVATION_CODE env var.
+  extraEnvFrom:
+    GITLAB_ACTIVATION_CODE:
+      secretKeyRef:
+        name: gitlab-license
+        key: activation-code
+
   ## ── MinIO — using shared MinIO from minio namespace (Bundle 2) ────────────
   ## Shared MinIO serves Harbor, GitLab, and CNPG backups.
   ## Dedicated user: gitlab-minio-admin (readwrite policy)
@@ -32,7 +41,7 @@ global:
 
   ## ── Hostnames ──────────────────────────────────────────────────────────────
   hosts:
-    domain: CHANGEME_DOMAIN
+    domain: aegisgroup.ch
     https: true
 
   ## ── Gateway API (Traefik) ─────────────────────────────────────────────────
@@ -197,9 +206,11 @@ gitlab-runner:
 installCertmanager: false
 
 ## ── cert-manager issuer ──────────────────────────────────────────────────────
-## Not used — vault-issuer ClusterIssuer handles TLS via Gateway annotations
+## Disabled — vault-issuer ClusterIssuer handles TLS via Gateway annotations.
+## The issuer subchart creates a Job that gets TTL-cleaned, causing Fleet to
+## report "Modified" permanently. Disabling avoids this.
 certmanager-issuer:
-  email: admin@CHANGEME_DOMAIN
+  install: false
 
 ## ── Disable bundled NGINX ingress (using Traefik) ────────────────────────────
 nginx-ingress:

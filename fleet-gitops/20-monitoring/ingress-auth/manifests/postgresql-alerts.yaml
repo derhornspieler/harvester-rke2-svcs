@@ -16,7 +16,7 @@ spec:
             severity: critical
           annotations:
             summary: "PostgreSQL instance is down"
-            description: "PostgreSQL instance {{ $labels.instance }} (cluster: {{ $labels.cnpg_cluster }}) has been unreachable for more than 2 minutes."
+            description: 'PostgreSQL instance {{ "{{ $labels.instance  }}" }} (cluster: {{ "{{ $labels.cnpg_cluster  }}" }}) has been unreachable for more than 2 minutes.'
 
         - alert: ReplicationLag
           expr: cnpg_pg_replication_lag > 30
@@ -25,7 +25,7 @@ spec:
             severity: warning
           annotations:
             summary: "PostgreSQL replication lag is high"
-            description: 'Replication lag for {{ $labels.cnpg_cluster }} is {{ $value | printf "%.1f" }}s (threshold: 30s).'
+            description: 'Replication lag for {{ "{{ $labels.cnpg_cluster  }}" }} is {{ "{{ $value | humanize }}" }}s (threshold: 30s).'
 
         - alert: HighConnections
           expr: sum by (cnpg_cluster) (cnpg_backends_total) / sum by (cnpg_cluster) (cnpg_pg_settings_setting{name="max_connections"}) * 100 > 80
@@ -34,7 +34,7 @@ spec:
             severity: warning
           annotations:
             summary: "PostgreSQL connections are high"
-            description: 'Connection usage for cluster {{ $labels.cnpg_cluster }} is at {{ $value | printf "%.1f" }}%.'
+            description: 'Connection usage for cluster {{ "{{ $labels.cnpg_cluster  }}" }} is at {{ "{{ $value | humanizePercentage }}" }}%.'
 
         - alert: CNPGControllerDown
           expr: up{job="cnpg-controller"} == 0
