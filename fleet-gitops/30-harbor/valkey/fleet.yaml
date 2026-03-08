@@ -1,0 +1,3 @@
+defaultNamespace: harbor
+targets:
+  - clusterName: rke2-prod
