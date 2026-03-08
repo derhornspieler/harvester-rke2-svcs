@@ -6,7 +6,7 @@ The platform distributes data across three separate, independently managed Postg
 
 ---
 
-## Leadership Diagram: How Data Flows Through the Platform
+## Overview Diagram: How Data Flows Through the Platform
 
 The following diagram shows the data storage architecture and backup flows:
 
