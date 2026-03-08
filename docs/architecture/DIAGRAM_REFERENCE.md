@@ -17,19 +17,23 @@ Secrets/Config:      #d63384 (pink)
 ## Component Map by Ecosystem
 
 ### 1. Authentication & Identity (Purple)
+
 - Keycloak (OIDC Provider)
 - OAuth2-proxy (Service Protector)
 
 ### 2. Networking & Ingress (Blue)
+
 - Traefik (API Gateway)
 - Gateway API (HTTPRoutes & Middleware)
 
 ### 3. PKI & Certificates (Red)
+
 - Offline Root CA (Air-gapped)
 - Vault (Intermediate CA + KV Secrets)
 - cert-manager (Leaf Certificate Issuer)
 
 ### 4. CI/CD Pipeline (Green)
+
 - GitLab (Repository + CI/CD)
 - GitLab Runners (Job Execution)
 - Harbor (Container Registry)
@@ -37,6 +41,7 @@ Secrets/Config:      #d63384 (pink)
 - Argo Rollouts (Progressive Delivery)
 
 ### 5. Observability & Monitoring (Orange)
+
 - Prometheus (Metrics Collection)
 - Grafana (Visualization & Dashboards)
 - Loki (Log Aggregation)
@@ -45,29 +50,34 @@ Secrets/Config:      #d63384 (pink)
 - Alertmanager (Alert Routing)
 
 ### 6. Data & Storage (Cyan)
+
 - CloudNativePG (3x PostgreSQL HA)
 - Redis/Valkey Sentinel (Cache + Session)
 - MinIO (S3-compatible Storage)
 
 ### 7. Secrets & Configuration (Pink)
+
 - External Secrets Operator (Sync to Vault)
 - SecretStores (Vault Integration)
 
 ## Data Flow Patterns in Master Diagram
 
 ### TLS Certificate Distribution
+
 ```
 RootCA (offline) → Vault (signs) → cert-manager (issues) →
   Traefik, Grafana, Keycloak, Harbor, GitLab, ArgoCD
 ```
 
 ### Secrets Injection
+
 ```
 Vault (KV v2) → ESO → SecretStore →
   GitLab, Keycloak, ArgoCD, Harbor
 ```
 
 ### Identity & Authorization
+
 ```
 Keycloak (OIDC) → OAuth2-proxy →
   Prometheus (protected)
@@ -81,18 +91,21 @@ Keycloak (OIDC) →
 ```
 
 ### Observability Scrape Paths
+
 ```
 Prometheus (scrapes all) →
   Keycloak, Harbor, GitLab, ArgoCD, CNPG, Redis
 ```
 
 ### Log Collection Pipeline
+
 ```
 Alloy (all nodes) → Loki (aggregated) → Grafana (visualized)
 Hubble (network) → Loki → Grafana
 ```
 
 ### CI/CD Execution Pipeline
+
 ```
 GitLab → Runners (execute jobs) → Harbor (push images) → ArgoCD (deploy)
 ```
