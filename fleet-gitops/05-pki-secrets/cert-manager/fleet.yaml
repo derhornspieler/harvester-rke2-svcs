@@ -1,0 +1,9 @@
+defaultNamespace: cert-manager
+helm:
+  releaseName: cert-manager
+  chart: oci://harbor.aegisgroup.ch/helm/cert-manager
+  version: "v1.19.4"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod
