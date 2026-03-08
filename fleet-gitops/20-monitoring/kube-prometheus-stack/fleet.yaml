@@ -1,0 +1,9 @@
+defaultNamespace: monitoring
+helm:
+  releaseName: kube-prometheus-stack
+  chart: oci://harbor.aegisgroup.ch/helm/kube-prometheus-stack
+  version: "82.10.0"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod
