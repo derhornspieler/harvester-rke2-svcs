@@ -1,0 +1,411 @@
+---
+# keycloak-config-job: Encapsulates setup-keycloak.sh phases 1-5
+# Configures: realm, platform admin user, OIDC clients, groups, auth flow
+# Requires: Keycloak running, Vault unsealed with admin credentials at
+#   kv/services/keycloak/admin-secret (KC_BOOTSTRAP_ADMIN_USERNAME, KC_BOOTSTRAP_ADMIN_PASSWORD)
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-config
+  namespace: keycloak
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloak-config
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "serviceaccounts"]
+    verbs: ["get", "create", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keycloak-config
+subjects:
+  - kind: ServiceAccount
+    name: keycloak-config
+    namespace: keycloak
+roleRef:
+  kind: ClusterRole
+  name: keycloak-config
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-config
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak-config
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-config
+    spec:
+      serviceAccountName: keycloak-config
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak-config
+          image: harbor.aegisgroup.ch/dockerhub-proxy/bitnami/kubectl:1.33
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # keycloak-config: realm, users, OIDC clients, groups, auth flow
+              # Idempotent — safe to re-run.
+
+              DOMAIN="aegisgroup.ch"
+              KC_REALM="platform"
+              KC_URL="https://keycloak.${DOMAIN}"
+              PLATFORM_ADMIN_USER="alice.morgan"
+              PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_USER}@${DOMAIN}"
+
+              log()  { echo "[$(date +%H:%M:%S)] $*"; }
+              die()  { log "FATAL: $*"; exit 1; }
+
+              # --- Helper: Vault exec ---
+              vexec() {
+                kubectl exec -n vault vault-0 -- env \
+                  VAULT_ADDR=http://127.0.0.1:8200 \
+                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  vault "$@"
+              }
+
+              # --- Load Vault root token and admin creds ---
+              init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
+              ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
+              export ROOT_TOKEN
+
+              KC_ADMIN_USER=$(vexec kv get -field=KC_BOOTSTRAP_ADMIN_USERNAME kv/services/keycloak/admin-secret)
+              KC_ADMIN_PASS=$(vexec kv get -field=KC_BOOTSTRAP_ADMIN_PASSWORD kv/services/keycloak/admin-secret)
+              [[ -n "$KC_ADMIN_USER" && -n "$KC_ADMIN_PASS" ]] || die "Could not read Keycloak admin creds from Vault"
+
+              # --- Wait for Keycloak to be reachable ---
+              log "Waiting for Keycloak at ${KC_URL}..."
+              for i in $(seq 1 60); do
+                if curl -sf --http1.1 --connect-timeout 5 "${KC_URL}/health/ready" >/dev/null 2>&1; then
+                  break
+                fi
+                sleep 5
+              done
+              curl -sf --http1.1 --connect-timeout 5 "${KC_URL}/health/ready" >/dev/null || die "Keycloak not reachable after 5 minutes"
+              log "Keycloak is ready"
+
+              # --- Token helper ---
+              kc_get_token() {
+                curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
+                  -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
+                  -d "grant_type=password" \
+                  -d "client_id=admin-cli" \
+                  -d "username=${KC_ADMIN_USER}" \
+                  --data-urlencode "password=${KC_ADMIN_PASS}" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4
+              }
+
+              # Idempotent API create (returns 0 on 200/201/204/409)
+              kc_create() {
+                local method="$1" path="$2"
+                shift 2
+                local token http_code
+                token=$(kc_get_token)
+                http_code=$(curl -s --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
+                  -X "$method" "${KC_URL}/admin/realms/${path}" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  "$@")
+                case "$http_code" in
+                  200|201|204) return 0 ;;
+                  409) log "Already exists (409), skipping"; return 0 ;;
+                  *) die "Keycloak API ${method} ${path} returned HTTP ${http_code}" ;;
+                esac
+              }
+
+              kc_api() {
+                local method="$1" path="$2"
+                shift 2
+                local token
+                token=$(kc_get_token)
+                curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
+                  -X "$method" "${KC_URL}/admin/realms/${path}" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  "$@"
+              }
+
+              # =============== Phase 1: Create realm ===============
+              log "Creating realm '${KC_REALM}'..."
+              kc_create POST "" -d '{
+                "realm": "'"${KC_REALM}"'",
+                "enabled": true,
+                "registrationAllowed": false,
+                "loginWithEmailAllowed": true,
+                "duplicateEmailsAllowed": false,
+                "resetPasswordAllowed": true,
+                "editUsernameAllowed": false,
+                "bruteForceProtected": true,
+                "permanentLockout": false,
+                "maxFailureWaitSeconds": 900,
+                "minimumQuickLoginWaitSeconds": 60,
+                "waitIncrementSeconds": 60,
+                "quickLoginCheckMilliSeconds": 1000,
+                "maxDeltaTimeSeconds": 43200,
+                "failureFactor": 5
+              }'
+              log "Realm '${KC_REALM}' created"
+
+              # =============== Phase 2: Create platform admin user ===============
+              log "Creating user '${PLATFORM_ADMIN_USER}'..."
+              _admin_first=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f1 | sed 's/./\U&/')
+              _admin_last=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f2- | sed 's/./\U&/')
+              [[ -n "$_admin_last" ]] || _admin_last="Admin"
+
+              # Read platform admin password from Vault or fall back to KC admin pass
+              PLATFORM_ADMIN_PASS=$(vexec kv get -field=password kv/services/keycloak/platform-admin 2>/dev/null) || PLATFORM_ADMIN_PASS="${KC_ADMIN_PASS}"
+
+              _user_json='{
+                "username": "'"${PLATFORM_ADMIN_USER}"'",
+                "email": "'"${PLATFORM_ADMIN_EMAIL}"'",
+                "firstName": "'"${_admin_first}"'",
+                "lastName": "'"${_admin_last}"'",
+                "enabled": true,
+                "emailVerified": true,
+                "credentials": [{"type": "password", "value": "'"${PLATFORM_ADMIN_PASS}"'", "temporary": false}]
+              }'
+              kc_create POST "${KC_REALM}/users" -d "$_user_json"
+              kc_create POST "master/users" -d "$_user_json"
+
+              # Grant admin role in master realm
+              _master_uid=$(kc_api GET "master/users?username=${PLATFORM_ADMIN_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [[ -n "$_master_uid" ]]; then
+                _admin_role_id=$(kc_api GET "master/roles/admin" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                if [[ -n "$_admin_role_id" ]]; then
+                  token=$(kc_get_token)
+                  curl -sk --http1.1 -o /dev/null \
+                    -X POST "${KC_URL}/admin/realms/master/users/${_master_uid}/role-mappings/realm" \
+                    -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    -d '[{"id":"'"${_admin_role_id}"'","name":"admin"}]'
+                  log "${PLATFORM_ADMIN_USER} granted admin role in master realm"
+                fi
+              fi
+
+              # Store platform admin creds in Vault
+              vexec kv put kv/services/keycloak/platform-admin \
+                username="$PLATFORM_ADMIN_USER" \
+                password="$PLATFORM_ADMIN_PASS" \
+                email="$PLATFORM_ADMIN_EMAIL"
+              log "Platform admin user created"
+
+              # =============== Phase 3: Create OIDC clients ===============
+              CLIENTS="grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab"
+              OAUTH2_PROXY_CLIENTS="prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc"
+
+              for client_id in $CLIENTS; do
+                case "$client_id" in
+                  grafana)           redirect="https://grafana.${DOMAIN}/login/generic_oauth" ;;
+                  prometheus-oidc)   redirect="https://prometheus.${DOMAIN}/oauth2/callback" ;;
+                  alertmanager-oidc) redirect="https://alertmanager.${DOMAIN}/oauth2/callback" ;;
+                  hubble-oidc)       redirect="https://hubble.${DOMAIN}/oauth2/callback" ;;
+                  traefik-oidc)      redirect="https://traefik.${DOMAIN}/oauth2/callback" ;;
+                  rollouts-oidc)     redirect="https://rollouts.${DOMAIN}/oauth2/callback" ;;
+                  workflows-oidc)    redirect="https://workflows.${DOMAIN}/oauth2/callback" ;;
+                  argocd)            redirect="https://argo.${DOMAIN}/auth/callback" ;;
+                  harbor)            redirect="https://harbor.dev.${DOMAIN}/c/oidc/callback" ;;
+                  gitlab)            redirect="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback" ;;
+                esac
+
+                # Derive logout redirect from redirect URI base
+                logout_redirect=$(echo "$redirect" | sed 's|/[^/]*$|/*|')
+
+                # ArgoCD and GitLab don't send PKCE params
+                pkce_method="S256"
+                if [[ "$client_id" == "argocd" || "$client_id" == "gitlab" ]]; then
+                  pkce_method=""
+                fi
+
+                log "Creating OIDC client '${client_id}'..."
+                kc_create POST "${KC_REALM}/clients" -d '{
+                  "clientId": "'"${client_id}"'",
+                  "name": "'"${client_id}"'",
+                  "enabled": true,
+                  "protocol": "openid-connect",
+                  "publicClient": false,
+                  "clientAuthenticatorType": "client-secret",
+                  "standardFlowEnabled": true,
+                  "directAccessGrantsEnabled": false,
+                  "serviceAccountsEnabled": false,
+                  "redirectUris": ["'"${redirect}"'"],
+                  "webOrigins": ["+"],
+                  "attributes": {
+                    "pkce.code.challenge.method": "'"${pkce_method}"'",
+                    "post.logout.redirect.uris": "'"${logout_redirect}"'"
+                  },
+                  "defaultClientScopes": ["openid", "profile", "email", "roles", "groups"]
+                }'
+              done
+
+              # Add audience mappers to OAuth2-proxy clients
+              for client_id in $OAUTH2_PROXY_CLIENTS; do
+                _uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                [[ -n "$_uuid" ]] || continue
+                kc_create POST "${KC_REALM}/clients/${_uuid}/protocol-mappers/models" -d '{
+                  "name": "audience-mapper",
+                  "protocol": "openid-connect",
+                  "protocolMapper": "oidc-audience-mapper",
+                  "config": {
+                    "included.client.audience": "'"${client_id}"'",
+                    "id.token.claim": "true",
+                    "access.token.claim": "true",
+                    "included.custom.audience": "",
+                    "userinfo.token.claim": "false"
+                  }
+                }'
+              done
+
+              # Set session timeouts (no cross-service SSO)
+              kc_api PUT "${KC_REALM}" -d '{
+                "ssoSessionIdleTimeout": 1800,
+                "ssoSessionMaxLifespan": 3600,
+                "accessTokenLifespan": 300,
+                "accessCodeLifespan": 120
+              }'
+
+              # Seed OIDC client secrets into Vault
+              log "Seeding OIDC client secrets into Vault..."
+              for client_id in $CLIENTS; do
+                _uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                [[ -n "$_uuid" ]] || { log "WARN: client ${client_id} not found"; continue; }
+
+                _secret=$(kc_api GET "${KC_REALM}/clients/${_uuid}/client-secret" | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+                [[ -n "$_secret" ]] || die "Empty client secret for ${client_id}"
+
+                _cookie=$(openssl rand -hex 16)
+                vexec kv put "kv/oidc/${client_id}" \
+                  client-secret="$_secret" \
+                  cookie-secret="$_cookie"
+                log "Seeded kv/oidc/${client_id}"
+              done
+              log "All OIDC clients created and secrets seeded"
+
+              # Create Vault policies for ESO
+              kubectl exec -i -n vault vault-0 -- env \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${ROOT_TOKEN}" \
+                vault policy write eso-monitoring - <<'POLICY'
+              path "kv/data/oidc/*" { capabilities = ["read"] }
+              path "kv/metadata/oidc/*" { capabilities = ["read", "list"] }
+              path "kv/data/services/database/grafana-pg" { capabilities = ["read"] }
+              path "kv/metadata/services/database/grafana-pg" { capabilities = ["read", "list"] }
+              POLICY
+
+              kubectl exec -i -n vault vault-0 -- env \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${ROOT_TOKEN}" \
+                vault policy write eso-kube-system - <<'POLICY'
+              path "kv/data/oidc/*" { capabilities = ["read"] }
+              path "kv/metadata/oidc/*" { capabilities = ["read", "list"] }
+              POLICY
+
+              vexec write auth/kubernetes/role/eso-monitoring \
+                bound_service_account_names=eso-secrets \
+                bound_service_account_namespaces=monitoring \
+                policies=eso-monitoring ttl=1h
+
+              vexec write auth/kubernetes/role/eso-kube-system \
+                bound_service_account_names=eso-secrets \
+                bound_service_account_namespaces=kube-system \
+                policies=eso-kube-system ttl=1h
+
+              # =============== Phase 4: Groups ===============
+              log "Creating group 'platform-admins'..."
+              kc_create POST "${KC_REALM}/groups" -d '{"name": "platform-admins"}'
+
+              _group_id=$(kc_api GET "${KC_REALM}/groups?search=platform-admins" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              _user_id=$(kc_api GET "${KC_REALM}/users?username=${PLATFORM_ADMIN_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              [[ -n "$_group_id" && -n "$_user_id" ]] || die "Could not find group or user ID"
+
+              kc_create PUT "${KC_REALM}/users/${_user_id}/groups/${_group_id}"
+              log "${PLATFORM_ADMIN_USER} assigned to platform-admins"
+
+              # Create groups client scope with mapper
+              kc_create POST "${KC_REALM}/client-scopes" -d '{
+                "name": "groups",
+                "description": "Map user groups to token claims",
+                "protocol": "openid-connect",
+                "attributes": {
+                  "include.in.token.scope": "true",
+                  "display.on.consent.screen": "false"
+                },
+                "protocolMappers": [{
+                  "name": "groups",
+                  "protocol": "openid-connect",
+                  "protocolMapper": "oidc-group-membership-mapper",
+                  "consentRequired": false,
+                  "config": {
+                    "full.path": "false",
+                    "introspection.token.claim": "true",
+                    "userinfo.token.claim": "true",
+                    "id.token.claim": "true",
+                    "access.token.claim": "true",
+                    "claim.name": "groups"
+                  }
+                }]
+              }'
+
+              # Assign groups scope to all clients
+              _scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | grep -o '"id":"[^"]*","name":"groups"' | head -1 | cut -d'"' -f4)
+              if [[ -n "$_scope_id" ]]; then
+                for client_id in $CLIENTS; do
+                  _uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                  [[ -n "$_uuid" ]] || continue
+                  token=$(kc_get_token)
+                  curl -sk --http1.1 -o /dev/null \
+                    -X PUT "${KC_URL}/admin/realms/${KC_REALM}/clients/${_uuid}/default-client-scopes/${_scope_id}" \
+                    -H "Authorization: Bearer ${token}"
+                done
+                log "Groups scope assigned to all clients"
+              fi
+
+              # =============== Phase 5: Auth flow ===============
+              log "Configuring browser-prompt-login flow..."
+              _flow_exists=$(kc_api GET "${KC_REALM}/authentication/flows" | grep -c "browser-prompt-login" || true)
+              if [[ "$_flow_exists" -eq 0 ]]; then
+                _browser_id=$(kc_api GET "${KC_REALM}/authentication/flows" | grep -o '"id":"[^"]*","alias":"browser"' | head -1 | cut -d'"' -f4)
+                if [[ -n "$_browser_id" ]]; then
+                  token=$(kc_get_token)
+                  curl -s --http1.1 -o /dev/null \
+                    -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/${_browser_id}/copy" \
+                    -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"newName": "browser-prompt-login"}'
+                fi
+              fi
+              kc_api PUT "${KC_REALM}" -d '{"browserFlow": "browser-prompt-login"}' || true
+              log "Authentication flow configured"
+
+              log "Keycloak configuration complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
