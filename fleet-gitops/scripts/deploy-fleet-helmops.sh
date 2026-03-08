@@ -304,6 +304,63 @@ for i in d.get('data',[]):
 }
 
 # ============================================================
+# Purge OCI artifacts from Harbor
+# ============================================================
+purge_harbor_oci() {
+  local harbor_user="${HARBOR_USER:-admin}"
+  local harbor_pass="${HARBOR_PASS:-Harbor12345}"
+
+  log_info "Purging OCI artifacts from Harbor..."
+
+  # Delete raw-manifest bundle repos from fleet/ project
+  local bundle_names=(
+    operators-cluster-autoscaler operators-node-labeler operators-storage-autoscaler
+    pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
+    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
+    minio harbor-cnpg-harbor harbor-valkey harbor-manifests
+    gitops-argocd-manifests gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
+    gitlab-cnpg-gitlab gitlab-redis gitlab-manifests gitlab-runners
+  )
+
+  for repo in "${bundle_names[@]}"; do
+    local code
+    code=$(curl -sk -o /dev/null -w "%{http_code}" \
+      -u "${harbor_user}:${harbor_pass}" \
+      -X DELETE "https://${HARBOR}/api/v2.0/projects/fleet/repositories/${repo}")
+    if [[ "${code}" == "200" ]]; then
+      log_ok "Deleted Harbor repo: fleet/${repo}"
+    elif [[ "${code}" == "404" ]]; then
+      log_info "Not found (skip): fleet/${repo}"
+    else
+      log_warn "Failed to delete fleet/${repo} (HTTP ${code})"
+    fi
+  done
+
+  # Delete upstream Helm chart repos from helm/ project
+  local chart_names=(
+    cloudnative-pg redis-operator cert-manager vault external-secrets
+    kube-prometheus-stack harbor argo-cd argo-rollouts argo-workflows gitlab
+  )
+
+  for repo in "${chart_names[@]}"; do
+    local code
+    code=$(curl -sk -o /dev/null -w "%{http_code}" \
+      -u "${harbor_user}:${harbor_pass}" \
+      -X DELETE "https://${HARBOR}/api/v2.0/projects/helm/repositories/${repo}")
+    if [[ "${code}" == "200" ]]; then
+      log_ok "Deleted Harbor repo: helm/${repo}"
+    elif [[ "${code}" == "404" ]]; then
+      log_info "Not found (skip): helm/${repo}"
+    else
+      log_warn "Failed to delete helm/${repo} (HTTP ${code})"
+    fi
+  done
+
+  log_ok "Harbor OCI purge complete"
+}
+
+# ============================================================
 # Show status
 # ============================================================
 show_status() {
@@ -358,6 +415,7 @@ except:
 # ============================================================
 DRY_RUN=false
 DELETE_MODE=false
+PURGE_MODE=false
 STATUS_MODE=false
 SINGLE_GROUP=""
 
@@ -365,10 +423,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)    DRY_RUN=true; shift ;;
     --delete)     DELETE_MODE=true; shift ;;
+    --purge)      PURGE_MODE=true; shift ;;
     --status)     STATUS_MODE=true; shift ;;
     --group)      SINGLE_GROUP="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--delete] [--status] [--group <group>]"
+      echo "Usage: $0 [--dry-run] [--delete] [--purge] [--status] [--group <group>]"
+      echo ""
+      echo "  --delete   Remove all HelmOps from Fleet (keeps Harbor OCI artifacts)"
+      echo "  --purge    Remove HelmOps from Fleet AND delete OCI artifacts from Harbor"
+      echo "  --status   Show deployment status"
+      echo "  --group    Deploy/delete a single group (e.g., 50-gitlab)"
+      echo "  --dry-run  Show CRs without applying"
       exit 0
       ;;
     *) die "Unknown option: $1" ;;
@@ -389,6 +454,12 @@ fi
 
 if [[ "${DELETE_MODE}" == true ]]; then
   delete_helmops
+  exit 0
+fi
+
+if [[ "${PURGE_MODE}" == true ]]; then
+  delete_helmops
+  purge_harbor_oci
   exit 0
 fi
 
