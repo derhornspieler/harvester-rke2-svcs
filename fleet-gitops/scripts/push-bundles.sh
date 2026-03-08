@@ -8,19 +8,27 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - helm CLI
-#   - Harbor credentials (HARBOR_USER / HARBOR_PASS or defaults to admin/Harbor12345)
+#   - Harbor credentials in .env (HARBOR_USER / HARBOR_PASS)
 
 ###############################################################################
 # Config
 ###############################################################################
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
+
+# Source .env for credentials
+if [[ -f "${FLEET_DIR}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${FLEET_DIR}/.env"
+  set +a
+fi
+
 HARBOR="harbor.example.com"
 HARBOR_USER="${HARBOR_USER:-admin}"
 HARBOR_PASS="${HARBOR_PASS:-Harbor12345}"
 OCI_REGISTRY="oci://${HARBOR}/fleet"
 VERSION="${BUNDLE_VERSION:-1.0.0}"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
 
 ###############################################################################
 # Raw-manifest bundles (no Helm chart reference in fleet.yaml)
