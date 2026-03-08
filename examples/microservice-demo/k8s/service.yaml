@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: microservice-demo
+  namespace: microservice-demo
+  labels:
+    app.kubernetes.io/name: microservice-demo
+    app.kubernetes.io/instance: microservice-demo
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    app: microservice-demo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
