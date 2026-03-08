@@ -1,0 +1,9 @@
+defaultNamespace: redis-operator
+helm:
+  releaseName: redis-operator
+  chart: oci://harbor.example.com/helm/redis-operator
+  version: "0.23.0"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod

@@ -1,0 +1,8 @@
+# CNPG Operator Helm values
+crds:
+  create: true
+
+config:
+  data:
+    INHERITED_ANNOTATIONS: "kustomize.toolkit.fluxcd.io/*"
+    INHERITED_LABELS: "app.kubernetes.io/*"
