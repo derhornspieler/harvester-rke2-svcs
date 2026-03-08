@@ -205,39 +205,39 @@ Grafana includes 18 pre-built dashboards, auto-provisioned via ConfigMap. Each d
 
 ### Platform Overview & Health
 
-1. **Home** — Single-page executive dashboard: cluster status, critical alert count, top error services, recent deployments
-2. **Firing Alerts** — Real-time list of all active alerts, grouped by severity and component, with action links
+- **Home** — Single-page executive dashboard: cluster status, critical alert count, top error services, recent deployments
+- **Firing Alerts** — Real-time list of all active alerts, grouped by severity and component, with action links
 
 ### Infrastructure & Kubernetes
 
-3. **API Server** — Request rate, latency percentiles, etcd read/write latency, authentication/authorization decisions
-4. **etcd** — Leader election, commit latency, disk size, backend bytes, defragmentation status
-5. **Node Detail** — Per-node CPU, memory, disk I/O, thermal throttling, kernel OOM kills, network errors
-6. **Pod Monitoring** — Pod count by namespace, restart counts, eviction history, resource requests vs. usage
+- **API Server** — Request rate, latency percentiles, etcd read/write latency, authentication/authorization decisions
+- **etcd** — Leader election, commit latency, disk size, backend bytes, defragmentation status
+- **Node Detail** — Per-node CPU, memory, disk I/O, thermal throttling, kernel OOM kills, network errors
+- **Pod Monitoring** — Pod count by namespace, restart counts, eviction history, resource requests vs. usage
 
 ### Networking & Security
 
-7. **Cilium / Network Policies** — Policy enforcement rate, denied connections, DNS query rate and failures, L4 vs. L7 protocols
-8. **CoreDNS** — DNS query rate, cache hit ratio, response time distribution, NXDOMAIN vs. success rate
-9. **Traefik** — Request rate by route, latency percentiles, status code distribution, certificate expiry countdown
+- **Cilium / Network Policies** — Policy enforcement rate, denied connections, DNS query rate and failures, L4 vs. L7 protocols
+- **CoreDNS** — DNS query rate, cache hit ratio, response time distribution, NXDOMAIN vs. success rate
+- **Traefik** — Request rate by route, latency percentiles, status code distribution, certificate expiry countdown
 
 ### Observability Stack
 
-10. **Loki Logs** — Log volume by service, parser errors, ingester latency, index stats, search query latency
-11. **Loki Stack** — Complete health: ingesters, queriers, distributors, ring consistency, disk usage
-12. **Alloy** — Collection rate (pod logs, journal, K8s events), lag, batch size, error rate, scrape target count
-13. **Prometheus** — Self-monitoring: TSDB size, ingestion rate, query latency, scrape success rate, service discovery
+- **Loki Logs** — Log volume by service, parser errors, ingester latency, index stats, search query latency
+- **Loki Stack** — Complete health: ingesters, queriers, distributors, ring consistency, disk usage
+- **Alloy** — Collection rate (pod logs, journal, K8s events), lag, batch size, error rate, scrape target count
+- **Prometheus** — Self-monitoring: TSDB size, ingestion rate, query latency, scrape success rate, service discovery
 
 ### Application Services
 
-14. **Vault** — Seal status, auth method usage, token generation rate, policy enforcement, unseal progress
-15. **cert-manager** — Certificate count, expiry distribution, renewal success rate, ACME challenge failures
-16. **OAuth2-proxy** — Authentication success/failure rate, token refresh latency, cookie validation failures, allowed-group decisions
-17. **Harbor** — Image push/pull rate, scan queue depth, storage growth, replication status, vulnerability scanning
+- **Vault** — Seal status, auth method usage, token generation rate, policy enforcement, unseal progress
+- **cert-manager** — Certificate count, expiry distribution, renewal success rate, ACME challenge failures
+- **OAuth2-proxy** — Authentication success/failure rate, token refresh latency, cookie validation failures, allowed-group decisions
+- **Harbor** — Image push/pull rate, scan queue depth, storage growth, replication status, vulnerability scanning
 
 ### Data & State
 
-18. **PostgreSQL (CNPG)** — Replication lag, TPS (transactions per second), slow query count, connection count, cache hit ratio, WAL size
+- **PostgreSQL (CNPG)** — Replication lag, TPS (transactions per second), slow query count, connection count, cache hit ratio, WAL size
 
 ---
 
