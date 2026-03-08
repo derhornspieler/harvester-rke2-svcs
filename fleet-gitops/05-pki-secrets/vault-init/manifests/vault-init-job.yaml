@@ -1,12 +1,11 @@
 ---
-# Prerequisite: Root CA cert and key must be pre-seeded as a K8s Secret:
-#   kubectl create secret generic root-ca \
-#     --namespace vault \
-#     --from-file=tls.crt=root-ca.pem \
-#     --from-file=tls.key=root-ca-key.pem
+# vault-init Job: Initializes Vault, unseals, joins Raft, enables PKI/KV/auth.
 #
-# The vault-init-keys Secret is created by this Job to store unseal keys
-# and root token. If Vault is already initialized, this Secret must exist.
+# Generates an intermediate CA CSR and saves it to the vault-intermediate-csr
+# K8s Secret. The CSR must be signed offline (deploy.sh Phase 5) using the
+# Root CA key, which never enters the cluster.
+#
+# The vault-init-keys Secret stores unseal keys and root token.
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -53,7 +52,7 @@ metadata:
     app.kubernetes.io/name: vault-init
     app.kubernetes.io/component: bootstrap
 spec:
-  backoffLimit: 3
+  backoffLimit: 6
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
@@ -72,12 +71,16 @@ spec:
           type: RuntimeDefault
       containers:
         - name: vault-init
-          image: harbor.example.com/dockerhub-proxy/bitnami/kubectl:1.33
+          image: docker.io/alpine/k8s:1.32.4
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              # vault-init: Encapsulates Vault init, unseal, Raft join, PKI, K8s auth, KV v2
+              # vault-init: Init, unseal, Raft join, PKI CSR, K8s auth, KV v2
               # Idempotent — safe to re-run.
+              #
+              # The intermediate CA CSR is saved to a K8s Secret for offline
+              # signing by deploy.sh. The root CA private key never enters
+              # the cluster.
 
               DOMAIN="example.com"
               DOMAIN_DOT="${DOMAIN//./-dot-}"
@@ -106,43 +109,79 @@ spec:
               log "vault-0 is Running"
 
               # --- Step 1: Initialize Vault (idempotent) ---
-              initialized=$(kubectl exec -n vault vault-0 -- vault status -format=json 2>/dev/null | grep -o '"initialized":[a-z]*' | cut -d: -f2 || echo "false")
+              log "Waiting for vault-0 to report stable initialization status..."
+              initialized="false"
+              for attempt in $(seq 1 12); do
+                vault_status=$(kubectl exec -n vault vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null || true)
+                init_check=$(echo "$vault_status" | sed -n 's/.*"initialized" *: *\([a-z]*\).*/\1/p')
+                init_check="${init_check:-unknown}"
+                if [[ "$init_check" == "true" || "$init_check" == "false" ]]; then
+                  sleep 3
+                  vault_status2=$(kubectl exec -n vault vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null || true)
+                  init_check2=$(echo "$vault_status2" | sed -n 's/.*"initialized" *: *\([a-z]*\).*/\1/p')
+                  init_check2="${init_check2:-unknown}"
+                  if [[ "$init_check" == "$init_check2" ]]; then
+                    initialized="$init_check"
+                    break
+                  fi
+                  log "Init status changed ($init_check -> $init_check2), retrying..."
+                fi
+                sleep 5
+              done
+              log "Vault initialized=$initialized"
 
               if [[ "$initialized" != "true" ]]; then
                 log "Initializing Vault (5 shares, threshold 3)..."
-                init_output=$(kubectl exec -n vault vault-0 -- vault operator init -key-shares=5 -key-threshold=3 -format=json)
+                init_output=$(kubectl exec -n vault vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator init -key-shares=5 -key-threshold=3 -format=json)
 
-                # Store init output as a K8s Secret
                 kubectl create secret generic vault-init-keys \
                   --namespace vault \
                   --from-literal=init.json="$init_output" \
                   --dry-run=client -o yaml | kubectl apply -f -
                 log "Vault initialized — keys stored in vault/vault-init-keys Secret"
               else
-                log "Vault already initialized"
+                log "Vault already initialized — checking for vault-init-keys Secret"
+                if ! kubectl get secret vault-init-keys -n vault &>/dev/null; then
+                  die "Vault is initialized but vault-init-keys Secret is missing. Cannot unseal without keys. Delete Vault PVCs and redeploy for a fresh start."
+                fi
               fi
 
               # --- Load keys from Secret ---
               init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
-              ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
+              ROOT_TOKEN=$(echo "$init_json" | sed -n 's/.*"root_token" *: *"\([^"]*\)".*/\1/p')
               export ROOT_TOKEN
 
-              # Extract unseal keys (handles both .unseal_keys_hex and .keys formats)
-              # Using grep/sed since jq may not be available
-              mapfile -t UNSEAL_KEYS < <(echo "$init_json" | grep -oP '"(unseal_keys_hex|keys)"\s*:\s*\[\K[^\]]+' | tr ',' '\n' | tr -d ' "')
+              init_oneline=$(echo "$init_json" | tr -d '\n ')
+              mapfile -t UNSEAL_KEYS < <(echo "$init_oneline" | sed -n 's/.*"unseal_keys_hex" *:\[\([^]]*\)\].*/\1/p; s/.*"keys" *:\[\([^]]*\)\].*/\1/p' | head -1 | tr ',' '\n' | tr -d '"')
 
               [[ ${#UNSEAL_KEYS[@]} -ge 3 ]] || die "Need at least 3 unseal keys, got ${#UNSEAL_KEYS[@]}"
 
               # --- Step 2: Unseal all replicas ---
               unseal_replica() {
                 local replica="$1"
+                for w in $(seq 1 30); do
+                  local pod_phase
+                  pod_phase=$(kubectl get pod -n vault "vault-${replica}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+                  [[ "$pod_phase" == "Running" ]] && break
+                  sleep 2
+                done
+
+                local sealed_status
+                sealed_status=$(kubectl exec -n vault "vault-${replica}" -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null || true)
                 local sealed
-                sealed=$(kubectl exec -n vault "vault-${replica}" -- vault status -format=json 2>/dev/null | grep -o '"sealed":[a-z]*' | cut -d: -f2 || echo "true")
+                sealed=$(echo "$sealed_status" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+                sealed="${sealed:-true}"
                 if [[ "$sealed" == "true" ]]; then
                   log "Unsealing vault-${replica}..."
                   for k in 0 1 2; do
-                    kubectl exec -n vault "vault-${replica}" -- vault operator unseal "${UNSEAL_KEYS[$k]}" >/dev/null
+                    kubectl exec -n vault "vault-${replica}" -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal "${UNSEAL_KEYS[$k]}" >/dev/null 2>&1 || true
                   done
+                  local verify_status
+                  verify_status=$(kubectl exec -n vault "vault-${replica}" -- env VAULT_ADDR=http://127.0.0.1:8200 vault status -format=json 2>/dev/null || true)
+                  local verify
+                  verify=$(echo "$verify_status" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+                  [[ "$verify" == "false" ]] || die "vault-${replica} still sealed after unseal attempt"
+                  log "vault-${replica} unsealed successfully"
                 else
                   log "vault-${replica} already unsealed"
                 fi
@@ -162,70 +201,46 @@ spec:
               log "vault-0 is Raft leader"
 
               for i in 1 2; do
-                # Check if already joined by looking at peers
                 if vexec operator raft list-peers -format=json 2>/dev/null | grep -q "vault-${i}"; then
                   log "vault-${i} already in Raft cluster"
                 else
                   log "Joining vault-${i} to Raft cluster..."
-                  kubectl exec -n vault "vault-${i}" -- vault operator raft join http://vault-0.vault-internal:8200
+                  kubectl exec -n vault "vault-${i}" -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator raft join http://vault-0.vault-internal:8200
                 fi
                 unseal_replica "$i"
               done
               log "All ${REPLICAS} Vault replicas unsealed and in Raft cluster"
 
-              # --- Step 4: Enable PKI secrets engine ---
+              # --- Step 4: Enable PKI engines + generate intermediate CSR ---
               vexec secrets enable -path=pki pki 2>/dev/null || log "pki engine already enabled"
               vexec secrets tune -max-lease-ttl=87600h pki
 
-              # Import Root CA certificate
-              log "Importing Root CA certificate into Vault pki/"
-              kubectl cp /root-ca/tls.crt vault/vault-0:/tmp/root-ca.pem
-              vexec write pki/config/ca pem_bundle=@/tmp/root-ca.pem
-
-              # Enable intermediate PKI
               vexec secrets enable -path=pki_int pki 2>/dev/null || log "pki_int engine already enabled"
               vexec secrets tune -max-lease-ttl=43800h pki_int
 
-              # Generate intermediate CSR
-              log "Generating intermediate CSR..."
-              csr=$(vexec write -format=json \
-                pki_int/intermediate/generate/internal \
-                common_name="${ORG} Vault Intermediate CA" \
-                organization="${ORG}" \
-                key_type=rsa \
-                key_bits=4096 \
-                | grep -oP '"csr"\s*:\s*"\K[^"]+' | sed 's/\\n/\n/g')
-              echo "$csr" > /tmp/intermediate.csr
+              # Check if intermediate is already signed
+              int_ca=$(vexec read -format=json pki_int/ca/pem 2>/dev/null || true)
+              if echo "$int_ca" | grep -q "BEGIN CERTIFICATE"; then
+                log "Intermediate CA already signed — skipping CSR generation"
+              else
+                log "Generating intermediate CSR..."
+                csr_json=$(vexec write -format=json \
+                  pki_int/intermediate/generate/internal \
+                  common_name="${ORG} Vault Intermediate CA" \
+                  organization="${ORG}" \
+                  key_type=rsa \
+                  key_bits=4096)
 
-              # Sign with Root CA key (mounted from Secret)
-              log "Signing intermediate CSR with Root CA key..."
-              openssl x509 -req -days 5475 \
-                -in /tmp/intermediate.csr \
-                -CA /root-ca/tls.crt \
-                -CAkey /root-ca/tls.key \
-                -CAcreateserial \
-                -extfile <(printf "basicConstraints=critical,CA:true,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign") \
-                -out /tmp/intermediate.pem
+                csr_pem=$(echo "$csr_json" | tr -d '\n' | sed -n 's/.*"csr" *: *"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g')
 
-              # Validate chain
-              openssl verify -CAfile /root-ca/tls.crt /tmp/intermediate.pem || die "Chain validation failed"
-              log "Certificate chain valid"
-
-              # Create full chain and import
-              cat /tmp/intermediate.pem /root-ca/tls.crt > /tmp/intermediate-chain.pem
-              kubectl cp /tmp/intermediate-chain.pem vault/vault-0:/tmp/intermediate-chain.pem
-              vexec write pki_int/intermediate/set-signed certificate=@/tmp/intermediate-chain.pem
-
-              # Configure signing role
-              vexec write "pki_int/roles/${DOMAIN_DOT}" \
-                allowed_domains="${DOMAIN}" \
-                allowed_domains="cluster.local" \
-                allow_subdomains=true \
-                allow_bare_domains=true \
-                max_ttl=720h \
-                require_cn=false \
-                generate_lease=true
-              log "PKI hierarchy established: Root CA -> Vault Intermediate"
+                # Save CSR to K8s Secret for offline signing by deploy.sh
+                kubectl create secret generic vault-intermediate-csr \
+                  --namespace vault \
+                  --from-literal=csr.pem="$csr_pem" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                log "Intermediate CSR saved to vault/vault-intermediate-csr Secret"
+                log "Waiting for deploy.sh to sign the CSR and import the signed chain..."
+              fi
 
               # --- Step 5: Enable Kubernetes auth ---
               vexec auth enable kubernetes 2>/dev/null || log "kubernetes auth already enabled"
@@ -240,26 +255,79 @@ spec:
                 ttl=1h
 
               # cert-manager PKI policy
-              cat > /tmp/cert-manager-pki.hcl <<POLICY
-              path "pki_int/sign/${DOMAIN_DOT}" {
-                capabilities = ["create", "update"]
+              kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/cert-manager-pki.hcl <<'ENDPOLICY'
+              path \"pki_int/sign/${DOMAIN_DOT}\" {
+                capabilities = [\"create\", \"update\"]
               }
-              path "pki_int/issue/${DOMAIN_DOT}" {
-                capabilities = ["create"]
+              path \"pki_int/issue/${DOMAIN_DOT}\" {
+                capabilities = [\"create\"]
               }
-              POLICY
-              kubectl cp /tmp/cert-manager-pki.hcl vault/vault-0:/tmp/cert-manager-pki.hcl
+              ENDPOLICY"
               vexec policy write cert-manager-pki /tmp/cert-manager-pki.hcl
               log "Kubernetes auth configured with cert-manager role"
 
               # --- Step 6: Enable KV v2 ---
               vexec secrets enable -version=2 -path=kv kv 2>/dev/null || log "kv engine already enabled"
 
+              # --- Step 7: ESO read policy + K8s auth roles per namespace ---
+              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/eso-reader.hcl <<ENDPOLICY
+              path "kv/data/services/*" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/*" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/*" {
+                capabilities = ["read", "list"]
+              }
+              ENDPOLICY'
+              vexec policy write eso-reader /tmp/eso-reader.hcl
+
+              ESO_NAMESPACES="database keycloak minio harbor gitlab monitoring gitlab-runners argo-workflows argo-rollouts kube-system"
+              for ns in $ESO_NAMESPACES; do
+                log "Creating Vault K8s auth role: eso-${ns}"
+                vexec write "auth/kubernetes/role/eso-${ns}" \
+                  bound_service_account_names=external-secrets \
+                  bound_service_account_namespaces="${ns}" \
+                  policies=eso-reader \
+                  ttl=1h
+              done
+              log "ESO auth roles created for all namespaces"
+
+              # --- Step 8: ESO write policy for PushSecret support ---
+              # Services use ESO PushSecret + Generator to create their own
+              # secrets in Vault KV. This policy grants write access.
+              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/eso-writer.hcl <<ENDPOLICY
+              path "kv/data/services/*" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/oidc/*" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              ENDPOLICY'
+              vexec policy write eso-writer /tmp/eso-writer.hcl
+
+              # Create writer roles for namespaces that push secrets
+              for ns in $ESO_NAMESPACES; do
+                log "Creating Vault K8s auth role: eso-writer-${ns}"
+                vexec write "auth/kubernetes/role/eso-writer-${ns}" \
+                  bound_service_account_names=external-secrets \
+                  bound_service_account_namespaces="${ns}" \
+                  policies=eso-writer \
+                  ttl=1h
+              done
+              log "ESO writer roles created for PushSecret support"
+
               log "Vault init Job complete — all phases successful"
-          volumeMounts:
-            - name: root-ca
-              mountPath: /root-ca
-              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -269,7 +337,3 @@ spec:
             requests:
               cpu: 100m
               memory: 128Mi
-      volumes:
-        - name: root-ca
-          secret:
-            secretName: root-ca

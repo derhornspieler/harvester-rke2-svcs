@@ -25,7 +25,7 @@ data:
           "id": 1,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 50, "stacking": {"mode": "normal"}}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval])) by (namespace)", "legendFormat": "{{namespace}}", "refId": "A"}]
+          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval])) by (namespace)", "legendFormat": "{{ "{{namespace}}" }}", "refId": "A"}]
         },
         {
           "title": "Error Rate",
@@ -35,7 +35,7 @@ data:
           "id": 2,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 50}, "color": {"mode": "fixed", "fixedColor": "red"}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |~ \"(?i)error|panic|fatal\"[$__interval])) by (namespace)", "legendFormat": "{{namespace}}", "refId": "A"}]
+          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |~ \"(?i)error|panic|fatal\"[$__interval])) by (namespace)", "legendFormat": "{{ "{{namespace}}" }}", "refId": "A"}]
         },
         {
           "title": "Warning Rate",
@@ -45,7 +45,7 @@ data:
           "id": 3,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 50}, "color": {"mode": "fixed", "fixedColor": "orange"}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |~ \"(?i)warn\"[$__interval])) by (namespace)", "legendFormat": "{{namespace}}", "refId": "A"}]
+          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |~ \"(?i)warn\"[$__interval])) by (namespace)", "legendFormat": "{{ "{{namespace}}" }}", "refId": "A"}]
         },
         {
           "title": "Logs",
@@ -72,7 +72,7 @@ data:
           "id": 5,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 50, "stacking": {"mode": "normal"}}}},
           "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval])) by (container)", "legendFormat": "{{container}}", "refId": "A"}]
+          "targets": [{"expr": "sum(count_over_time({namespace=~\"$namespace\", pod=~\"$pod\"}[$__interval])) by (container)", "legendFormat": "{{ "{{container}}" }}", "refId": "A"}]
         }
       ],
       "schemaVersion": 39,

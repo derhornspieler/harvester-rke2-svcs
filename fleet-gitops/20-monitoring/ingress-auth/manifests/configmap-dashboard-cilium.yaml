@@ -97,7 +97,7 @@ data:
           "id": 7,
           "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "cilium_endpoint_state", "legendFormat": "{{instance}} - {{endpoint_state}}", "refId": "A"}]
+          "targets": [{"expr": "cilium_endpoint_state", "legendFormat": "{{ "{{instance}}" }} - {{ "{{endpoint_state}}" }}", "refId": "A"}]
         },
         {
           "title": "Policy Count",
@@ -107,7 +107,7 @@ data:
           "id": 8,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "cilium_policy", "legendFormat": "{{instance}}", "refId": "A"}]
+          "targets": [{"expr": "cilium_policy", "legendFormat": "{{ "{{instance}}" }}", "refId": "A"}]
         },
         {
           "title": "Forwarded Bytes",
@@ -118,7 +118,7 @@ data:
           "id": 9,
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "rate(cilium_forward_bytes_total[5m])", "legendFormat": "{{direction}}", "refId": "A"}]
+          "targets": [{"expr": "rate(cilium_forward_bytes_total[5m])", "legendFormat": "{{ "{{direction}}" }}", "refId": "A"}]
         },
         {
           "title": "Forwarded Packets",
@@ -129,7 +129,7 @@ data:
           "id": 10,
           "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "rate(cilium_forward_count_total[5m])", "legendFormat": "{{direction}}", "refId": "A"}]
+          "targets": [{"expr": "rate(cilium_forward_count_total[5m])", "legendFormat": "{{ "{{direction}}" }}", "refId": "A"}]
         },
         {
           "title": "Drop Reason",
@@ -140,7 +140,7 @@ data:
           "id": 11,
           "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "rate(cilium_drop_count_total[5m])", "legendFormat": "{{reason}}", "refId": "A"}]
+          "targets": [{"expr": "rate(cilium_drop_count_total[5m])", "legendFormat": "{{ "{{reason}}" }}", "refId": "A"}]
         },
         {
           "title": "API Limiter Processing Duration",
@@ -151,7 +151,7 @@ data:
           "id": 12,
           "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "cilium_api_limiter_processing_duration_seconds", "legendFormat": "{{api_call}}", "refId": "A"}]
+          "targets": [{"expr": "cilium_api_limiter_processing_duration_seconds", "legendFormat": "{{ "{{api_call}}" }}", "refId": "A"}]
         },
         {
           "title": "BPF Map Operations",
@@ -162,7 +162,7 @@ data:
           "id": 13,
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "rate(cilium_bpf_map_ops_total[5m])", "legendFormat": "{{operation}}", "refId": "A"}]
+          "targets": [{"expr": "rate(cilium_bpf_map_ops_total[5m])", "legendFormat": "{{ "{{operation}}" }}", "refId": "A"}]
         },
         {
           "title": "IP Addresses by Family",
@@ -173,7 +173,7 @@ data:
           "id": 14,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(cilium_ip_addresses) by (family)", "legendFormat": "{{family}}", "refId": "A"}]
+          "targets": [{"expr": "sum(cilium_ip_addresses) by (family)", "legendFormat": "{{ "{{family}}" }}", "refId": "A"}]
         },
         {
           "title": "Hubble Relay",
@@ -192,7 +192,7 @@ data:
           "id": 17,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(grpc_server_handled_total{job=\"hubble-relay-metrics\"}[5m])) by (grpc_method)", "legendFormat": "{{grpc_method}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(grpc_server_handled_total{job=\"hubble-relay-metrics\"}[5m])) by (grpc_method)", "legendFormat": "{{ "{{grpc_method}}" }}", "refId": "A"}]
         },
         {
           "title": "Hubble gRPC Latency p99",
@@ -222,7 +222,7 @@ data:
           "id": 21,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_dns_queries_total[5m])) by (query_type)", "legendFormat": "{{query_type}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_dns_queries_total[5m])) by (query_type)", "legendFormat": "{{ "{{query_type}}" }}", "refId": "A"}]
         },
         {
           "title": "DNS Errors/s",
@@ -233,7 +233,7 @@ data:
           "id": 22,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_dns_responses_total{rcode!=\"No Error\"}[5m])) by (rcode)", "legendFormat": "{{rcode}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_dns_responses_total{rcode!=\"No Error\"}[5m])) by (rcode)", "legendFormat": "{{ "{{rcode}}" }}", "refId": "A"}]
         },
         {
           "title": "HTTP Request Rate",
@@ -244,7 +244,7 @@ data:
           "id": 23,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_http_requests_total[5m])) by (method, protocol)", "legendFormat": "{{method}} {{protocol}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_http_requests_total[5m])) by (method, protocol)", "legendFormat": "{{ "{{method}}" }} {{ "{{protocol}}" }}", "refId": "A"}]
         },
         {
           "title": "HTTP Error Rate (5xx)",
@@ -255,7 +255,7 @@ data:
           "id": 24,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_http_responses_total{status=~\"5..\"}[5m])) by (status)", "legendFormat": "{{status}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_http_responses_total{status=~\"5..\"}[5m])) by (status)", "legendFormat": "{{ "{{status}}" }}", "refId": "A"}]
         },
         {
           "title": "HTTP Latency P99",
@@ -277,7 +277,7 @@ data:
           "id": 26,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_tcp_flags_total[5m])) by (flag, family)", "legendFormat": "{{flag}} ({{family}})", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_tcp_flags_total[5m])) by (flag, family)", "legendFormat": "{{ "{{flag}}" }} ({{ "{{family}}" }})", "refId": "A"}]
         },
         {
           "title": "Flows Processed by Verdict",
@@ -288,7 +288,7 @@ data:
           "id": 27,
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_flows_processed_total[5m])) by (verdict)", "legendFormat": "{{verdict}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_flows_processed_total[5m])) by (verdict)", "legendFormat": "{{ "{{verdict}}" }}", "refId": "A"}]
         },
         {
           "title": "Drops by Reason",
@@ -299,7 +299,7 @@ data:
           "id": 28,
           "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "topk(10, sum(rate(hubble_drop_total[5m])) by (reason))", "legendFormat": "{{reason}}", "refId": "A"}]
+          "targets": [{"expr": "topk(10, sum(rate(hubble_drop_total[5m])) by (reason))", "legendFormat": "{{ "{{reason}}" }}", "refId": "A"}]
         },
         {
           "title": "Hubble Lost Events",
@@ -310,7 +310,7 @@ data:
           "id": 29,
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum(rate(hubble_lost_events_total[5m])) by (source)", "legendFormat": "{{source}}", "refId": "A"}]
+          "targets": [{"expr": "sum(rate(hubble_lost_events_total[5m])) by (source)", "legendFormat": "{{ "{{source}}" }}", "refId": "A"}]
         }
       ],
       "schemaVersion": 39,

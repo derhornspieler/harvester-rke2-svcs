@@ -65,7 +65,7 @@ data:
           "id": 4,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 5000}]}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum by (type) (rate(coredns_dns_requests_total{job=\"coredns\"}[5m]))", "legendFormat": "{{type}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (type) (rate(coredns_dns_requests_total{job=\"coredns\"}[5m]))", "legendFormat": "{{ "{{type}}" }}", "refId": "A"}]
         },
         {
           "title": "DNS Request Rate by Rcode",
@@ -75,7 +75,7 @@ data:
           "id": 5,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "sum by (rcode) (rate(coredns_dns_responses_total{job=\"coredns\"}[5m]))", "legendFormat": "{{rcode}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (rcode) (rate(coredns_dns_responses_total{job=\"coredns\"}[5m]))", "legendFormat": "{{ "{{rcode}}" }}", "refId": "A"}]
         },
         {
           "title": "DNS Request Duration (p50, p90, p99)",
@@ -99,7 +99,7 @@ data:
           "id": 7,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-          "targets": [{"expr": "coredns_cache_entries{job=\"coredns\"}", "legendFormat": "{{type}}", "refId": "A"}]
+          "targets": [{"expr": "coredns_cache_entries{job=\"coredns\"}", "legendFormat": "{{ "{{type}}" }}", "refId": "A"}]
         },
         {
           "title": "Cache Hit/Miss Rate",
@@ -110,7 +110,7 @@ data:
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
           "targets": [
-            {"expr": "sum by (type) (rate(coredns_cache_hits_total{job=\"coredns\"}[5m]))", "legendFormat": "hits: {{type}}", "refId": "A"},
+            {"expr": "sum by (type) (rate(coredns_cache_hits_total{job=\"coredns\"}[5m]))", "legendFormat": "hits: {{ "{{type}}" }}", "refId": "A"},
             {"expr": "sum(rate(coredns_cache_misses_total{job=\"coredns\"}[5m]))", "legendFormat": "misses", "refId": "B"}
           ]
         },

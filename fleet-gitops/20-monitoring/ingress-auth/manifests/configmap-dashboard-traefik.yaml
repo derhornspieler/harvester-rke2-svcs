@@ -65,7 +65,7 @@ data:
           "id": 5,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum by (entrypoint) (rate(traefik_entrypoint_requests_total[5m]))", "legendFormat": "{{entrypoint}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (entrypoint) (rate(traefik_entrypoint_requests_total[5m]))", "legendFormat": "{{ "{{entrypoint}}" }}", "refId": "A"}]
         },
         {
           "title": "Request Rate by Status Code",
@@ -75,7 +75,7 @@ data:
           "id": 6,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum by (code) (rate(traefik_service_requests_total[5m]))", "legendFormat": "{{code}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (code) (rate(traefik_service_requests_total[5m]))", "legendFormat": "{{ "{{code}}" }}", "refId": "A"}]
         },
         {
           "title": "Error Rate (4xx + 5xx)",
@@ -109,7 +109,7 @@ data:
           "id": 9,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "traefik_open_connections", "legendFormat": "{{entrypoint}}", "refId": "A"}]
+          "targets": [{"expr": "traefik_open_connections", "legendFormat": "{{ "{{entrypoint}}" }}", "refId": "A"}]
         },
         {
           "title": "Requests by Service (Top 10)",
@@ -119,7 +119,7 @@ data:
           "id": 10,
           "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "topk(10, sum by (service) (rate(traefik_service_requests_total[5m])))", "legendFormat": "{{service}}", "refId": "A"}]
+          "targets": [{"expr": "topk(10, sum by (service) (rate(traefik_service_requests_total[5m])))", "legendFormat": "{{ "{{service}}" }}", "refId": "A"}]
         },
         {
           "title": "Service Error Rate %",
@@ -130,7 +130,7 @@ data:
           "id": 13,
           "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum by (service) (rate(traefik_service_requests_total{code=~\"5..\"}[5m])) / sum by (service) (rate(traefik_service_requests_total[5m])) * 100", "legendFormat": "{{service}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (service) (rate(traefik_service_requests_total{code=~\"5..\"}[5m])) / sum by (service) (rate(traefik_service_requests_total[5m])) * 100", "legendFormat": "{{ "{{service}}" }}", "refId": "A"}]
         },
         {
           "title": "TLS Connections",
@@ -140,7 +140,7 @@ data:
           "id": 11,
           "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "sum by (tls_version) (traefik_tls_certs_not_after)", "legendFormat": "{{tls_version}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (tls_version) (traefik_tls_certs_not_after)", "legendFormat": "{{ "{{tls_version}}" }}", "refId": "A"}]
         },
         {
           "title": "Config Reloads",

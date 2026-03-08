@@ -13,12 +13,12 @@ spec:
     - name: p99-latency
       interval: 30s
       count: 5
-      successCondition: result[0] < asFloat(args.max-latency-ms)
+      successCondition: "result[0] < asFloat(args.max-latency-ms)"
       failureLimit: 2
       provider:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
             histogram_quantile(0.99,
-              sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}",namespace="{{args.namespace}}"}[2m])) by (le)
+              sum(rate(http_request_duration_seconds_bucket{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}"}[2m])) by (le)
             ) * 1000

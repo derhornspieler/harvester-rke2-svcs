@@ -98,7 +98,7 @@ spec:
                 description: pollInterval is how often to check volume metrics.
                 type: string
               prometheusURL:
-                default: CHANGEME_PROMETHEUS_ADDR
+                default: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
                 description: prometheusURL is the Prometheus endpoint to query for
                   volume metrics.
                 type: string

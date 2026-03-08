@@ -72,7 +72,7 @@ data:
           "id": 2,
           "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "mappings": [{"type": "value", "options": {"0": {"text": "PRIMARY", "color": "green"}, "1": {"text": "REPLICA", "color": "blue"}}}]}},
           "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value_and_name"},
-          "targets": [{"expr": "cnpg_pg_replication_in_recovery{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"expr": "cnpg_pg_replication_in_recovery{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{ "{{pod}}" }}", "refId": "A"}]
         },
         {
           "title": "Max Replication Lag",
@@ -115,8 +115,8 @@ data:
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}, "overrides": [{"matcher": {"id": "byRegexp", "options": "Rollbacks.*"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}]},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "rate(cnpg_pg_stat_database_xact_commit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Commits - {{datname}} ({{pod}})", "refId": "A"},
-            {"expr": "rate(cnpg_pg_stat_database_xact_rollback{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Rollbacks - {{datname}} ({{pod}})", "refId": "B"}
+            {"expr": "rate(cnpg_pg_stat_database_xact_commit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Commits - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"},
+            {"expr": "rate(cnpg_pg_stat_database_xact_rollback{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Rollbacks - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "B"}
           ]
         },
         {
@@ -128,8 +128,8 @@ data:
           "fieldConfig": {"defaults": {"unit": "rowsps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "rate(cnpg_pg_stat_database_tup_returned{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Returned - {{datname}} ({{pod}})", "refId": "A"},
-            {"expr": "rate(cnpg_pg_stat_database_tup_fetched{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Fetched - {{datname}} ({{pod}})", "refId": "B"}
+            {"expr": "rate(cnpg_pg_stat_database_tup_returned{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Returned - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"},
+            {"expr": "rate(cnpg_pg_stat_database_tup_fetched{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Fetched - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "B"}
           ]
         },
         {
@@ -141,9 +141,9 @@ data:
           "fieldConfig": {"defaults": {"unit": "rowsps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}, "overrides": [{"matcher": {"id": "byRegexp", "options": "Deleted.*"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}]},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "rate(cnpg_pg_stat_database_tup_inserted{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Inserted - {{datname}} ({{pod}})", "refId": "A"},
-            {"expr": "rate(cnpg_pg_stat_database_tup_updated{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Updated - {{datname}} ({{pod}})", "refId": "B"},
-            {"expr": "rate(cnpg_pg_stat_database_tup_deleted{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Deleted - {{datname}} ({{pod}})", "refId": "C"}
+            {"expr": "rate(cnpg_pg_stat_database_tup_inserted{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Inserted - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"},
+            {"expr": "rate(cnpg_pg_stat_database_tup_updated{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Updated - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "B"},
+            {"expr": "rate(cnpg_pg_stat_database_tup_deleted{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Deleted - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "C"}
           ]
         },
         {
@@ -154,7 +154,7 @@ data:
           "id": 8,
           "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 90}]}}},
           "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "showThresholdLabels": false, "showThresholdMarkers": true},
-          "targets": [{"expr": "sum by (pod) (cnpg_backends_total{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}) / on(pod) cnpg_pg_settings_setting{name=\"max_connections\", cnpg_cluster=\"$cluster\", pod=~\"$pod\"} * 100", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"expr": "sum by (pod) (cnpg_backends_total{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}) / on(pod) cnpg_pg_settings_setting{name=\"max_connections\", cnpg_cluster=\"$cluster\", pod=~\"$pod\"} * 100", "legendFormat": "{{ "{{pod}}" }}", "refId": "A"}]
         },
         {
           "title": "Replication Lag Over Time",
@@ -164,7 +164,7 @@ data:
           "id": 9,
           "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 30}]}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "cnpg_pg_replication_lag{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+          "targets": [{"expr": "cnpg_pg_replication_lag{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{ "{{pod}}" }}", "refId": "A"}]
         },
         {
           "title": "Database Size",
@@ -174,7 +174,7 @@ data:
           "id": 10,
           "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "cnpg_pg_database_size_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{datname}} ({{pod}})", "refId": "A"}]
+          "targets": [{"expr": "cnpg_pg_database_size_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}", "legendFormat": "{{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"}]
         },
         {
           "title": "Block I/O (Read vs Hit)",
@@ -185,8 +185,8 @@ data:
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "rate(cnpg_pg_stat_database_blks_read{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Reads - {{datname}} ({{pod}})", "refId": "A"},
-            {"expr": "rate(cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Cache Hits - {{datname}} ({{pod}})", "refId": "B"}
+            {"expr": "rate(cnpg_pg_stat_database_blks_read{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Reads - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"},
+            {"expr": "rate(cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Cache Hits - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "B"}
           ]
         },
         {
@@ -198,8 +198,8 @@ data:
           "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}, "overrides": [{"matcher": {"id": "byRegexp", "options": "Temp Files.*"}, "properties": [{"id": "unit", "value": "short"}, {"id": "custom.axisPlacement", "value": "right"}]}]},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "rate(cnpg_pg_stat_database_temp_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Temp Bytes/s - {{datname}} ({{pod}})", "refId": "A"},
-            {"expr": "rate(cnpg_pg_stat_database_temp_files{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Temp Files/s - {{datname}} ({{pod}})", "refId": "B"}
+            {"expr": "rate(cnpg_pg_stat_database_temp_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Temp Bytes/s - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"},
+            {"expr": "rate(cnpg_pg_stat_database_temp_files{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "Temp Files/s - {{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "B"}
           ]
         },
         {
@@ -211,10 +211,10 @@ data:
           "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [
-            {"expr": "cnpg_collector_pg_wal{cnpg_cluster=\"$cluster\", pod=~\"$pod\", value=\"count\"}", "legendFormat": "WAL Files - {{pod}}", "refId": "A"},
-            {"expr": "cnpg_collector_pg_wal{cnpg_cluster=\"$cluster\", pod=~\"$pod\", value=\"keep\"}", "legendFormat": "WAL Keep - {{pod}}", "refId": "B"},
-            {"expr": "rate(cnpg_collector_wal_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "WAL Write Rate - {{pod}}", "refId": "C"},
-            {"expr": "rate(cnpg_collector_wal_records{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "WAL Records/s - {{pod}}", "refId": "D"}
+            {"expr": "cnpg_collector_pg_wal{cnpg_cluster=\"$cluster\", pod=~\"$pod\", value=\"count\"}", "legendFormat": "WAL Files - {{ "{{pod}}" }}", "refId": "A"},
+            {"expr": "cnpg_collector_pg_wal{cnpg_cluster=\"$cluster\", pod=~\"$pod\", value=\"keep\"}", "legendFormat": "WAL Keep - {{ "{{pod}}" }}", "refId": "B"},
+            {"expr": "rate(cnpg_collector_wal_bytes{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "WAL Write Rate - {{ "{{pod}}" }}", "refId": "C"},
+            {"expr": "rate(cnpg_collector_wal_records{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "WAL Records/s - {{ "{{pod}}" }}", "refId": "D"}
           ]
         },
         {
@@ -225,7 +225,7 @@ data:
           "id": 12,
           "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "pointSize": 5, "showPoints": "never", "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 90}, {"color": "green", "value": 99}]}}},
           "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-          "targets": [{"expr": "cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"} / (cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"} + cnpg_pg_stat_database_blks_read{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}) * 100", "legendFormat": "{{datname}} ({{pod}})", "refId": "A"}]
+          "targets": [{"expr": "cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"} / (cnpg_pg_stat_database_blks_hit{cnpg_cluster=\"$cluster\", pod=~\"$pod\"} + cnpg_pg_stat_database_blks_read{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}) * 100", "legendFormat": "{{ "{{datname}}" }} ({{ "{{pod}}" }})", "refId": "A"}]
         },
         {
           "title": "WAL Archive Rate",
@@ -236,7 +236,7 @@ data:
           "id": 20,
           "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 1, "lineInterpolation": "smooth", "stacking": {"mode": "none"}, "spanNulls": false}}},
           "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
-          "targets": [{"expr": "rate(cnpg_pg_stat_archiver_archived_count{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "archived {{pod}}", "refId": "A"}, {"expr": "rate(cnpg_pg_stat_archiver_failed_count{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "failed {{pod}}", "refId": "B"}]
+          "targets": [{"expr": "rate(cnpg_pg_stat_archiver_archived_count{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "archived {{ "{{pod}}" }}", "refId": "A"}, {"expr": "rate(cnpg_pg_stat_archiver_failed_count{cnpg_cluster=\"$cluster\", pod=~\"$pod\"}[5m])", "legendFormat": "failed {{ "{{pod}}" }}", "refId": "B"}]
         }
       ]
     }

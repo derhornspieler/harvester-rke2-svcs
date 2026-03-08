@@ -1,0 +1,7 @@
+defaultNamespace: argo-rollouts
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: argo-rollouts
+targets:
+  - clusterName: rke2-prod

@@ -24,7 +24,7 @@ expose:
     ports:
       httpPort: 80
 
-externalURL: https://harbor.dev.CHANGEME_DOMAIN
+externalURL: https://harbor.dev.example.com
 
 # --- Admin (from ESO → Vault kv/services/harbor) ---
 existingSecretAdminPassword: harbor-admin-credentials
@@ -63,7 +63,7 @@ redis:
   external:
     sentinelMasterSet: "mymaster"
     addr: "harbor-redis-sentinel.harbor.svc.cluster.local:26379"
-    existingSecret: harbor-valkey-credentials
+    password: "051cfb54b4710d38718aaa06e93af8aa"
     coreDatabaseIndex: "0"
     jobserviceDatabaseIndex: "1"
     registryDatabaseIndex: "2"
@@ -71,7 +71,7 @@ redis:
 
 # --- Core (API server, auth, token service) ---
 core:
-  # replicas managed by HPA (hpa-core.yaml)
+  replicas: 2  # Match HPA min to prevent Fleet drift detection
   resources:
     requests:
       cpu: 250m
@@ -109,7 +109,7 @@ portal:
 
 # --- Registry (Docker distribution — image blob handling) ---
 registry:
-  # replicas managed by HPA (hpa-registry.yaml)
+  replicas: 2  # Match HPA min to prevent Fleet drift detection
   registry:
     resources:
       requests:
@@ -156,7 +156,7 @@ jobservice:
 
 # --- Trivy (vulnerability scanner) ---
 trivy:
-  enabled: true
+  enabled: false
   # replicas managed by HPA (hpa-trivy.yaml)
   resources:
     requests:

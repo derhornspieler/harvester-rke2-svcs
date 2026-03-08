@@ -53,7 +53,7 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: "s3://cnpg-backups/harbor-pg"
-      endpointURL: "CHANGEME_MINIO_ENDPOINT"
+      endpointURL: "http://minio.minio.svc.cluster.local:9000"
       s3Credentials:
         accessKeyId:
           name: cnpg-minio-credentials

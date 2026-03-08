@@ -123,7 +123,7 @@ data:
           "targets": [
             {
               "expr": "count by (phase) (kube_pod_status_phase{job=\"kube-state-metrics\"} == 1)",
-              "legendFormat": "{{phase}}",
+              "legendFormat": "{{ "{{phase}}" }}",
               "refId": "A"
             }
           ]
@@ -193,7 +193,7 @@ data:
           "targets": [
             {
               "expr": "count by (namespace) (kube_pod_info{job=\"kube-state-metrics\"})",
-              "legendFormat": "{{namespace}}",
+              "legendFormat": "{{ "{{namespace}}" }}",
               "refId": "A"
             }
           ]
@@ -262,7 +262,7 @@ data:
           "targets": [
             {
               "expr": "topk(10, round(increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\"}[1h])))",
-              "legendFormat": "{{namespace}}/{{pod}}",
+              "legendFormat": "{{ "{{namespace}}" }}/{{ "{{pod}}" }}",
               "refId": "A"
             }
           ]
