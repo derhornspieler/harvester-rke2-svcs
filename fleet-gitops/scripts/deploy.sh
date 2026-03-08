@@ -19,7 +19,7 @@ set -euo pipefail
 #   - kubectl CLI
 #   - jq, python3 with PyYAML
 #   - Harbor credentials (helm registry login harbor.aegisgroup.ch)
-#   - Rancher API access (reads from ~/code/harvester-rke2-cluster/terraform.tfvars)
+#   - Rancher API access (reads from .env file or environment variables)
 
 # --- Colors ---
 RED='\033[0;31m'

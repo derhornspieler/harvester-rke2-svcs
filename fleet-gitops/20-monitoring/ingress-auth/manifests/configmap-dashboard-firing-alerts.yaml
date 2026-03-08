@@ -26,7 +26,7 @@ data:
           "id": 20,
           "options": {
             "mode": "markdown",
-            "content": "### Expected Post-Bootstrap Alerts\nDuring initial deployment, alerts may fire for services not yet deployed. These are expected and will auto-resolve once all phases complete:\n- **TargetDown / ServiceDown** for phases deployed after monitoring (Phase 3)\n- **CertificateExpiringSoon** before cert-manager issues initial certs\n- **PodNotReady** during rolling deployments\n\nIf alerts persist >30 minutes after full deploy, investigate."
+            "content": "### Expected Post-Bootstrap Alerts\nDuring initial deployment, alerts may fire for services not yet deployed. These are expected and will auto-resolve once all phases complete:\n- **TargetDown / ServiceDown** for Fleet bundles deployed after the monitoring bundle\n- **CertificateExpiringSoon** before cert-manager issues initial certs\n- **PodNotReady** during rolling deployments\n\nIf alerts persist >30 minutes after full deploy, investigate."
           }
         },
         {

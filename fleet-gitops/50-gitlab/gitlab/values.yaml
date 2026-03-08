@@ -134,7 +134,7 @@ global:
       sslMode: disable
 
   ## ── Monitoring ─────────────────────────────────────────────────────────────
-  ## kube-prometheus-stack (Phase 3) provides Prometheus Operator CRDs.
+  ## The kube-prometheus-stack Fleet bundle provides Prometheus Operator CRDs.
   ## Chart creates ServiceMonitors for all GitLab components.
   monitoring:
     enabled: true

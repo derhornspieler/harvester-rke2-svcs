@@ -2,8 +2,8 @@
 # vault-init Job: Initializes Vault, unseals, joins Raft, enables PKI/KV/auth.
 #
 # Generates an intermediate CA CSR and saves it to the vault-intermediate-csr
-# K8s Secret. The CSR must be signed offline (deploy.sh Phase 5) using the
-# Root CA key, which never enters the cluster.
+# K8s Secret. The CSR must be signed offline (deploy.sh) using the Root CA
+# key, which never enters the cluster.
 #
 # The vault-init-keys Secret stores unseal keys and root token.
 ---
@@ -233,13 +233,13 @@ spec:
 
                 csr_pem=$(echo "$csr_json" | tr -d '\n' | sed -n 's/.*"csr" *: *"\([^"]*\)".*/\1/p' | sed 's/\\n/\n/g')
 
-                # Save CSR to K8s Secret for offline signing by deploy.sh
+                # Save CSR to K8s Secret for offline signing
                 kubectl create secret generic vault-intermediate-csr \
                   --namespace vault \
                   --from-literal=csr.pem="$csr_pem" \
                   --dry-run=client -o yaml | kubectl apply -f -
                 log "Intermediate CSR saved to vault/vault-intermediate-csr Secret"
-                log "Waiting for deploy.sh to sign the CSR and import the signed chain..."
+                log "Waiting for the CSR to be signed offline and the signed chain imported..."
               fi
 
               # --- Step 5: Enable Kubernetes auth ---
