@@ -1,6 +1,13 @@
 # Fleet GitOps Baseline Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+>
+> **IMPORTANT — Agent & Memory Instructions:**
+> - Use the custom agents defined in `~/code/harvester-rke2-svcs/.claude/agents/` — especially `platform-engineer` for Fleet/GitOps work and `k8s-infra-engineer` for operator migration
+> - Read and update agent local memory in `~/code/harvester-rke2-svcs/.claude/agent-memory-local/` as you work
+> - Also reference `~/code/harvester-rke2-cluster/.claude/agent-memory-local/k8s-infra-engineer/MEMORY.md` for operator manifest patterns
+> - Security findings in `~/code/harvester-rke2-svcs/.claude/agent-memory-local/security-sentinel/MEMORY.md` note that ALL images currently reference upstream registries — Fleet bundles must use Harbor proxy-cache paths
+> - Working directory: `~/code/harvester-rke2-svcs/`
 
 **Goal:** Convert imperative deploy scripts into declarative Fleet bundles with OCI-first bootstrap from Harbor.
 
