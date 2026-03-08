@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gitlab-runners
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - gitlab-runners
+  selector:
+    matchLabels:
+      app: gitlab-runner-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

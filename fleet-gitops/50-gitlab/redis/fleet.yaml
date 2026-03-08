@@ -1,0 +1,3 @@
+defaultNamespace: gitlab
+targets:
+  - clusterName: rke2-prod
