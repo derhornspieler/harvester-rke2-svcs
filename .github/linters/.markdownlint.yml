@@ -31,3 +31,6 @@ MD046: false
 
 # Code block language - not required
 MD040: false
+
+# Table column style - disabled (compact separators are readable)
+MD060: false
