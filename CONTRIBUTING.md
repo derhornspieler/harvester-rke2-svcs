@@ -26,8 +26,10 @@ To add a new platform service:
 2. Add Kustomize `kustomization.yaml`
 3. Add Helm values or raw manifests
 4. Add monitoring (ServiceMonitor, PrometheusRules, dashboards)
-5. Create Fleet bundle in `fleet-gitops/`
-6. Update documentation
+5. Create Fleet bundle in `fleet-gitops/` under the appropriate bundle group
+6. Push charts and bundles to Harbor via `fleet-gitops/scripts/push-charts.sh` and `push-bundles.sh`
+7. Deploy via Fleet GitOps: `fleet-gitops/scripts/deploy-fleet-helmops.sh`
+8. Update documentation
 
 ### Updating Documentation
 
