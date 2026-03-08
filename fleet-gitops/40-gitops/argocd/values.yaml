@@ -22,6 +22,11 @@ global:
 
 # ArgoCD config overrides
 configs:
+  ## Do not create argocd-secret — ESO manages it (ExternalSecret with Merge
+  ## policy injects OIDC client secret). Without this, Fleet reports "Modified"
+  ## because the secret isn't owned by the Helm release.
+  secret:
+    createSecret: false
   cm:
     timeout.reconciliation: 180s
     timeout.reconciliation.jitter: 60s
