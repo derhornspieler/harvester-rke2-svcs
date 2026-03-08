@@ -5,9 +5,22 @@ set -euo pipefail
 #
 # Usage: ./push-charts.sh
 #
-# Prerequisites: helm CLI, Harbor credentials (helm registry login)
+# Prerequisites: helm CLI, Harbor credentials in .env (HARBOR_USER / HARBOR_PASS)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
+
+# Source .env for credentials
+if [[ -f "${FLEET_DIR}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${FLEET_DIR}/.env"
+  set +a
+fi
 
 HARBOR="harbor.example.com"
+HARBOR_USER="${HARBOR_USER:-admin}"
+HARBOR_PASS="${HARBOR_PASS:-Harbor12345}"
 
 CHARTS=(
   # chart-name|repo-url|version
@@ -31,6 +44,12 @@ OCI_CHARTS=(
 )
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
+
+# Login to Harbor OCI registry
+log "Logging into Harbor OCI registry..."
+echo "${HARBOR_PASS}" | helm registry login "${HARBOR}" \
+  --username "${HARBOR_USER}" \
+  --password-stdin 2>/dev/null
 
 # Repo-based charts: add repo, pull, push
 for entry in "${CHARTS[@]}"; do
