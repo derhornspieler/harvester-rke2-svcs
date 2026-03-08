@@ -1,0 +1,12 @@
+crds:
+  enabled: true
+
+# Gateway API shim for Certificate resources
+extraArgs:
+  - --enable-gateway-api
+
+# Prometheus ServiceMonitor
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
