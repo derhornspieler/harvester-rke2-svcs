@@ -1,0 +1,3 @@
+# ClusterAnalysisTemplates are cluster-scoped
+targets:
+  - clusterName: rke2-prod
