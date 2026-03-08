@@ -79,15 +79,15 @@ Planned integration to archive metrics and logs to Splunk for long-term retentio
 
 ```mermaid
 flowchart TD
-    A["Prometheus evaluates rule"] --> B{"Threshold\nbreached?"}
+    A["Prometheus evaluates rule"] --> B{"Threshold<br/>breached?"}
     B -->|"No"| C["Continue monitoring"]
     B -->|"Yes"| D{"Severity level?"}
-    D -->|"Critical"| E["Alertmanager\nimmediate notify"]
+    D -->|"Critical"| E["Alertmanager<br/>immediate notify"]
     E --> F["On-call responds"]
-    D -->|"Warning"| G["Alertmanager\nqueue for review"]
-    G --> H["Engineer reviews\nin Grafana"]
+    D -->|"Warning"| G["Alertmanager<br/>queue for review"]
+    G --> H["Engineer reviews<br/>in Grafana"]
     D -->|"Info"| I["Log only"]
-    I --> J["Available in\nGrafana dashboards"]
+    I --> J["Available in<br/>Grafana dashboards"]
 
     classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
     classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px

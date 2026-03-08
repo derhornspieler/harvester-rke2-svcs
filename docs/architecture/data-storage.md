@@ -73,17 +73,17 @@ graph TD
 
 ```mermaid
 flowchart TD
-    A["Database pod fails"] --> B{"Is it the\nprimary?"}
+    A["Database pod fails"] --> B{"Is it the<br/>primary?"}
     B -->|"No (replica)"| C["CNPG recreates replica"]
     C --> D["Re-sync from primary"]
     D --> E["Resume operations"]
-    B -->|"Yes (primary)"| F["CNPG promotes\nreplica to primary"]
+    B -->|"Yes (primary)"| F["CNPG promotes<br/>replica to primary"]
     F --> G["Application reconnects"]
-    G --> H["Old primary recovers\nas replica"]
+    G --> H["Old primary recovers<br/>as replica"]
 
-    I["Redis master fails"] --> J{"Sentinel quorum\nreached?"}
-    J -->|"No"| K["Manual intervention\nneeded"]
-    J -->|"Yes"| L["Sentinel promotes\nreplica"]
+    I["Redis master fails"] --> J{"Sentinel quorum<br/>reached?"}
+    J -->|"No"| K["Manual intervention<br/>needed"]
+    J -->|"Yes"| L["Sentinel promotes<br/>replica"]
     L --> M["Applications reconnect"]
 
     classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px

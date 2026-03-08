@@ -83,16 +83,16 @@ graph LR
 
 ```mermaid
 flowchart TD
-    A["Developer pushes code"] --> B{"Gitleaks:\nsecrets found?"}
-    B -->|"Yes"| C["Pipeline FAILS\nNotify developer"]
+    A["Developer pushes code"] --> B{"Gitleaks:<br/>secrets found?"}
+    B -->|"Yes"| C["Pipeline FAILS<br/>Notify developer"]
     B -->|"No"| D["Build container image"]
-    D --> E{"Trivy:\nvulnerabilities?"}
+    D --> E{"Trivy:<br/>vulnerabilities?"}
     E -->|"Critical/High"| F["Pipeline FAILS"]
     E -->|"None/Medium/Low"| G["Push to Harbor"]
     G --> H["ArgoCD detects change"]
     H --> I{"Deploy strategy?"}
     I -->|"Canary"| J["Shift 5% traffic"]
-    J --> K{"Prometheus:\nhealthy?"}
+    J --> K{"Prometheus:<br/>healthy?"}
     K -->|"No"| L["Auto rollback"]
     K -->|"Yes"| M["Shift 50% then 100%"]
     M --> N["Done"]
