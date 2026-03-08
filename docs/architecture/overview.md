@@ -6,144 +6,71 @@ This platform delivers a production-grade GitOps foundation on a 13-node Harvest
 
 ---
 
-## Master Platform Diagram
+## Platform at a Glance
+
+The platform is organized into six stacks. Each stack is self-contained and deployed as a bundle.
 
 ```mermaid
-graph TD
-    subgraph AuthId["🔐 Authentication &amp; Identity"]
-        KC["Keycloak<br/>OIDC Provider"]
-        OAuth["OAuth2-proxy<br/>Service Protector"]
+block-beta
+    columns 3
+
+    block:security["🔒 Security &amp; PKI"]:2
+        RootCA["Offline Root CA"]
+        Vault["Vault HA\n(Secrets + Intermediate CA)"]
+        CertMgr["cert-manager\n(Auto TLS)"]
+        ESO["External Secrets\nOperator"]
     end
 
-    subgraph Net["🌐 Networking &amp; Ingress"]
-        Traefik["Traefik<br/>API Gateway"]
-        GW["Gateway API<br/>HTTPRoutes &amp; Middleware"]
+    block:identity["🔐 Identity &amp; Access"]
+        KC["Keycloak\n(OIDC Provider)"]
+        OAuth["OAuth2-proxy\n(Auth Gateway)"]
     end
 
-    subgraph PKI["🔑 PKI &amp; Certificates"]
-        RootCA["Offline Root CA<br/>(Air-gapped)"]
-        Vault["Vault<br/>Intermediate CA + KV Secrets"]
-        CM["cert-manager<br/>Leaf Certificate Issuer"]
+    block:monitoring["📊 Observability"]:2
+        Prom["Prometheus\n(Metrics)"]
+        Graf["Grafana\n(Dashboards)"]
+        Loki["Loki\n(Logs)"]
+        Alloy["Alloy\n(Collector)"]
+        Hubble["Hubble\n(Network Flows)"]
+        AM["Alertmanager\n(Alerts)"]
     end
 
-    subgraph CICD["🚀 CI/CD Pipeline"]
-        GL["GitLab<br/>Repository + CI/CD"]
-        Runners["GitLab Runners<br/>Job Execution"]
-        Harbor["Harbor<br/>Container Registry"]
-        ArgoCD["ArgoCD<br/>Policy-Driven Deployment"]
-        Rollouts["Argo Rollouts<br/>Progressive Delivery"]
+    block:platform["🚀 Platform"]
+        ArgoCD["ArgoCD\n(GitOps Deploy)"]
+        Rollouts["Argo Rollouts\n(Canary/Blue-Green)"]
+        Workflows["Argo Workflows\n(Automation)"]
     end
 
-    subgraph Obs["📊 Observability &amp; Monitoring"]
-        Prom["Prometheus<br/>Metrics Collection"]
-        Graf["Grafana<br/>Visualization &amp; Dashboards"]
-        Loki["Loki<br/>Log Aggregation"]
-        Alloy["Alloy<br/>Log Collector"]
-        Hubble["Hubble<br/>Network Observability"]
-        AM["Alertmanager<br/>Alert Routing"]
+    block:cicd["💻 CI/CD"]:2
+        GitLab["GitLab EE\n(Source + Pipelines)"]
+        Runners["GitLab Runners\n(Job Execution)"]
+        Harbor["Harbor\n(Container Registry)"]
     end
 
-    subgraph Data["💾 Data &amp; Storage"]
-        CNPG["CloudNativePG<br/>(3x PostgreSQL HA)"]
-        Redis["Redis/Valkey Sentinel<br/>(Cache + Session)"]
-        MinIO["MinIO<br/>(S3-compatible Storage)"]
+    block:data["💾 Data &amp; Storage"]
+        CNPG["PostgreSQL HA\n(3 Clusters)"]
+        Redis["Redis Sentinel\n(Cache)"]
+        MinIO["MinIO\n(Object Storage)"]
     end
 
-    subgraph Secrets["🔓 Secrets &amp; Configuration"]
-        ESO["External Secrets Operator<br/>Sync to Vault"]
-        SecretStore["SecretStores<br/>(Vault Integration)"]
-    end
-
-    RootCA -->|signs| Vault
-    Vault -->|pki_int/sign| CM
-    Vault -->|kv/data| ESO
-
-    ESO -->|sync| SecretStore
-    SecretStore -->|inject| GL
-    SecretStore -->|inject| KC
-    SecretStore -->|inject| ArgoCD
-    SecretStore -->|inject| Harbor
-
-    CM -->|leaf certs| Traefik
-    CM -->|leaf certs| Graf
-    CM -->|leaf certs| KC
-    CM -->|leaf certs| Harbor
-    CM -->|leaf certs| GL
-    CM -->|leaf certs| ArgoCD
-
-    KC -->|OIDC| OAuth
-    KC -->|OIDC| ArgoCD
-    KC -->|OIDC| Graf
-    KC -->|OIDC| GL
-
-    OAuth -->|protects| Prom
-    OAuth -->|protects| Graf
-    OAuth -->|protects| ArgoCD
-
-    Traefik -->|routes| KC
-    Traefik -->|routes| Graf
-    Traefik -->|routes| Prom
-    Traefik -->|routes| Harbor
-    Traefik -->|routes| GL
-    Traefik -->|routes| ArgoCD
-
-    GW -->|TLS + auth| Traefik
-
-    GL -->|triggers| Runners
-    Runners -->|push images| Harbor
-    Runners -->|commit triggers| ArgoCD
-
-    ArgoCD -->|deploy| CICD
-    ArgoCD -->|deploy| Obs
-    ArgoCD -->|deploy| Data
-
-    Rollouts -->|canary/blue-green| GL
-
-    CNPG -->|stores| GL
-    CNPG -->|stores| KC
-    CNPG -->|stores| Harbor
-    CNPG -->|stores| ArgoCD
-
-    Redis -->|caches| GL
-    Redis -->|caches| KC
-    Redis -->|caches| Harbor
-
-    MinIO -->|backend| Harbor
-    MinIO -->|backup| GL
-
-    Alloy -->|logs| Loki
-    Hubble -->|network flow| Loki
-
-    Prom -->|scrapes all| KC
-    Prom -->|scrapes all| Harbor
-    Prom -->|scrapes all| GL
-    Prom -->|scrapes all| ArgoCD
-    Prom -->|scrapes all| CNPG
-    Prom -->|scrapes all| Redis
-
-    Prom -->|alerts| AM
-    AM -->|notifies| Traefik
-
-    Graf -->|visualizes| Prom
-    Graf -->|visualizes| Loki
-    Loki -->|indexed by| Hubble
-
-    classDef secStyle fill:#dc3545,color:#fff,stroke:#a02030,stroke-width:3px
-    classDef idStyle fill:#6f42c1,color:#fff,stroke:#4a2a7f,stroke-width:3px
-    classDef netStyle fill:#0d6efd,color:#fff,stroke:#0a4fa3,stroke-width:3px
-    classDef cicdStyle fill:#198754,color:#fff,stroke:#0d5a32,stroke-width:3px
-    classDef obsStyle fill:#fd7e14,color:#fff,stroke:#b15810,stroke-width:3px
-    classDef dataStyle fill:#0dcaf0,color:#000,stroke:#0a9db5,stroke-width:3px
-    classDef secretStyle fill:#d63384,color:#fff,stroke:#9e2460,stroke-width:3px
-
-    class RootCA,Vault,CM secStyle
-    class KC,OAuth idStyle
-    class Traefik,GW netStyle
-    class GL,Runners,Harbor,ArgoCD,Rollouts cicdStyle
-    class Prom,Graf,Loki,Alloy,Hubble,AM obsStyle
-    class CNPG,Redis,MinIO dataStyle
-    class ESO,SecretStore secretStyle
+    style security fill:#dc3545,color:#fff
+    style identity fill:#6f42c1,color:#fff
+    style monitoring fill:#fd7e14,color:#fff
+    style platform fill:#198754,color:#fff
+    style cicd fill:#0d6efd,color:#fff
+    style data fill:#0dcaf0,color:#000
 ```
+
+### How the Stacks Relate
+
+| Stack | Depends On | Provides To |
+|-------|-----------|-------------|
+| Security &amp; PKI | — (foundation) | TLS certificates and secrets to all stacks |
+| Identity &amp; Access | Security (certs, secrets) | Single sign-on to Platform, CI/CD, Observability |
+| Observability | Security, Identity | Metrics, logs, alerts for all stacks |
+| Data &amp; Storage | Security (secrets) | PostgreSQL, Redis, MinIO for Platform and CI/CD |
+| Platform | Security, Identity, Data | GitOps deployment for all applications |
+| CI/CD | All of the above | Source control, pipelines, container registry |
 
 ---
 
@@ -221,59 +148,35 @@ The Harvester RKE2 cluster spans 13 nodes optimized for different workload types
 
 ---
 
-## Bundle Dependency Graph
+## Deployment Order
 
 ```mermaid
 graph LR
-    B1["<b>Bundle 1</b><br/>PKI &amp; Secrets<br/>(Vault, cert-manager, ESO)"]
-    B2["<b>Bundle 2</b><br/>Identity<br/>(Keycloak, OAuth2-proxy)"]
-    B3["<b>Bundle 3</b><br/>Monitoring<br/>(Prometheus, Grafana, Loki)"]
-    B4["<b>Bundle 4</b><br/>Harbor<br/>(Registry, MinIO)"]
-    B5["<b>Bundle 5</b><br/>GitOps<br/>(ArgoCD, Rollouts)"]
-    B6["<b>Bundle 6</b><br/>Git &amp; CI<br/>(GitLab, Runners)"]
+    S1["PKI &amp; Secrets"]
+    S2["Identity"]
+    S3["Monitoring"]
+    S4["Harbor"]
+    S5["GitOps"]
+    S6["Git &amp; CI"]
 
-    B1 -->|TLS certs| B2
-    B1 -->|secrets| B2
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6
 
-    B1 -->|TLS certs| B3
-    B1 -->|secrets| B3
-
-    B1 -->|TLS certs| B4
-    B1 -->|secrets| B4
-    B1 -->|CNPG operator| B4
-
-    B2 -->|OIDC| B3
-    B3 -->|dashboards| B4
-
-    B1 -->|TLS certs| B5
-    B1 -->|secrets| B5
-    B2 -->|OIDC| B5
-
-    B1 -->|TLS certs| B6
-    B1 -->|secrets| B6
-    B2 -->|OIDC| B6
-    B4 -->|image registry| B6
-
-    B6 -->|Git + OIDC| B5
-
-    style B1 fill:#dc3545,color:#fff,stroke:#a02030,stroke-width:3px
-    style B2 fill:#6f42c1,color:#fff,stroke:#4a2a7f,stroke-width:3px
-    style B3 fill:#fd7e14,color:#fff,stroke:#b15810,stroke-width:3px
-    style B4 fill:#0dcaf0,color:#000,stroke:#0a9db5,stroke-width:3px
-    style B5 fill:#198754,color:#fff,stroke:#0d5a32,stroke-width:3px
-    style B6 fill:#ef6c00,color:#fff,stroke:#b85a00,stroke-width:3px
+    style S1 fill:#dc3545,color:#fff,stroke:#a02030,stroke-width:3px
+    style S2 fill:#6f42c1,color:#fff,stroke:#4a2a7f,stroke-width:3px
+    style S3 fill:#fd7e14,color:#fff,stroke:#b15810,stroke-width:3px
+    style S4 fill:#0dcaf0,color:#000,stroke:#0a9db5,stroke-width:3px
+    style S5 fill:#198754,color:#fff,stroke:#0d5a32,stroke-width:3px
+    style S6 fill:#0d6efd,color:#fff,stroke:#0a58ca,stroke-width:3px
 ```
 
-### Deployment Order
+Stacks deploy in sequence because each depends on earlier stacks for TLS, secrets, or OIDC:
 
-Bundles must deploy in sequence (1 → 6) because each depends on earlier bundles for TLS, secrets, or OIDC:
-
-1. **Bundle 1** (PKI &amp; Secrets) — foundation; everything depends on this
-2. **Bundle 2** (Identity) — enables OIDC for downstream services
-3. **Bundle 3** (Monitoring) — optional but recommended before moving to data services
-4. **Bundle 4** (Harbor) — container registry; required before CI/CD
-5. **Bundle 5** (GitOps) — GitOps platform; requires Bundle 6 Git source
-6. **Bundle 6** (Git &amp; CI) — final bundle; GitLab + Runners complete the loop
+1. **PKI &amp; Secrets** — foundation; everything depends on this
+2. **Identity** — enables OIDC for downstream services
+3. **Monitoring** — recommended before application stacks
+4. **Harbor** — container registry; required before CI/CD
+5. **GitOps** — ArgoCD + Rollouts; requires Git source from step 6
+6. **Git &amp; CI** — GitLab + Runners complete the loop
 
 ---
 

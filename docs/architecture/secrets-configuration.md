@@ -55,6 +55,33 @@ graph TD
     style Forbidden3 fill:#dc3545,color:#fff
 ```
 
+### Secret Request Decision Tree
+
+```mermaid
+flowchart TD
+    A["Application needs\ncredential"] --> B{"K8s Secret\nexists?"}
+    B -->|"Yes"| C{"Fresh?\nwithin 15min"}
+    C -->|"Yes"| D["Use cached secret"]
+    C -->|"No"| E["ESO refreshes\nfrom Vault"]
+    E --> F["Updated K8s Secret"]
+    F --> D
+    B -->|"No"| G{"ExternalSecret\nCR exists?"}
+    G -->|"No"| H["Create ExternalSecret CR"]
+    H --> I["ESO syncs from Vault"]
+    G -->|"Yes"| I
+    I --> J["Creates K8s Secret"]
+    J --> K["Pod mounts secret"]
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,C,G decision
+    class E,H,I,J action
+    class D,F,K success
+```
+
 ---
 
 ## How It Works

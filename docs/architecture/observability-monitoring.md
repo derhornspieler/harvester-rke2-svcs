@@ -75,6 +75,31 @@ graph LR
 
 Planned integration to archive metrics and logs to Splunk for long-term retention, compliance reporting, and cross-platform correlation. Prometheus remote-write and Alloy/Loki log forwarding provide native export paths without disrupting current monitoring pipelines.
 
+### Alert Response Decision Tree
+
+```mermaid
+flowchart TD
+    A["Prometheus evaluates rule"] --> B{"Threshold\nbreached?"}
+    B -->|"No"| C["Continue monitoring"]
+    B -->|"Yes"| D{"Severity level?"}
+    D -->|"Critical"| E["Alertmanager\nimmediate notify"]
+    E --> F["On-call responds"]
+    D -->|"Warning"| G["Alertmanager\nqueue for review"]
+    G --> H["Engineer reviews\nin Grafana"]
+    D -->|"Info"| I["Log only"]
+    I --> J["Available in\nGrafana dashboards"]
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,D decision
+    class E,G,I action
+    class C,H,J success
+    class F failure
+```
+
 **The Flow (Plain English):**
 
 1. **Metrics Pipeline**: Services expose metrics (CPU, memory, requests, latency). Prometheus scrapes these endpoints every 60 seconds and stores them in a time-series database. When values breach thresholds, Prometheus triggers alerts.

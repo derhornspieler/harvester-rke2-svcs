@@ -69,6 +69,34 @@ graph TD
     class A app
 ```
 
+### Database Failure Decision Tree
+
+```mermaid
+flowchart TD
+    A["Database pod fails"] --> B{"Is it the\nprimary?"}
+    B -->|"No (replica)"| C["CNPG recreates replica"]
+    C --> D["Re-sync from primary"]
+    D --> E["Resume operations"]
+    B -->|"Yes (primary)"| F["CNPG promotes\nreplica to primary"]
+    F --> G["Application reconnects"]
+    G --> H["Old primary recovers\nas replica"]
+
+    I["Redis master fails"] --> J{"Sentinel quorum\nreached?"}
+    J -->|"No"| K["Manual intervention\nneeded"]
+    J -->|"Yes"| L["Sentinel promotes\nreplica"]
+    L --> M["Applications reconnect"]
+
+    classDef decision fill:#ffc107,color:#000,stroke:#333,stroke-width:2px
+    classDef action fill:#0d6efd,color:#fff,stroke:#333,stroke-width:2px
+    classDef success fill:#198754,color:#fff,stroke:#333,stroke-width:2px
+    classDef failure fill:#dc3545,color:#fff,stroke:#333,stroke-width:2px
+
+    class B,J decision
+    class C,D,F,G,L action
+    class E,H,M success
+    class K failure
+```
+
 **The Flow (Plain English):**
 
 1. **Three independent databases** — Keycloak, Harbor, and GitLab each run a separate PostgreSQL cluster. This isolation prevents a database bug or corruption in one service from affecting the others.
@@ -119,7 +147,7 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 
 **Additional Databases:**
 
-- **Grafana** (monitoring) — CNPG cluster in Bundle 3, 10Gi storage, 3-replica HA. Stores dashboards, datasources, and user preferences. No external backup required (configuration is code-driven via ConfigMaps).
+- **Grafana** (monitoring) — CNPG cluster in the Monitoring stack, 10Gi storage, 3-replica HA. Stores dashboards, datasources, and user preferences. No external backup required (configuration is code-driven via ConfigMaps).
 
 **Cache Layer Details:**
 
