@@ -1,0 +1,9 @@
+defaultNamespace: vault
+helm:
+  releaseName: vault
+  chart: oci://harbor.aegisgroup.ch/helm/vault
+  version: "0.32.0"
+  valuesFiles:
+    - values.yaml
+targets:
+  - clusterName: rke2-prod
