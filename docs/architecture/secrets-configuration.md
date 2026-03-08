@@ -6,7 +6,7 @@ All credentials, API tokens, and sensitive configuration data flow through a sin
 
 ---
 
-## Leadership Diagram
+## Overview Diagram
 
 This diagram shows how secrets move from creation → storage → delivery → consumption:
 
@@ -201,7 +201,8 @@ This is pull-based, not push-based. Vault doesn't actively notify ESO of changes
 
 Applications consume secrets in three ways:
 
-**1. Volume Mount (Recommended)**
+#### 1. Volume Mount (Recommended)
+
 ```yaml
 volumeMounts:
   - name: db-credentials
@@ -213,7 +214,8 @@ volumes:
 ```
 The pod reads `/etc/secrets/db/username` and `/etc/secrets/db/password` as files.
 
-**2. Environment Variables**
+#### 2. Environment Variables
+
 ```yaml
 env:
   - name: DATABASE_PASSWORD
@@ -248,19 +250,22 @@ Vault starts in a sealed state. To unseal it:
 
 **Trigger:** After Vault pod restarts or cluster reboot
 
-**Quick Unseal**
+#### Quick Unseal
+
 ```bash
 ./scripts/deploy-pki-secrets.sh --unseal-only
 ```
 
-**Manual Unseal**
+#### Manual Unseal
+
 1. Retrieve 3 of the 5 Shamir unseal keys from offline storage (vault-init.json backup)
 2. Run `vault operator unseal <key1>`
 3. Run `vault operator unseal <key2>`
 4. Run `vault operator unseal <key3>`
 5. Vault transitions from `Sealed: true` to `Sealed: false`
 
-**Verification**
+#### Verification
+
 ```bash
 kubectl exec -n vault vault-0 -- vault status | grep "Sealed"
 # Expected: Sealed false
@@ -297,35 +302,40 @@ If Vault is inaccessible and credentials are needed:
 
 ### Vault Architecture
 
-**3-Replica HA Cluster**
+#### 3-Replica HA Cluster
+
 - StatefulSet: `vault` in namespace `vault`
 - Storage: Integrated Raft (not external; stored as StatefulSet PVCs)
-- Persistence: PVCs managed by Harvestor, backed by Ceph
+- Persistence: PVCs managed by Harvester, backed by Ceph
 - TLS: Terminated at Traefik Gateway; Vault listens on HTTP internally
 
-**KV v2 Engine**
+#### KV v2 Engine
+
 - Mount path: `/kv`
 - Versioning: 10 versions retained per secret
 - Soft delete: 30-day recovery window
 
-**Auth Methods**
+#### Auth Methods
+
 - Kubernetes: `auth/kubernetes` for ESO
 - Userpass (manual): For administrative access
 - AppRole: For CI/CD pipelines (future)
 
-**PKI Engine**
+#### PKI Engine
+
 - Mount path: `/pki_int`
 - Role: `<namespace>/sign/<hostname>` for cert-manager
 - Intermediate CA: Signed by offline Root CA (outside cluster)
 
 ### External Secrets Operator
 
-**Deployment**
+#### Deployment
+
 - Helm chart: `external-secrets` (NGINX maintainer)
 - Namespace: `external-secrets`
 - Replicas: 1 (stateless; high availability not required for this control plane function)
 
-**Per-Namespace SecretStore**
+#### Per-Namespace SecretStore
 
 Each namespace that needs secrets creates a SecretStore resource:
 
@@ -349,7 +359,7 @@ spec:
             name: "eso-secrets"
 ```
 
-**ExternalSecret Template**
+#### ExternalSecret Template
 
 Each service defines ExternalSecret resources mapping Vault paths to Kubernetes Secrets:
 
