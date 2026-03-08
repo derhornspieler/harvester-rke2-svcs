@@ -148,6 +148,16 @@ The Harvester RKE2 cluster spans 13 nodes optimized for different workload types
 
 ---
 
+## Deployment Method
+
+All platform services are deployed **via Fleet GitOps** from the `fleet-gitops/` subdirectory. Clusters are provisioned via **Rancher API script** (not Terraform). The deployment workflow is:
+
+1. Push Helm charts to Harbor: `fleet-gitops/scripts/push-charts.sh`
+2. Push OCI bundle artifacts to Harbor: `fleet-gitops/scripts/push-bundles.sh`
+3. Create HelmOps on Rancher management cluster: `fleet-gitops/scripts/deploy-fleet-helmops.sh`
+
+Fleet reconciles bundles in dependency order on the target cluster.
+
 ## Deployment Order
 
 ```mermaid
@@ -169,7 +179,7 @@ graph LR
     style S6 fill:#0d6efd,color:#fff,stroke:#0a58ca,stroke-width:3px
 ```
 
-Stacks deploy in sequence because each depends on earlier stacks for TLS, secrets, or OIDC:
+Stacks deploy in sequence via Fleet GitOps because each depends on earlier stacks for TLS, secrets, or OIDC:
 
 1. **PKI &amp; Secrets** — foundation; everything depends on this
 2. **Identity** — enables OIDC for downstream services

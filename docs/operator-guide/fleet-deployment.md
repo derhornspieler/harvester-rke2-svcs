@@ -1,6 +1,6 @@
 # Fleet Deployment Guide
 
-This guide walks through deploying all 7 Fleet bundles to your RKE2 cluster using Rancher Fleet.
+This guide walks through deploying all 7 Fleet bundles (37 total bundles) to your RKE2 cluster using Rancher Fleet. This is the primary and only supported deployment method. Clusters are provisioned via Rancher API script.
 
 ## Prerequisites
 
@@ -82,15 +82,7 @@ This creates:
 
 ### 1.3: Configure Environment
 
-```bash
-cp scripts/.env.example scripts/.env
-# Edit scripts/.env:
-# - Set DOMAIN=your-domain.com
-# - Set ROOT_CA_KEY=/path/to/root-ca.key (if using scripts)
-# - Set all CHANGEME_* passwords
-```
-
-Note: Fleet bundles don't use the shell scripts. The `.env` is for reference only if using script-based deployment.
+Fleet bundle values are configured in each bundle group's `fleet.yaml` and associated Helm values files under `fleet-gitops/`. Update domain, passwords, and other configuration in the appropriate bundle group directories before pushing to Harbor.
 
 ## Step 2: Push Helm Charts to Harbor
 
@@ -122,17 +114,18 @@ cd fleet-gitops
 cd ..
 ```
 
-## Step 4: Deploy Bundles via Fleet
+## Step 4: Deploy via Fleet GitOps
 
-Create Bundle CRs in your local cluster:
+Deploy HelmOps to the Rancher management cluster:
 
 ```bash
-# Create fleet-local namespace (if not exists)
-kubectl create namespace fleet-local
-
-# Apply all bundle CRs
-kubectl apply -f fleet-gitops/bundle-crs/
+cd fleet-gitops
+./scripts/deploy-fleet-helmops.sh
+cd ..
 ```
+
+This creates HelmOps resources on the Rancher management cluster, which Fleet
+reconciles onto the target downstream cluster.
 
 Watch deployment progress:
 
