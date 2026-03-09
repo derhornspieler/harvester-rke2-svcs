@@ -26,9 +26,13 @@ spec:
                   key: root-password
           command:
             - /bin/sh
-            - -c
+            - -euc
             - |
-              mc alias set local http://minio.minio.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              echo "Waiting for MinIO to be ready..."
+              until mc alias set local http://minio.minio.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" 2>/dev/null; do
+                echo "MinIO not ready, retrying in 5s..."
+                sleep 5
+              done
               mc mb --ignore-existing local/harbor
               mc mb --ignore-existing local/gitlab
               mc mb --ignore-existing local/cnpg-backups

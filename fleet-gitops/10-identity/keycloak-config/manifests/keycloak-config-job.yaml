@@ -19,7 +19,7 @@ rules:
     resources: ["namespaces", "serviceaccounts"]
     verbs: ["get", "create", "patch"]
   - apiGroups: [""]
-    resources: ["secrets"]
+    resources: ["secrets", "configmaps"]
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["pods", "pods/exec"]
@@ -93,6 +93,10 @@ spec:
                   vault "$@"
               }
 
+              # Default platform admin password — generated randomly if not
+              # pre-seeded at kv/services/keycloak/platform-admin in Vault
+              DEFAULT_PLATFORM_ADMIN_PASS="$(openssl rand -base64 24)"
+
               # --- Load Vault root token and admin creds ---
               init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
               ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
@@ -131,17 +135,18 @@ spec:
               kc_create() {
                 local method="$1" path="$2"
                 shift 2
-                local token http_code
+                local token http_code body
                 token=$(kc_get_token)
-                http_code=$(curl -s --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
+                body=$(mktemp)
+                http_code=$(curl -s --http1.1 --connect-timeout 15 --max-time 60 -o "$body" -w "%{http_code}" \
                   -X "$method" "${KC_URL}/admin/realms/${path}" \
                   -H "Authorization: Bearer ${token}" \
                   -H "Content-Type: application/json" \
                   "$@")
                 case "$http_code" in
-                  200|201|204) return 0 ;;
-                  409) log "Already exists (409), skipping"; return 0 ;;
-                  *) die "Keycloak API ${method} ${path} returned HTTP ${http_code}" ;;
+                  200|201|204) rm -f "$body"; return 0 ;;
+                  409) log "Already exists (409), skipping"; rm -f "$body"; return 0 ;;
+                  *) log "Response body: $(cat "$body")"; rm -f "$body"; die "Keycloak API ${method} ${path} returned HTTP ${http_code}" ;;
                 esac
               }
 
@@ -180,22 +185,28 @@ spec:
 
               # =============== Phase 2: Create platform admin user ===============
               log "Creating user '${PLATFORM_ADMIN_USER}'..."
-              _admin_first=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f1 | sed 's/./\U&/')
-              _admin_last=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f2- | sed 's/./\U&/')
+              _admin_first=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f1 | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+              _admin_last=$(echo "$PLATFORM_ADMIN_USER" | cut -d. -f2- | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
               [[ -n "$_admin_last" ]] || _admin_last="Admin"
 
-              # Read platform admin password from Vault or fall back to KC admin pass
-              PLATFORM_ADMIN_PASS=$(vexec kv get -field=password kv/services/keycloak/platform-admin 2>/dev/null) || PLATFORM_ADMIN_PASS="${KC_ADMIN_PASS}"
+              # Read platform admin password from Vault or use deterministic default
+              PLATFORM_ADMIN_PASS=$(vexec kv get -field=password kv/services/keycloak/platform-admin 2>/dev/null) || PLATFORM_ADMIN_PASS=""
+              if [[ -z "$PLATFORM_ADMIN_PASS" ]]; then
+                PLATFORM_ADMIN_PASS="$DEFAULT_PLATFORM_ADMIN_PASS"
+                log "Using default platform admin password (override by pre-seeding kv/services/keycloak/platform-admin)"
+              else
+                log "Using platform admin password from Vault"
+              fi
 
-              _user_json='{
-                "username": "'"${PLATFORM_ADMIN_USER}"'",
-                "email": "'"${PLATFORM_ADMIN_EMAIL}"'",
-                "firstName": "'"${_admin_first}"'",
-                "lastName": "'"${_admin_last}"'",
-                "enabled": true,
-                "emailVerified": true,
-                "credentials": [{"type": "password", "value": "'"${PLATFORM_ADMIN_PASS}"'", "temporary": false}]
-              }'
+              _user_json=$(jq -n \
+                --arg user "$PLATFORM_ADMIN_USER" \
+                --arg email "$PLATFORM_ADMIN_EMAIL" \
+                --arg first "$_admin_first" \
+                --arg last "$_admin_last" \
+                --arg pass "$PLATFORM_ADMIN_PASS" \
+                '{username:$user, email:$email, firstName:$first, lastName:$last,
+                  enabled:true, emailVerified:true,
+                  credentials:[{type:"password", value:$pass, temporary:false}]}')
               kc_create POST "${KC_REALM}/users" -d "$_user_json"
               kc_create POST "master/users" -d "$_user_json"
 
@@ -306,9 +317,18 @@ spec:
                 [[ -n "$_secret" ]] || die "Empty client secret for ${client_id}"
 
                 _cookie=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
-                vexec kv put "kv/oidc/${client_id}" \
-                  client-secret="$_secret" \
-                  cookie-secret="$_cookie"
+                # ArgoCD needs server-secretkey for session signing
+                if [[ "$client_id" == "argocd" ]]; then
+                  _server_key=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+                  vexec kv put "kv/oidc/${client_id}" \
+                    client-secret="$_secret" \
+                    cookie-secret="$_cookie" \
+                    server-secretkey="$_server_key"
+                else
+                  vexec kv put "kv/oidc/${client_id}" \
+                    client-secret="$_secret" \
+                    cookie-secret="$_cookie"
+                fi
                 log "Seeded kv/oidc/${client_id}"
               done
               log "All OIDC clients created and secrets seeded"
@@ -352,68 +372,61 @@ spec:
               # =============== Phase 3b: Vault OIDC auth method ===============
               log "Configuring Vault OIDC auth method..."
               _vault_oidc_secret=$(vexec kv get -field=client-secret kv/oidc/vault 2>/dev/null) || _vault_oidc_secret=""
-              if [[ -n "$_vault_oidc_secret" ]]; then
-                # Enable OIDC auth if not already enabled
-                vexec auth enable oidc 2>/dev/null || log "OIDC auth already enabled"
+              [[ -n "$_vault_oidc_secret" ]] || die "vault OIDC client secret not in Vault — OIDC clients must be seeded first (Phase 3)"
 
-                # Check if OIDC is already configured (skip if so)
-                _existing_oidc=$(vexec read -field=oidc_client_id auth/oidc/config 2>/dev/null) || _existing_oidc=""
-                if [[ "$_existing_oidc" == "vault" ]]; then
-                  log "Vault OIDC already configured, skipping"
-                else
-                  # Write CA to vault container, then configure OIDC with CA trust
-                  _ca_pem=$(kubectl get configmap vault-root-ca -n kube-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
-                  if [[ -n "$_ca_pem" ]]; then
-                    echo "$_ca_pem" | kubectl exec -i -n vault vault-0 -- sh -c 'cat > /tmp/oidc-ca.pem'
-                    kubectl exec -n vault vault-0 -- sh -c "
-                      export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}'
-                      vault write auth/oidc/config \
-                        oidc_discovery_url='https://keycloak.${DOMAIN}/realms/${KC_REALM}' \
-                        oidc_client_id='vault' \
-                        oidc_client_secret='${_vault_oidc_secret}' \
-                        oidc_discovery_ca_pem=@/tmp/oidc-ca.pem \
-                        default_role='default' \
-                        type='oidc'
-                    " || log "WARN: Vault OIDC config write failed (may need manual CA setup)"
-                  else
-                    log "WARN: No vault-root-ca ConfigMap found, skipping Vault OIDC config"
-                  fi
-                fi
+              # Enable OIDC auth if not already enabled
+              vexec auth enable oidc 2>/dev/null || log "OIDC auth already enabled"
 
-                # Create roles (idempotent) — default gets full admin since only platform users have Vault access
-                vexec write auth/oidc/role/default \
-                  bound_audiences="vault" \
-                  allowed_redirect_uris="https://vault.${DOMAIN}/ui/vault/auth/oidc/oidc/callback" \
-                  allowed_redirect_uris="http://localhost:8250/oidc/callback" \
-                  user_claim="preferred_username" \
-                  groups_claim="groups" \
-                  oidc_scopes="openid,profile,email,groups" \
-                  policies="default,admin-policy" \
-                  ttl="1h" || true
+              # Write CA PEM to Vault container for OIDC discovery TLS
+              _ca_pem=$(kubectl get configmap vault-root-ca -n kube-system -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+              [[ -n "$_ca_pem" ]] || die "vault-root-ca ConfigMap not found in kube-system — PKI must be deployed first"
+              echo "$_ca_pem" | kubectl exec -i -n vault vault-0 -- sh -c 'cat > /tmp/oidc-ca.pem'
 
-                vexec write auth/oidc/role/admin \
-                  bound_audiences="vault" \
-                  allowed_redirect_uris="https://vault.${DOMAIN}/ui/vault/auth/oidc/oidc/callback" \
-                  allowed_redirect_uris="http://localhost:8250/oidc/callback" \
-                  user_claim="preferred_username" \
-                  groups_claim="groups" \
-                  bound_claims='{"groups":["platform-admins"]}' \
-                  oidc_scopes="openid,profile,email,groups" \
-                  policies="default,admin-policy" \
-                  ttl="1h" || true
+              # Write OIDC config (always overwrite to ensure correctness)
+              vexec write auth/oidc/config \
+                oidc_discovery_url="https://keycloak.${DOMAIN}/realms/${KC_REALM}" \
+                oidc_client_id="vault" \
+                oidc_client_secret="$_vault_oidc_secret" \
+                oidc_discovery_ca_pem=@/tmp/oidc-ca.pem \
+                default_role="default" || die "Vault OIDC config write failed"
+              log "Vault OIDC config written"
 
-                # Create admin-policy if not exists
-                kubectl exec -i -n vault vault-0 -- env \
-                  VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${ROOT_TOKEN}" \
-                  vault policy write admin-policy - <<'POLICY'
+              # Create admin-policy
+              kubectl exec -i -n vault vault-0 -- env \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${ROOT_TOKEN}" \
+                vault policy write admin-policy - <<'POLICY'
               path "*" {
                 capabilities = ["create", "read", "update", "delete", "list", "sudo"]
               }
               POLICY
-                log "Vault OIDC auth configured"
-              else
-                log "WARN: vault OIDC client secret not yet in Vault, skipping OIDC auth setup"
-              fi
+
+              # Create OIDC roles (fail loudly)
+              vexec write auth/oidc/role/default \
+                bound_audiences="vault" \
+                allowed_redirect_uris="https://vault.${DOMAIN}/ui/vault/auth/oidc/oidc/callback" \
+                allowed_redirect_uris="http://localhost:8250/oidc/callback" \
+                user_claim="preferred_username" \
+                groups_claim="groups" \
+                oidc_scopes="openid,profile,email,groups" \
+                policies="default,admin-policy" \
+                ttl="1h" || die "Failed to create Vault OIDC default role"
+
+              # bound_claims must be passed via stdin as JSON to avoid shell escaping issues
+              echo '{
+                "bound_audiences": "vault",
+                "allowed_redirect_uris": ["https://vault.'"${DOMAIN}"'/ui/vault/auth/oidc/oidc/callback","http://localhost:8250/oidc/callback"],
+                "user_claim": "preferred_username",
+                "groups_claim": "groups",
+                "bound_claims": {"groups": ["platform-admins"]},
+                "oidc_scopes": "openid,profile,email,groups",
+                "policies": "default,admin-policy",
+                "ttl": "1h"
+              }' | kubectl exec -i -n vault vault-0 -- env \
+                VAULT_ADDR=http://127.0.0.1:8200 \
+                VAULT_TOKEN="${ROOT_TOKEN}" \
+                vault write auth/oidc/role/admin - || die "Failed to create Vault OIDC admin role"
+
+              log "Vault OIDC auth configured (default + admin roles)"
 
               # =============== Phase 3c: Fix admin.user display name ===============
               log "Fixing admin.user display name..."
@@ -463,7 +476,7 @@ spec:
               }'
 
               # Assign groups scope to all clients
-              _scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | python3 -c "import sys,json; data=json.load(sys.stdin); scopes=[s for s in data if s['name']=='groups']; print(scopes[0]['id'] if scopes else '')" 2>/dev/null || echo "")
+              _scope_id=$(kc_api GET "${KC_REALM}/client-scopes" | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
               if [[ -n "$_scope_id" ]]; then
                 for client_id in $CLIENTS; do
                   _uuid=$(kc_api GET "${KC_REALM}/clients?clientId=${client_id}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -476,22 +489,49 @@ spec:
                 log "Groups scope assigned to all clients"
               fi
 
-              # =============== Phase 5: Auth flow ===============
-              log "Configuring browser-prompt-login flow..."
-              _flow_exists=$(kc_api GET "${KC_REALM}/authentication/flows" | grep -c "browser-prompt-login" || true)
+              # =============== Phase 5: Auth flow — no SSO, prompt login every time ===============
+              # Copy the built-in "browser" flow, then disable the Cookie authenticator
+              # so each service requires its own login (no cross-service SSO).
+              log "Configuring browser-prompt-login flow (no SSO)..."
+              _flow_exists=$(kc_api GET "${KC_REALM}/authentication/flows" | jq -r '[.[] | select(.alias=="browser-prompt-login")] | length' 2>/dev/null || echo "0")
               if [[ "$_flow_exists" -eq 0 ]]; then
-                _browser_id=$(kc_api GET "${KC_REALM}/authentication/flows" | python3 -c "import sys,json; data=json.load(sys.stdin); flows=[f for f in data if f.get('alias')=='browser']; print(flows[0]['id'] if flows else '')" 2>/dev/null || echo "")
-                if [[ -n "$_browser_id" ]]; then
+                # Copy using flow alias (not UUID) — Keycloak API requirement
+                token=$(kc_get_token)
+                _copy_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
+                  -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/browser/copy" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  -d '{"newName": "browser-prompt-login"}')
+                [[ "$_copy_code" =~ ^2 ]] && log "Copied browser flow to browser-prompt-login" || log "WARN: Flow copy returned HTTP $_copy_code"
+              else
+                log "browser-prompt-login flow already exists"
+              fi
+
+              # Disable the Cookie authenticator in the copied flow
+              _cookie_exec_id=$(kc_api GET "${KC_REALM}/authentication/flows/browser-prompt-login/executions" | \
+                jq -r '.[] | select(.providerId=="auth-cookie") | .id' 2>/dev/null || echo "")
+
+              if [[ -n "$_cookie_exec_id" ]]; then
+                _cookie_req=$(kc_api GET "${KC_REALM}/authentication/flows/browser-prompt-login/executions" | \
+                  jq -r '.[] | select(.providerId=="auth-cookie") | .requirement' 2>/dev/null || echo "")
+                if [[ "$_cookie_req" == "DISABLED" ]]; then
+                  log "Cookie authenticator already DISABLED"
+                else
                   token=$(kc_get_token)
-                  curl -s --http1.1 -o /dev/null \
-                    -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/${_browser_id}/copy" \
+                  _disable_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
+                    -X PUT "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/browser-prompt-login/executions" \
                     -H "Authorization: Bearer ${token}" \
                     -H "Content-Type: application/json" \
-                    -d '{"newName": "browser-prompt-login"}'
+                    -d '{"id":"'"${_cookie_exec_id}"'","requirement":"DISABLED"}')
+                  [[ "$_disable_code" =~ ^2 ]] && log "Cookie authenticator disabled in browser-prompt-login" || log "WARN: Cookie disable returned HTTP $_disable_code"
                 fi
+              else
+                log "WARN: Cookie authenticator not found in browser-prompt-login flow"
               fi
-              kc_api PUT "${KC_REALM}" -d '{"browserFlow": "browser-prompt-login"}' || true
-              log "Authentication flow configured"
+
+              # Set browser-prompt-login as the realm's browser flow
+              kc_api PUT "${KC_REALM}" -d '{"browserFlow": "browser-prompt-login"}' || die "Failed to set browser-prompt-login as realm browser flow"
+              log "Authentication flow configured — SSO disabled, each service prompts login"
 
               log "Keycloak configuration complete"
           securityContext:

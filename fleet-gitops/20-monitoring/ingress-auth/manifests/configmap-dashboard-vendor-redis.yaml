@@ -10,16 +10,7 @@ metadata:
 data:
   vendor-redis.json: |
     {
-      "__inputs": [
-        {
-          "name": "DS_PROMETHEUS",
-          "label": "Prometheus",
-          "description": "",
-          "type": "datasource",
-          "pluginId": "prometheus",
-          "pluginName": "Prometheus"
-        }
-      ],
+      "__inputs": [],
       "__elements": [],
       "__requires": [
         {
@@ -98,7 +89,7 @@ data:
         },
         {
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -177,10 +168,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_up{instance=\"$instance\"}",
+              "expr": "redis_up{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -252,10 +243,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_uptime_in_seconds{instance=\"$instance\"}",
+              "expr": "redis_uptime_in_seconds{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -334,10 +325,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_memory_used_bytes{instance=\"$instance\"}",
+              "expr": "redis_memory_used_bytes{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -353,7 +344,7 @@ data:
         },
         {
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -420,7 +411,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "redis_instance_info{instance=\"$instance\"}",
+              "expr": "redis_instance_info{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -433,7 +424,7 @@ data:
         },
         {
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -503,7 +494,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "redis_connected_clients{instance=\"$instance\"}",
+              "expr": "redis_connected_clients{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -519,7 +510,7 @@ data:
         },
         {
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -585,7 +576,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "increase(redis_rejected_connections_total{instance=\"$instance\"}[1m])",
+              "expr": "increase(redis_rejected_connections_total{job=~\"$cluster\"}[1m])",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -651,10 +642,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "time() - redis_rdb_last_save_timestamp_seconds",
+              "expr": "time() - redis_rdb_last_save_timestamp_seconds{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -752,10 +743,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_connected_clients{instance=\"$instance\"}",
+              "expr": "redis_connected_clients{job=~\"$cluster\"}",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -801,7 +792,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "description": "Average taken across instances",
           "editable": true,
@@ -854,7 +845,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "avg(irate(redis_commands_duration_seconds_total{instance=~\"$instance\"}[1m])) by (cmd)\n  /\navg(irate(redis_commands_total{instance=~\"$instance\"}[1m])) by (cmd)\n",
+              "expr": "avg(irate(redis_commands_duration_seconds_total{job=~\"$cluster\"}[1m])) by (cmd)\n  /\navg(irate(redis_commands_total{job=~\"$cluster\"}[1m])) by (cmd)\n",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -973,10 +964,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_mem_fragmentation_ratio",
+              "expr": "redis_mem_fragmentation_ratio{job=~\"$cluster\"}",
               "interval": "",
               "legendFormat": "{{ "{{" }} instance {{ "}}" }}",
               "refId": "A"
@@ -991,7 +982,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "description": "Average taken across instances",
           "editable": true,
@@ -1045,10 +1036,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "topk(5, irate(redis_commands_total{instance=\"$instance\"} [1m]))",
+              "expr": "topk(5, irate(redis_commands_total{job=~\"$cluster\"} [1m]))",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -1132,10 +1123,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "sum (redis_db_keys{instance=~\"$instance\"}) - sum (redis_db_keys_expiring{instance=~\"$instance\"}) ",
+              "expr": "sum (redis_db_keys{job=~\"$cluster\"}) - sum (redis_db_keys_expiring{job=~\"$cluster\"}) ",
               "interval": "",
               "legendFormat": "Non Expiring",
               "refId": "A"
@@ -1143,10 +1134,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "sum (redis_db_keys_expiring{instance=~\"$instance\"}) ",
+              "expr": "sum (redis_db_keys_expiring{job=~\"$cluster\"}) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Expiring",
@@ -1253,10 +1244,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "irate(redis_keyspace_hits_total{instance=\"$instance\"}[5m])",
+              "expr": "irate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m])",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -1270,10 +1261,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "irate(redis_keyspace_misses_total{instance=\"$instance\"}[5m])",
+              "expr": "irate(redis_keyspace_misses_total{job=~\"$cluster\"}[5m])",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -1326,7 +1317,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "decimals": 2,
           "description": "Miss rate shows the percentage of key space lookups that hit a key.",
@@ -1387,7 +1378,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "avg(irate(redis_keyspace_misses_total{instance=~\"$instance\"}[1m]) / (irate(redis_keyspace_hit_total{instance=~\"$instance\"}[1m]) + irate(redis_keyspace_misses_total{instance=~\"$instance\"}[1m]))) by (instance)",
+              "expr": "avg(irate(redis_keyspace_misses_total{job=~\"$cluster\"}[1m]) / (irate(redis_keyspace_hit_total{job=~\"$cluster\"}[1m]) + irate(redis_keyspace_misses_total{job=~\"$cluster\"}[1m]))) by (instance)",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -1448,7 +1439,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "decimals": 2,
           "description": "Hit rate shows the percentage of key space lookups that hit a key.",
@@ -1509,7 +1500,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "avg(irate(redis_keyspace_hits_total{instance=~\"$instance\"}[1m]) / (irate(redis_keyspace_hit_total{instance=~\"$instance\"}[1m]) + irate(redis_keyspace_misses_total{instance=~\"$instance\"}[1m]))) by (instance)",
+              "expr": "avg(irate(redis_keyspace_hits_total{job=~\"$cluster\"}[1m]) / (irate(redis_keyspace_hit_total{job=~\"$cluster\"}[1m]) + irate(redis_keyspace_misses_total{job=~\"$cluster\"}[1m]))) by (instance)",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -1568,7 +1559,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "editable": true,
           "error": false,
@@ -1618,7 +1609,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "rate(redis_commands_processed_total{instance=~\"$instance\"}[1m])",
+              "expr": "rate(redis_commands_processed_total{job=~\"$cluster\"}[1m])",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -1666,7 +1657,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "editable": true,
           "error": false,
@@ -1716,7 +1707,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "topk(5, irate(redis_commands_total{instance=~\"$instance\"} [1m]))",
+              "expr": "topk(5, irate(redis_commands_total{job=~\"$cluster\"} [1m]))",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -1776,7 +1767,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "description": "This metric will only be non-zero if the instance is a master",
           "fieldConfig": {
@@ -1822,7 +1813,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(redis_connected_slaves{instance=~\"$instance\"}) by (instance)",
+              "expr": "sum(redis_connected_slaves{job=~\"$cluster\"}) by (instance)",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -1904,10 +1895,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "redis_connections_received_total",
+              "expr": "redis_connections_received_total{job=~\"$cluster\"}",
               "format": "time_series",
               "hide": false,
               "instant": false,
@@ -1990,10 +1981,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "rate(redis_net_input_bytes_total{instance=~\"$instance\"}[5m])",
+              "expr": "rate(redis_net_input_bytes_total{job=~\"$cluster\"}[5m])",
               "format": "time_series",
               "interval": "",
               "legendFormat": "Network In ",
@@ -2002,10 +1993,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
+                "uid": "prometheus"
               },
               "exemplar": true,
-              "expr": "rate(redis_net_output_bytes_total{instance=~\"$instance\"}[5m])",
+              "expr": "rate(redis_net_output_bytes_total{job=~\"$cluster\"}[5m])",
               "hide": false,
               "interval": "",
               "legendFormat": "Network Out",
@@ -2048,7 +2039,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -2088,7 +2079,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "delta(redis_connected_slaves[1m])",
+              "expr": "delta(redis_connected_slaves{job=~\"$cluster\"}[1m])",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -2134,7 +2125,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "fill": 1,
           "fillGradient": 0,
@@ -2178,7 +2169,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "increase(redis_rejected_connections_total[1m])",
+              "expr": "increase(redis_rejected_connections_total{job=~\"$cluster\"}[1m])",
               "format": "time_series",
               "hide": false,
               "instant": false,
@@ -2240,7 +2231,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "description": "Total taken across instances",
           "editable": true,
@@ -2301,7 +2292,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(redis_memory_used_bytes{instance=~\"$instance\"})",
+              "expr": "sum(redis_memory_used_bytes{job=~\"$cluster\"})",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -2312,7 +2303,7 @@ data:
               "target": ""
             },
             {
-              "expr": "sum(redis_memory_max_bytes{instance=~\"$instance\"})",
+              "expr": "sum(redis_memory_max_bytes{job=~\"$cluster\"})",
               "format": "time_series",
               "hide": false,
               "interval": "",
@@ -2322,7 +2313,7 @@ data:
               "step": 240
             },
             {
-              "expr": "sum(redis_memory_used_rss_bytes{instance=~\"$instance\"})",
+              "expr": "sum(redis_memory_used_rss_bytes{job=~\"$cluster\"})",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 1,
@@ -2375,7 +2366,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "editable": true,
           "error": false,
@@ -2430,7 +2421,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "irate(redis_evicted_keys_total{instance=~\"$instance\"}[1m])",
+              "expr": "irate(redis_evicted_keys_total{job=~\"$cluster\"}[1m])",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -2476,7 +2467,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": {
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "prometheus"
           },
           "editable": true,
           "error": false,
@@ -2528,7 +2519,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum (redis_db_keys{instance=~\"$instance\"}) by (db)",
+              "expr": "sum (redis_db_keys{job=~\"$cluster\"}) by (db)",
               "format": "time_series",
               "interval": "",
               "intervalFactor": 2,
@@ -2580,47 +2571,17 @@ data:
       "templating": {
         "list": [
           {
-            "current": {
-              "selected": false,
-              "text": "Prometheus",
-              "value": "Prometheus"
-            },
-            "hide": 0,
-            "includeAll": false,
-            "label": "Prometheus",
-            "multi": false,
-            "name": "DS_PROMETHEUS",
-            "options": [],
-            "query": "prometheus",
-            "refresh": 1,
-            "regex": "",
-            "skipUrlSync": false,
-            "type": "datasource"
-          },
-          {
-            "current": {},
-            "datasource": {
-              "type": "prometheus",
-              "uid": "${DS_PROMETHEUS}"
-            },
-            "definition": "",
-            "hide": 0,
-            "includeAll": false,
-            "multi": false,
-            "name": "instance",
-            "options": [],
-            "query": {
-              "query": "label_values(redis_up, instance)",
-              "refId": "DS_PROMETHEUS-instance-Variable-Query"
-            },
-            "refresh": 2,
-            "regex": "",
-            "skipUrlSync": false,
-            "sort": 1,
-            "tagValuesQuery": "",
-            "tagsQuery": "",
+            "name": "cluster",
             "type": "query",
-            "useTags": false
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(redis_up, job)",
+            "refresh": 1,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": false,
+            "sort": 1,
+            "current": {"text": "All", "value": "$__all"},
+            "label": "Redis Cluster"
           }
         ]
       },
