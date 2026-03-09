@@ -1,0 +1,5 @@
+# Gateway API CRDs not bundled with RKE2/Traefik (TCPRoute, TLSRoute, UDPRoute)
+# Standard channel CRDs ship with RKE2; these additional route types must be added separately.
+defaultNamespace: kube-system
+targets:
+  - clusterName: rke2-prod

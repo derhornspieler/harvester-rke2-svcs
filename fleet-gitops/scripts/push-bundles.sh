@@ -25,8 +25,8 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
 fi
 
 HARBOR="harbor.aegisgroup.ch"
-HARBOR_USER="${HARBOR_USER:-admin}"
-HARBOR_PASS="${HARBOR_PASS:-Harbor12345}"
+HARBOR_USER="${HARBOR_USER:?Set HARBOR_USER in .env}"
+HARBOR_PASS="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 OCI_REGISTRY="oci://${HARBOR}/fleet"
 VERSION="${BUNDLE_VERSION:-1.0.0}"
 
@@ -38,6 +38,7 @@ BUNDLES=(
   "00-operators/cluster-autoscaler:operators-cluster-autoscaler"
   "00-operators/node-labeler:operators-node-labeler"
   "00-operators/storage-autoscaler:operators-storage-autoscaler"
+  "00-operators/gateway-api-crds:operators-gateway-api-crds"
   "05-pki-secrets/vault-init:pki-vault-init"
   "05-pki-secrets/vault-unsealer:pki-vault-unsealer"
   "05-pki-secrets/vault-pki-issuer:pki-vault-pki-issuer"

@@ -1,0 +1,102 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  # Substitute CHANGEME_DOMAIN in Gateway
+  - target:
+      kind: Gateway
+      name: identity-portal
+    patch: |
+      - op: replace
+        path: /spec/listeners/0/hostname
+        value: "identity.aegisgroup.ch"
+      - op: replace
+        path: /spec/listeners/0/tls/certificateRefs/0/name
+        value: "identity-aegisgroup-ch-tls"
+
+  # Substitute CHANGEME_DOMAIN in HTTPRoute
+  - target:
+      kind: HTTPRoute
+      name: identity-portal
+    patch: |
+      - op: replace
+        path: /spec/hostnames/0
+        value: "identity.aegisgroup.ch"
+
+  # Substitute CHANGEME tokens in backend config
+  - target:
+      kind: ConfigMap
+      name: identity-portal-config
+    patch: |
+      - op: replace
+        path: /data/OIDC_ISSUER_URL
+        value: "https://keycloak.aegisgroup.ch/realms/platform"
+      - op: replace
+        path: /data/KEYCLOAK_REALM
+        value: "platform"
+      - op: replace
+        path: /data/DOMAIN
+        value: "aegisgroup.ch"
+      - op: replace
+        path: /data/VAULT_ADDR
+        value: "http://vault.vault.svc.cluster.local:8200"
+      - op: replace
+        path: /data/KUBE_API_SERVER
+        value: "https://rancher.aegisgroup.ch"
+
+  # Substitute CHANGEME_DOMAIN in backend rollout image
+  - target:
+      kind: Rollout
+      name: identity-portal-backend
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: "harbor.dev.aegisgroup.ch/idp/identity-portal-backend:v0.5.0"
+
+  # Substitute CHANGEME_DOMAIN in frontend rollout image
+  - target:
+      kind: Rollout
+      name: identity-portal-frontend
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: "harbor.dev.aegisgroup.ch/idp/identity-portal-frontend:v0.5.0"
+
+  # Substitute CHANGEME_DOMAIN in nginx CSP header
+  - target:
+      kind: ConfigMap
+      name: identity-portal-nginx
+    patch: |
+      - op: replace
+        path: /data/default.conf
+        value: |
+          server {
+              listen 8080;
+              server_name _;
+              root /usr/share/nginx/html;
+              index index.html;
+              location / {
+                  try_files $uri $uri/ /index.html;
+              }
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+              add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+              add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.aegisgroup.ch; font-src 'self';" always;
+              gzip on;
+              gzip_types text/css application/javascript application/json image/svg+xml;
+              gzip_min_length 1000;
+              location /assets/ {
+                  expires 1y;
+                  add_header Cache-Control "public, immutable";
+              }
+              location = /health {
+                  access_log off;
+                  return 200 "OK\n";
+                  add_header Content-Type text/plain;
+              }
+          }

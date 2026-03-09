@@ -1,0 +1,7 @@
+defaultNamespace: external-dns
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: pki-external-secrets
+targets:
+  - clusterName: rke2-prod

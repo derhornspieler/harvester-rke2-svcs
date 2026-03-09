@@ -1,1 +1,37 @@
+# Secrets and credentials
 .env
+.env.*
+*.key
+*.pem
+!*-ca.pem
+
+# Kubeconfig and cluster credentials
+kubeconfig*
+*.kubeconfig
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Helm packaging artifacts
+*.tgz
+charts/
+
+# Claude / AI artifacts
+.claude/
+CLAUDE.md
+.claude-*
+claude-*
+agent-memory*/
+docs/plans/

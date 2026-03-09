@@ -221,6 +221,20 @@ CLOUDCFG
   rm -f "${ca_bundle_tmp}"
   log_ok "cluster-autoscaler-ca-cert seeded"
 
+  # --- Traefik HelmChartConfig ---
+  # Apply RKE2 system Traefik overrides (dashboard, Gateway API, CA trust, SSH port)
+  # This resource is owned by RKE2's addon manager and cannot be managed via Fleet.
+  log_info "Applying Traefik HelmChartConfig..."
+  local traefik_hcc="${SVCS_DIR}/services/traefik-dashboard/helmchartconfig.yaml"
+  if [[ -f "${traefik_hcc}" ]]; then
+    # Replace placeholder LB IP with actual value
+    sed "s/CHANGEME_TRAEFIK_LB_IP/192.168.48.2/" "${traefik_hcc}" | \
+      kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply --server-side --force-conflicts -f -
+    log_ok "Traefik HelmChartConfig applied (dashboard + Gateway API + CA trust)"
+  else
+    log_warn "Traefik HelmChartConfig not found at ${traefik_hcc} — skipping"
+  fi
+
   # Cleanup
   rm -f "${DOWNSTREAM_KUBECONFIG}"
 }
@@ -284,6 +298,20 @@ sign_intermediate_csr() {
     sleep 10
   done
   [[ "${csr_found}" == true ]] || die "vault-intermediate-csr Secret not found after 10 minutes. Check vault-init Job logs."
+
+  # Wait for vault-0 pod to be Running and Ready before exec
+  log_info "Waiting for vault-0 to be ready..."
+  local vault_ready=false
+  for i in $(seq 1 60); do
+    if kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault get pod vault-0 &>/dev/null && \
+       kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault wait pod/vault-0 --for=condition=Ready --timeout=10s &>/dev/null; then
+      vault_ready=true
+      break
+    fi
+    sleep 5
+  done
+  [[ "${vault_ready}" == true ]] || die "vault-0 pod not ready after 5 minutes"
+  log_ok "vault-0 is ready"
 
   # Check if already signed (intermediate CA cert exists in Vault)
   local vault_root_token
@@ -381,106 +409,48 @@ EXTCONF
   log_ok "Vault intermediate CA signed and imported — root CA key stays offline"
 }
 
+# Phase 5.5 removed — most service secrets are now self-generated via ESO
+# PushSecret + Password generators in each service bundle.
+# See: */manifests/push-secret.yaml in each service directory.
+#
+# Manual secrets (vendor-provided, cannot be auto-generated) are seeded below.
+
 # ============================================================
-# Phase 5.5: Seed Service Secrets in Vault KV
+# Phase 6: Seed manual secrets into Vault
 # ============================================================
-seed_service_secrets() {
-  echo ""
-  echo -e "${BOLD}${BLUE}Phase 5.5: Seed Service Secrets in Vault KV${NC}"
+seed_manual_secrets() {
+  echo -e "${BOLD}${BLUE}Phase 6: Seed Manual Secrets${NC}"
   echo -e "${BOLD}${BLUE}------------------------------------------------------------${NC}"
 
   get_downstream_kubeconfig
 
-  # Read Vault root token
-  local vault_root_token
-  vault_root_token=$(kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault get secret vault-init-keys \
-    -o jsonpath='{.data.init\.json}' | base64 -d | sed -n 's/.*"root_token" *: *"\([^"]*\)".*/\1/p')
-  [[ -n "${vault_root_token}" ]] || die "Could not read Vault root token from vault-init-keys Secret"
-  log_ok "Vault root token retrieved"
+  # Get Vault root token
+  local root_token
+  root_token=$(kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" get secret vault-init-keys -n vault \
+    -o jsonpath='{.data.init\.json}' | base64 -d | python3 -c "import json,sys; print(json.load(sys.stdin)['root_token'])")
+  [[ -n "${root_token}" ]] || die "Could not retrieve Vault root token"
 
-  # --- Helper: generate random 32-char alphanumeric password (SIGPIPE-safe) ---
-  gen_pass() {
-    head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32
+  vexec() {
+    kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" exec -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="${root_token}" \
+      vault "$@"
   }
 
-  # --- Helper: write-once vault kv put (idempotent) ---
-  # Usage: vput <path> key1=val1 key2=val2 ...
-  vput() {
-    local path="$1"; shift
-
-    # Check if the key already exists
-    if kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault exec vault-0 -- \
-      env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
-      vault kv get "${path}" &>/dev/null; then
-      log_warn "  ${path} already exists — skipped"
-      return 0
+  # GitLab license activation code
+  if [[ -n "${GITLAB_LICENSE:-}" ]]; then
+    # Check if already seeded (don't overwrite)
+    local existing
+    existing=$(vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
+    if [[ -n "${existing}" ]]; then
+      log_warn "GitLab license already in Vault — skipping"
+    else
+      vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
+      log_ok "GitLab license seeded in Vault at services/gitlab"
     fi
-
-    # Write the secret
-    kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault exec vault-0 -- \
-      env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
-      vault kv put "${path}" "$@"
-    log_ok "  ${path} seeded"
-  }
-
-  log_info "Seeding service secrets in Vault KV (write-once / idempotent)..."
-
-  # Database credentials
-  vput kv/services/database/keycloak-pg \
-    username=keycloak \
-    "password=$(gen_pass)"
-
-  vput kv/services/database/harbor-pg \
-    username=harbor \
-    "password=$(gen_pass)"
-
-  vput kv/services/database/grafana-pg \
-    username=grafana \
-    "password=$(gen_pass)"
-
-  # Keycloak
-  vput kv/services/keycloak/admin-secret \
-    KC_BOOTSTRAP_ADMIN_USERNAME=admin \
-    "KC_BOOTSTRAP_ADMIN_PASSWORD=$(gen_pass)" \
-    KC_BOOTSTRAP_ADMIN_CLIENT_ID=admin-cli \
-    "KC_BOOTSTRAP_ADMIN_CLIENT_SECRET=$(gen_pass)"
-
-  vput kv/services/keycloak/platform-admin \
-    username=alice.morgan \
-    "password=TestPassword!2026" \
-    email=alice.morgan@aegisgroup.ch
-
-  # Harbor
-  vput kv/services/harbor/admin-password \
-    "password=$(gen_pass)"
-
-  # MinIO
-  vput kv/services/minio/credentials \
-    MINIO_ROOT_USER=minio-admin \
-    "MINIO_ROOT_PASSWORD=$(gen_pass)"
-
-  # Monitoring
-  vput kv/services/monitoring/grafana-admin \
-    username=admin \
-    "password=$(gen_pass)"
-
-  # GitLab
-  vput kv/services/gitlab/postgres-password \
-    "password=$(gen_pass)"
-
-  vput kv/services/gitlab/minio-storage \
-    accesskey=gitlab-minio \
-    "secretkey=$(gen_pass)"
-
-  # GitLab Runners
-  vput kv/services/gitlab-runners/harbor-ci-push \
-    username=ci-push \
-    "password=$(gen_pass)"
-
-  log_ok "Service secrets seeding complete"
-
-  # Cleanup
-  rm -f "${DOWNSTREAM_KUBECONFIG}"
+  else
+    log_warn "GITLAB_LICENSE not set in .env — skipping GitLab license seeding"
+  fi
 }
 
 # ============================================================
@@ -544,7 +514,7 @@ fi
 seed_root_ca
 deploy_helmops
 sign_intermediate_csr
-seed_service_secrets
+seed_manual_secrets
 
 echo ""
 echo -e "${BOLD}${GREEN}============================================================${NC}"

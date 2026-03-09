@@ -1,0 +1,328 @@
+---
+# keycloak-ldap-federation: Configures FreeIPA as LDAP User Federation
+# provider in Keycloak's platform realm.
+#
+# Provides:
+#   - LDAP user federation (FreeIPA 389 DS over LDAPS)
+#   - User attribute mapping (uid, email, first/last name)
+#   - Group mapper (IPA groups → Keycloak groups)
+#   - Kerberos integration (SPNEGO for transparent SSO)
+#
+# Prerequisites:
+#   - FreeIPA running with LDAPS (port 636)
+#   - Keycloak realm 'platform' exists (from keycloak-config)
+#   - LDAP bind credentials in Vault:
+#       kv/services/freeipa/ldap-bind (bind-dn, bind-password)
+#   - FreeIPA CA cert in Vault:
+#       kv/services/freeipa/ca-cert (ca.crt)
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-ldap-config
+  namespace: keycloak
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloak-ldap-config
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keycloak-ldap-config
+subjects:
+  - kind: ServiceAccount
+    name: keycloak-ldap-config
+    namespace: keycloak
+roleRef:
+  kind: ClusterRole
+  name: keycloak-ldap-config
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-ldap-federation
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak-ldap-federation
+    app.kubernetes.io/component: identity
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-ldap-federation
+    spec:
+      serviceAccountName: keycloak-ldap-config
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ldap-config
+          image: docker.io/alpine/k8s:1.32.4
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # Configure FreeIPA LDAP User Federation in Keycloak
+              # Idempotent — safe to re-run.
+
+              DOMAIN="aegisgroup.ch"
+              KC_REALM="platform"
+              KC_URL="http://keycloak.keycloak.svc.cluster.local:8080"
+              KC_HEALTH_URL="http://keycloak.keycloak.svc.cluster.local:9000"
+
+              # FreeIPA LDAP settings
+              IPA_PRIMARY="ipa-01.${DOMAIN}"
+              IPA_REPLICA="ipa-02.${DOMAIN}"
+              IPA_LDAP_PORT="636"
+              IPA_BASE_DN="dc=$(echo ${DOMAIN} | sed 's/\./,dc=/g')"
+              IPA_USERS_DN="cn=users,cn=accounts,${IPA_BASE_DN}"
+              IPA_GROUPS_DN="cn=groups,cn=accounts,${IPA_BASE_DN}"
+
+              log()  { echo "[$(date +%H:%M:%S)] $*"; }
+              die()  { log "FATAL: $*"; exit 1; }
+
+              # --- Load credentials from Vault ---
+              vexec() {
+                kubectl exec -n vault vault-0 -- env \
+                  VAULT_ADDR=http://127.0.0.1:8200 \
+                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  vault "$@"
+              }
+
+              init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
+              ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+              [[ -n "$ROOT_TOKEN" ]] || die "Failed to extract root_token"
+              export ROOT_TOKEN
+
+              KC_ADMIN_USER=$(vexec kv get -field=KC_BOOTSTRAP_ADMIN_USERNAME kv/services/keycloak/admin-secret)
+              KC_ADMIN_PASS=$(vexec kv get -field=KC_BOOTSTRAP_ADMIN_PASSWORD kv/services/keycloak/admin-secret)
+              [[ -n "$KC_ADMIN_USER" && -n "$KC_ADMIN_PASS" ]] || die "Could not read Keycloak admin creds"
+
+              # LDAP bind credentials from Vault
+              LDAP_BIND_DN=$(vexec kv get -field=bind-dn kv/services/freeipa/ldap-bind 2>/dev/null) || LDAP_BIND_DN="uid=admin,cn=users,cn=accounts,${IPA_BASE_DN}"
+              LDAP_BIND_PASS=$(vexec kv get -field=bind-password kv/services/freeipa/ldap-bind 2>/dev/null) || die "Could not read LDAP bind password from Vault"
+
+              # --- Wait for Keycloak ---
+              log "Waiting for Keycloak..."
+              for i in $(seq 1 60); do
+                curl -sf --http1.1 --connect-timeout 5 "${KC_HEALTH_URL}/health/ready" >/dev/null 2>&1 && break
+                sleep 5
+              done
+              curl -sf --http1.1 --connect-timeout 5 "${KC_HEALTH_URL}/health/ready" >/dev/null || die "Keycloak not reachable"
+              log "Keycloak is ready"
+
+              # --- Token helper ---
+              kc_get_token() {
+                curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
+                  -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
+                  -d "grant_type=password" \
+                  -d "client_id=admin-cli" \
+                  -d "username=${KC_ADMIN_USER}" \
+                  --data-urlencode "password=${KC_ADMIN_PASS}" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4
+              }
+
+              kc_api() {
+                local method="$1" path="$2"
+                shift 2
+                local token
+                token=$(kc_get_token)
+                curl -sf --http1.1 --connect-timeout 15 --max-time 60 \
+                  -X "$method" "${KC_URL}/admin/realms/${path}" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  "$@"
+              }
+
+              kc_create() {
+                local method="$1" path="$2"
+                shift 2
+                local token http_code
+                token=$(kc_get_token)
+                http_code=$(curl -s --http1.1 --connect-timeout 15 --max-time 60 -o /dev/null -w "%{http_code}" \
+                  -X "$method" "${KC_URL}/admin/realms/${path}" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  "$@")
+                case "$http_code" in
+                  200|201|204) return 0 ;;
+                  409) log "Already exists (409), skipping"; return 0 ;;
+                  *) die "Keycloak API ${method} ${path} returned HTTP ${http_code}" ;;
+                esac
+              }
+
+              # =============== Check if LDAP federation already exists ===============
+              log "Checking for existing LDAP federation..."
+              _existing=$(kc_api GET "${KC_REALM}/components?type=org.keycloak.storage.UserStorageProvider" 2>/dev/null | \
+                grep -o '"name":"FreeIPA"' || echo "")
+
+              if [[ -n "$_existing" ]]; then
+                log "LDAP federation 'FreeIPA' already exists, skipping creation"
+                log "To update, delete the existing federation first via Keycloak Admin UI"
+                exit 0
+              fi
+
+              # =============== Create LDAP User Federation ===============
+              log "Creating FreeIPA LDAP User Federation..."
+
+              _federation_json='{
+                "name": "FreeIPA",
+                "providerId": "ldap",
+                "providerType": "org.keycloak.storage.UserStorageProvider",
+                "config": {
+                  "vendor": ["rhds"],
+                  "connectionUrl": ["ldaps://'"${IPA_PRIMARY}"':'"${IPA_LDAP_PORT}"'"],
+                  "bindDn": ["'"${LDAP_BIND_DN}"'"],
+                  "bindCredential": ["'"${LDAP_BIND_PASS}"'"],
+                  "usersDn": ["'"${IPA_USERS_DN}"'"],
+                  "usernameLDAPAttribute": ["uid"],
+                  "rdnLDAPAttribute": ["uid"],
+                  "uuidLDAPAttribute": ["ipaUniqueID"],
+                  "userObjectClasses": ["inetOrgPerson, organizationalPerson, person"],
+                  "editMode": ["READ_ONLY"],
+                  "searchScope": ["1"],
+                  "importEnabled": ["true"],
+                  "syncRegistrations": ["false"],
+                  "batchSizeForSync": ["1000"],
+                  "fullSyncPeriod": ["604800"],
+                  "changedSyncPeriod": ["86400"],
+                  "pagination": ["true"],
+                  "startTls": ["false"],
+                  "useTruststoreSpi": ["ldapsOnly"],
+                  "connectionPooling": ["true"],
+                  "connectionPoolingMaxSize": ["10"],
+                  "connectionTimeout": ["5000"],
+                  "readTimeout": ["10000"],
+                  "debug": ["false"],
+                  "enabled": ["true"],
+                  "priority": ["0"],
+                  "cachePolicy": ["DEFAULT"],
+                  "allowKerberosAuthentication": ["true"],
+                  "kerberosRealm": ["'"$(echo ${DOMAIN} | tr '[:lower:]' '[:upper:]')"'"],
+                  "serverPrincipal": ["HTTP/'"${IPA_PRIMARY}"'@'"$(echo ${DOMAIN} | tr '[:lower:]' '[:upper:]')"'"],
+                  "useKerberosForPasswordAuthentication": ["true"]
+                }
+              }'
+
+              kc_create POST "${KC_REALM}/components" -d "$_federation_json"
+              log "LDAP User Federation created"
+
+              # =============== Get federation component ID ===============
+              _fed_id=$(kc_api GET "${KC_REALM}/components?type=org.keycloak.storage.UserStorageProvider" | \
+                python3 -c "import sys,json; data=json.load(sys.stdin); feds=[f for f in data if f['name']=='FreeIPA']; print(feds[0]['id'] if feds else '')" 2>/dev/null || echo "")
+
+              [[ -n "$_fed_id" ]] || die "Could not find FreeIPA federation component ID"
+              log "Federation ID: ${_fed_id}"
+
+              # =============== Create Group Mapper ===============
+              log "Creating LDAP group mapper..."
+              kc_create POST "${KC_REALM}/components" -d '{
+                "name": "ipa-groups",
+                "providerId": "group-ldap-mapper",
+                "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+                "parentId": "'"${_fed_id}"'",
+                "config": {
+                  "groups.dn": ["'"${IPA_GROUPS_DN}"'"],
+                  "group.name.ldap.attribute": ["cn"],
+                  "group.object.classes": ["groupOfNames, nestedGroup, ipausergroup"],
+                  "preserve.group.inheritance": ["false"],
+                  "ignore.missing.groups": ["true"],
+                  "membership.ldap.attribute": ["member"],
+                  "membership.attribute.type": ["DN"],
+                  "membership.user.ldap.attribute": ["uid"],
+                  "groups.ldap.filter": [""],
+                  "mode": ["READ_ONLY"],
+                  "user.roles.retrieve.strategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"],
+                  "memberof.ldap.attribute": ["memberOf"],
+                  "mapped.group.attributes": [""],
+                  "drop.non.existing.groups.during.sync": ["false"],
+                  "groups.path": ["/"]
+                }
+              }'
+              log "Group mapper created"
+
+              # =============== Create User Attribute Mappers ===============
+              log "Creating user attribute mappers..."
+
+              # Email mapper
+              kc_create POST "${KC_REALM}/components" -d '{
+                "name": "email",
+                "providerId": "user-attribute-ldap-mapper",
+                "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+                "parentId": "'"${_fed_id}"'",
+                "config": {
+                  "ldap.attribute": ["mail"],
+                  "user.model.attribute": ["email"],
+                  "read.only": ["true"],
+                  "always.read.value.from.ldap": ["true"],
+                  "is.mandatory.in.ldap": ["false"]
+                }
+              }'
+
+              # First name mapper
+              kc_create POST "${KC_REALM}/components" -d '{
+                "name": "first name",
+                "providerId": "user-attribute-ldap-mapper",
+                "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+                "parentId": "'"${_fed_id}"'",
+                "config": {
+                  "ldap.attribute": ["givenName"],
+                  "user.model.attribute": ["firstName"],
+                  "read.only": ["true"],
+                  "always.read.value.from.ldap": ["true"],
+                  "is.mandatory.in.ldap": ["false"]
+                }
+              }'
+
+              # Last name mapper
+              kc_create POST "${KC_REALM}/components" -d '{
+                "name": "last name",
+                "providerId": "user-attribute-ldap-mapper",
+                "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+                "parentId": "'"${_fed_id}"'",
+                "config": {
+                  "ldap.attribute": ["sn"],
+                  "user.model.attribute": ["lastName"],
+                  "read.only": ["true"],
+                  "always.read.value.from.ldap": ["true"],
+                  "is.mandatory.in.ldap": ["true"]
+                }
+              }'
+
+              log "User attribute mappers created"
+
+              # =============== Trigger initial sync ===============
+              log "Triggering full user sync from FreeIPA..."
+              token=$(kc_get_token)
+              _sync_result=$(curl -sf --http1.1 --connect-timeout 30 --max-time 120 \
+                -X POST "${KC_URL}/admin/realms/${KC_REALM}/user-storage/${_fed_id}/sync?action=triggerFullSync" \
+                -H "Authorization: Bearer ${token}" \
+                -H "Content-Type: application/json" 2>/dev/null || echo '{"error":"sync failed"}')
+              log "Sync result: ${_sync_result}"
+
+              log "FreeIPA LDAP federation configuration complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

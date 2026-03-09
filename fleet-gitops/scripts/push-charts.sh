@@ -19,8 +19,8 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
 fi
 
 HARBOR="harbor.aegisgroup.ch"
-HARBOR_USER="${HARBOR_USER:-admin}"
-HARBOR_PASS="${HARBOR_PASS:-Harbor12345}"
+HARBOR_USER="${HARBOR_USER:?Set HARBOR_USER in .env}"
+HARBOR_PASS="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 
 CHARTS=(
   # chart-name|repo-url|version
@@ -28,6 +28,7 @@ CHARTS=(
   "vault|https://helm.releases.hashicorp.com|0.32.0"
   "external-secrets|https://charts.external-secrets.io|2.0.1"
   "cloudnative-pg|https://cloudnative-pg.github.io/charts|0.27.1"
+  "prometheus-operator-crds|https://prometheus-community.github.io/helm-charts|27.0.0"
   "kube-prometheus-stack|https://prometheus-community.github.io/helm-charts|82.10.0"
   "harbor|https://helm.goharbor.io|1.18.2"
   "gitlab|https://charts.gitlab.io|9.9.2"

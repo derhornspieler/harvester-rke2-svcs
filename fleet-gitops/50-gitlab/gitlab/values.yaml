@@ -50,6 +50,7 @@ global:
   ## reference it via gatewayRef.
   ingress:
     enabled: false
+    configureCertmanager: false   # Prevent certmanager-issuer Job (we use vault-issuer)
   gatewayApi:
     enabled: true
     installEnvoy: false          # We use Traefik, not Envoy
@@ -206,9 +207,9 @@ gitlab-runner:
 installCertmanager: false
 
 ## ── cert-manager issuer ──────────────────────────────────────────────────────
-## Not functionally used — vault-issuer ClusterIssuer handles TLS.
-## But the subchart has no disable condition, so we must provide email.
-## The issuer Job gets TTL-cleaned; Fleet correctDrift ignores this.
+## Disabled via global.ingress.configureCertmanager=false and
+## global.gatewayApi.configureCertmanager=false. No Job or Issuer created.
+## We use vault-issuer ClusterIssuer for TLS instead of ACME.
 certmanager-issuer:
   email: admin@aegisgroup.ch
 

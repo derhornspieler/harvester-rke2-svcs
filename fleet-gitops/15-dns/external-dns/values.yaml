@@ -1,0 +1,97 @@
+# =============================================================================
+# external-dns — RFC2136 provider for FreeIPA DNS
+# =============================================================================
+# Watches Ingress/HTTPRoute/Service resources and creates DNS records in
+# FreeIPA's BIND server via RFC2136 (Dynamic DNS Update) with TSIG auth.
+#
+# Prerequisites:
+#   1. FreeIPA running with integrated DNS
+#   2. TSIG key generated on FreeIPA:
+#        tsig-keygen -a hmac-sha512 external-dns-key
+#   3. TSIG key stored in Vault at kv/services/dns/external-dns-tsig:
+#        tsig-key-name: external-dns-key
+#        tsig-key-secret: <base64-encoded-key>
+#        tsig-key-algorithm: hmac-sha512
+#   4. ExternalSecret created to sync the TSIG key to K8s
+# =============================================================================
+
+# Provider: RFC2136 (Dynamic DNS Update / RFC 2136)
+provider:
+  name: rfc2136
+
+# external-dns settings
+sources:
+  - ingress
+  - service
+
+# Only manage records in the IPA domain
+domainFilters:
+  - aegisgroup.ch
+
+# Prevent accidental deletion — require explicit annotation to remove
+policy: upsert-only
+
+# Sync interval
+interval: 1m
+
+# Log level
+logLevel: info
+
+# RFC2136-specific config
+extraArgs:
+  # FreeIPA DNS server address (primary)
+  - --rfc2136-host=10.1.1.20
+  # DNS port
+  - --rfc2136-port=53
+  # DNS zone
+  - --rfc2136-zone=aegisgroup.ch
+  # TSIG authentication
+  - --rfc2136-tsig-keyname=external-dns-key
+  - --rfc2136-tsig-secret-alg=hmac-sha512
+  # Allow zone transfer for listing existing records
+  - --rfc2136-tsig-axfr
+  # Use TCP for reliability
+  - --rfc2136-min-ttl=300
+  # Annotation filter: only manage resources with this annotation
+  # - --annotation-filter=external-dns.alpha.kubernetes.io/enabled=true
+  # TXT record ownership prefix
+  - --txt-prefix=_externaldns.
+  - --txt-owner-id=rke2-prod
+
+# TSIG secret from Vault via ExternalSecret
+extraEnv:
+  - name: EXTERNAL_DNS_RFC2136_TSIG_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: external-dns-tsig
+        key: tsig-key-secret
+
+# Resource limits
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop: ["ALL"]
+
+# Node selector
+nodeSelector:
+  workload-type: general
+
+# Service account
+serviceAccount:
+  create: true
+  name: external-dns
+
+# RBAC
+rbac:
+  create: true

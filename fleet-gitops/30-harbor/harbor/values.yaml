@@ -63,7 +63,9 @@ redis:
   external:
     sentinelMasterSet: "mymaster"
     addr: "harbor-redis-sentinel.harbor.svc.cluster.local:26379"
-    password: "051cfb54b4710d38718aaa06e93af8aa"
+    # Password injected at deploy time from Vault by deploy-fleet-helmops.sh
+    # (Fleet's Helm rendering doesn't support lookup() for existingSecret)
+    password: "PLACEHOLDER_REPLACED_AT_DEPLOY"
     coreDatabaseIndex: "0"
     jobserviceDatabaseIndex: "1"
     registryDatabaseIndex: "2"

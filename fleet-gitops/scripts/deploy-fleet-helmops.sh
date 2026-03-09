@@ -30,6 +30,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
 
 HARBOR="harbor.aegisgroup.ch"
+
+# Source .env early so BUNDLE_VERSION is available for HELMOP_DEFS array
+if [[ -f "${FLEET_DIR}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${FLEET_DIR}/.env"
+  set +a
+fi
 BUNDLE_VERSION="${BUNDLE_VERSION:-1.0.0}"
 
 # --- Logging ---
@@ -79,12 +87,14 @@ HELMOP_DEFS=(
   #
   # For OCI: repo = oci://harbor/project/chart-name, chart field MUST be empty
 
-  # 00-operators (no dependencies)
+  # 00-operators (prometheus-operator-crds first so ServiceMonitor/PrometheusRule CRDs are available)
+  "operators-prometheus-crds|oci://${HARBOR}/helm/prometheus-operator-crds|27.0.0|monitoring|prometheus-operator-crds||"
   "operators-cnpg|oci://${HARBOR}/helm/cloudnative-pg|0.27.1|cnpg-system|cnpg||00-operators/cnpg-operator/values.yaml"
   "operators-redis|oci://${HARBOR}/helm/redis-operator|0.23.0|redis-operator|redis-operator||00-operators/redis-operator/values.yaml"
-  "operators-node-labeler|oci://${HARBOR}/fleet/operators-node-labeler|${BUNDLE_VERSION}|node-labeler|operators-node-labeler||"
-  "operators-storage-autoscaler|oci://${HARBOR}/fleet/operators-storage-autoscaler|${BUNDLE_VERSION}|storage-autoscaler|operators-storage-autoscaler||"
-  "operators-cluster-autoscaler|oci://${HARBOR}/fleet/operators-cluster-autoscaler|${BUNDLE_VERSION}|cluster-autoscaler|operators-cluster-autoscaler||"
+  "operators-node-labeler|oci://${HARBOR}/fleet/operators-node-labeler|${BUNDLE_VERSION}|node-labeler|operators-node-labeler|operators-prometheus-crds|"
+  "operators-storage-autoscaler|oci://${HARBOR}/fleet/operators-storage-autoscaler|${BUNDLE_VERSION}|storage-autoscaler|operators-storage-autoscaler|operators-prometheus-crds|"
+  "operators-cluster-autoscaler|oci://${HARBOR}/fleet/operators-cluster-autoscaler|${BUNDLE_VERSION}|cluster-autoscaler|operators-cluster-autoscaler|operators-prometheus-crds|"
+  "operators-gateway-api-crds|oci://${HARBOR}/fleet/operators-gateway-api-crds|${BUNDLE_VERSION}|kube-system|operators-gateway-api-crds||"
 
   # 05-pki-secrets (depends on operators)
   "pki-cert-manager|oci://${HARBOR}/helm/cert-manager|v1.19.4|cert-manager|cert-manager|operators-cnpg|05-pki-secrets/cert-manager/values.yaml"
@@ -96,8 +106,15 @@ HELMOP_DEFS=(
 
   # 10-identity (depends on pki)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-external-secrets,operators-cnpg|"
-  "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak|"
+  "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
   "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
+  # NOT YET: LDAP federation requires FreeIPA to be running
+  #"identity-keycloak-ldap-federation|oci://${HARBOR}/fleet/identity-keycloak-ldap-federation|${BUNDLE_VERSION}|keycloak|identity-keycloak-ldap-federation|identity-keycloak-config|"
+
+  # 15-dns (depends on pki — FreeIPA must be running externally)
+  # NOT YET: external-dns requires FreeIPA to be running
+  #"dns-external-dns-secrets|oci://${HARBOR}/fleet/dns-external-dns-secrets|${BUNDLE_VERSION}|external-dns|dns-external-dns-secrets|pki-external-secrets|"
+  #"dns-external-dns|oci://${HARBOR}/helm/external-dns|1.16.1|external-dns|external-dns|dns-external-dns-secrets|15-dns/external-dns/values.yaml"
 
   # 20-monitoring (depends on pki + identity — waits for full identity stack)
   "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|pki-external-secrets,operators-cnpg,identity-keycloak-config|"
@@ -112,7 +129,7 @@ HELMOP_DEFS=(
   "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-config,operators-cnpg|"
   "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|identity-keycloak-config,operators-redis|"
   "harbor-core|oci://${HARBOR}/helm/harbor|1.18.2|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
-  "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|harbor-core|"
+  "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|minio,harbor-cnpg,harbor-valkey|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
   "gitops-argocd|oci://${HARBOR}/helm/argo-cd|9.4.7|argocd|argocd|identity-keycloak-config|40-gitops/argocd/values.yaml"
@@ -127,8 +144,9 @@ HELMOP_DEFS=(
   "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-config,operators-cnpg|"
   "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-config,operators-redis|"
   "gitlab-core|oci://${HARBOR}/helm/gitlab|9.9.2|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
-  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|identity-keycloak-config|"
+  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|identity-keycloak-config,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-core|"
+  "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|0.86.0|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
 )
 
 # ============================================================
@@ -164,6 +182,40 @@ print(json.dumps(d if d else {}))
 ")
     else
       log_warn "Values file not found: ${values_path}"
+    fi
+  fi
+
+  # --- Inject secrets from downstream cluster into values at deploy time ---
+  # Harbor chart uses lookup() for existingSecret which is incompatible with
+  # Fleet's remote Helm rendering. Fetch the password from the downstream
+  # cluster's K8s secret and inject it as a literal value.
+  if [[ "${name}" == "harbor-core" ]]; then
+    local valkey_pw=""
+    # Get downstream kubeconfig via Rancher API
+    local cluster_id
+    cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+      python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='rke2-prod']" 2>/dev/null || true)
+    if [[ -n "${cluster_id}" ]]; then
+      local ds_kc
+      ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+      rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+        python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null || true
+      if [[ -s "${ds_kc}" ]]; then
+        valkey_pw=$(kubectl --kubeconfig="${ds_kc}" get secret harbor-valkey-credentials -n harbor \
+          -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+      fi
+      rm -f "${ds_kc}"
+    fi
+    if [[ -n "${valkey_pw}" ]]; then
+      values_json=$(echo "${values_json}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+d.setdefault('redis', {}).setdefault('external', {})['password'] = sys.argv[1]
+print(json.dumps(d))
+" "${valkey_pw}")
+      echo "[INFO] Injected Valkey password into harbor-core values" >&2
+    else
+      echo "[WARN] harbor-valkey-credentials not found — harbor-core will use placeholder Redis password (re-run after Valkey is ready)" >&2
     fi
   fi
 
@@ -301,20 +353,121 @@ for i in d.get('data',[]):
     rancher_api DELETE "/v1/fleet.cattle.io.bundles/fleet-default/${bname}" > /dev/null 2>&1
     log_ok "Deleted old bundle: ${bname}"
   done <<< "${bundles}"
+
+  # --- Clean up downstream cluster resources ---
+  log_info "Cleaning up downstream cluster resources..."
+
+  # Get downstream cluster kubeconfig
+  local cluster_id
+  cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+    python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='rke2-prod']" 2>/dev/null || true)
+
+  if [[ -z "${cluster_id}" ]]; then
+    log_warn "Could not find rke2-prod cluster — skipping downstream cleanup"
+    return 0
+  fi
+
+  local ds_kc
+  ds_kc=$(mktemp /tmp/ds-kubeconfig-cleanup.XXXXXX)
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null || true
+
+  if [[ ! -s "${ds_kc}" ]]; then
+    log_warn "Could not generate downstream kubeconfig — skipping downstream cleanup"
+    rm -f "${ds_kc}"
+    return 0
+  fi
+
+  # Collect unique namespaces from HELMOP_DEFS (excluding kube-system)
+  local -A helmop_namespaces
+  for entry in "${HELMOP_DEFS[@]}"; do
+    IFS='|' read -r _ _ _ ns _ _ _ <<< "${entry}"
+    [[ "${ns}" == "kube-system" ]] && continue
+    helmop_namespaces["${ns}"]=1
+  done
+
+  # Uninstall any leftover Helm releases in those namespaces
+  log_info "Removing leftover Helm releases on downstream cluster..."
+  for ns in "${!helmop_namespaces[@]}"; do
+    local releases
+    releases=$(helm --kubeconfig="${ds_kc}" list -n "${ns}" --no-headers -q 2>/dev/null || true)
+    while IFS= read -r rel; do
+      [[ -z "${rel}" ]] && continue
+      log_info "Uninstalling Helm release: ${rel} (ns: ${ns})"
+      helm --kubeconfig="${ds_kc}" uninstall "${rel}" -n "${ns}" --wait --timeout 120s 2>&1 || \
+        log_warn "Failed to uninstall ${rel} in ${ns} — may need manual cleanup"
+      log_ok "Uninstalled: ${rel}"
+    done <<< "${releases}"
+  done
+
+  # Delete CRDs that were installed by Fleet bundles
+  log_info "Removing Fleet-deployed CRDs..."
+  local fleet_crds=(
+    "clusters.postgresql.cnpg.io"
+    "backups.postgresql.cnpg.io"
+    "scheduledbackups.postgresql.cnpg.io"
+    "poolers.postgresql.cnpg.io"
+    "imagecatalogs.postgresql.cnpg.io"
+    "clusterimages.postgresql.cnpg.io"
+    "redis.redis.opstreelabs.in"
+    "redisclusters.redis.opstreelabs.in"
+    "redisreplications.redis.opstreelabs.in"
+    "redissentinels.redis.opstreelabs.in"
+    "externalsecrets.external-secrets.io"
+    "secretstores.external-secrets.io"
+    "clustersecretstores.external-secrets.io"
+    "certificates.cert-manager.io"
+    "certificaterequests.cert-manager.io"
+    "clusterissuers.cert-manager.io"
+    "issuers.cert-manager.io"
+    "orders.acme.cert-manager.io"
+    "challenges.acme.cert-manager.io"
+    "prometheuses.monitoring.coreos.com"
+    "prometheusrules.monitoring.coreos.com"
+    "servicemonitors.monitoring.coreos.com"
+    "podmonitors.monitoring.coreos.com"
+    "alertmanagers.monitoring.coreos.com"
+    "alertmanagerconfigs.monitoring.coreos.com"
+    "thanosrulers.monitoring.coreos.com"
+    "probes.monitoring.coreos.com"
+    "scrapeconfigs.monitoring.coreos.com"
+    "prometheusagents.monitoring.coreos.com"
+  )
+  for crd in "${fleet_crds[@]}"; do
+    if kubectl --kubeconfig="${ds_kc}" get crd "${crd}" &>/dev/null; then
+      kubectl --kubeconfig="${ds_kc}" delete crd "${crd}" --timeout=30s 2>/dev/null || \
+        log_warn "Failed to delete CRD ${crd}"
+      log_ok "Deleted CRD: ${crd}"
+    fi
+  done
+
+  # Delete namespaces (this removes all remaining resources inside them)
+  log_info "Removing Fleet-managed namespaces..."
+  for ns in "${!helmop_namespaces[@]}"; do
+    if kubectl --kubeconfig="${ds_kc}" get ns "${ns}" &>/dev/null; then
+      log_info "Deleting namespace: ${ns}"
+      kubectl --kubeconfig="${ds_kc}" delete ns "${ns}" --timeout=120s 2>&1 || \
+        log_warn "Namespace ${ns} deletion timed out — may have finalizers"
+      log_ok "Deleted namespace: ${ns}"
+    fi
+  done
+
+  rm -f "${ds_kc}"
+  log_ok "Downstream cluster cleanup complete"
 }
 
 # ============================================================
 # Purge OCI artifacts from Harbor
 # ============================================================
 purge_harbor_oci() {
-  local harbor_user="${HARBOR_USER:-admin}"
-  local harbor_pass="${HARBOR_PASS:-Harbor12345}"
+  local harbor_user="${HARBOR_USER:?Set HARBOR_USER in .env}"
+  local harbor_pass="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 
   log_info "Purging OCI artifacts from Harbor..."
 
   # Delete raw-manifest bundle repos from fleet/ project
   local bundle_names=(
-    operators-cluster-autoscaler operators-node-labeler operators-storage-autoscaler
+    operators-cluster-autoscaler operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
     identity-cnpg-keycloak identity-keycloak identity-keycloak-config
     monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
@@ -507,8 +660,8 @@ for c in data.get('data',[]):
   local ca_b64
   ca_b64=$(echo "${ca_pem}" | base64 -w0)
 
-  local harbor_user="${HARBOR_USER:-admin}"
-  local harbor_pass="${HARBOR_PASS:-Harbor12345}"
+  local harbor_user="${HARBOR_USER:?Set HARBOR_USER in .env}"
+  local harbor_pass="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 
   rancher_api POST "/k8s/clusters/local/api/v1/namespaces/fleet-default/secrets" -d "$(jq -n \
     --arg ca "${ca_b64}" \
