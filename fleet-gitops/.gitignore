@@ -9,11 +9,13 @@
 kubeconfig*
 *.kubeconfig
 
-# Temporary files
+# Temporary files and backups
 *.tmp
 *.bak
+*.bak.*
 *.swp
 *~
+vault-init.json*
 
 # OS files
 .DS_Store
