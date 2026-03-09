@@ -115,6 +115,12 @@ spec:
               path \"kv/metadata/services/ci/*\" {
                 capabilities = [\"read\", \"list\"]
               }
+              path \"kv/data/ci/*\" {
+                capabilities = [\"read\"]
+              }
+              path \"kv/metadata/ci/*\" {
+                capabilities = [\"read\", \"list\"]
+              }
               HCL
                 VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault policy write gitlab-ci-read /tmp/gitlab-ci-read.hcl
                 rm -f /tmp/gitlab-ci-read.hcl
