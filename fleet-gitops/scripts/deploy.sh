@@ -290,7 +290,7 @@ sign_intermediate_csr() {
   # Wait for vault-init to create the CSR secret
   log_info "Waiting for vault-init to generate intermediate CSR..."
   local csr_found=false
-  for i in $(seq 1 60); do
+  for _i in $(seq 1 60); do
     if kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault get secret vault-intermediate-csr &>/dev/null; then
       csr_found=true
       break
@@ -302,7 +302,7 @@ sign_intermediate_csr() {
   # Wait for vault-0 pod to be Running and Ready before exec
   log_info "Waiting for vault-0 to be ready..."
   local vault_ready=false
-  for i in $(seq 1 60); do
+  for _i in $(seq 1 60); do
     if kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault get pod vault-0 &>/dev/null && \
        kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault wait pod/vault-0 --for=condition=Ready --timeout=10s &>/dev/null; then
       vault_ready=true
