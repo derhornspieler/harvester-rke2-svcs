@@ -22,9 +22,10 @@ scripts/.deploy-keys/
 *.kubeconfig
 kubeconfig-*.yaml
 
-# Build artifacts
+# Build artifacts and dependencies
 **/bin/
 cover.out
+node_modules/
 
 # Cache
 .kube/
