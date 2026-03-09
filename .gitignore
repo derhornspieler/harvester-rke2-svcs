@@ -10,6 +10,7 @@ terraform.tfvars
 
 # Secrets & credentials
 vault-init.json
+vault-init.json.*
 scripts/.env
 scripts/.gitlab-api-token
 scripts/oidc-client-secrets.json
@@ -48,6 +49,10 @@ Thumbs.db
 
 # Claude Code (agents, memory, settings — local dev tools)
 .claude/
+CLAUDE.md
+.claude-*
+claude-*
+agent-memory*/
 
 # Project memory (local context)
 memory/
