@@ -65,7 +65,7 @@ redis:
     addr: "harbor-redis-sentinel.harbor.svc.cluster.local:26379"
     # Password injected at deploy time from Vault by deploy-fleet-helmops.sh
     # (Fleet's Helm rendering doesn't support lookup() for existingSecret)
-    password: "PLACEHOLDER_REPLACED_AT_DEPLOY"
+    password: "PLACEHOLDER_REPLACED_AT_DEPLOY" # gitleaks:allow (injected at deploy time from Vault)
     coreDatabaseIndex: "0"
     jobserviceDatabaseIndex: "1"
     registryDatabaseIndex: "2"
