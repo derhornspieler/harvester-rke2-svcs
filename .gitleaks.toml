@@ -1,0 +1,11 @@
+[extend]
+# Extend the default gitleaks config
+useDefault = true
+
+[allowlist]
+description = "Known false positives"
+
+# Harbor Redis placeholder password (replaced at deploy time from Vault)
+paths = [
+  '''fleet-gitops/30-harbor/harbor/values\.yaml''',
+]
