@@ -162,8 +162,6 @@ print(h.get('releaseName', ''))
   fi
 
   # Start building the Bundle CR
-  local bundle_json
-
   if [[ -n "${helm_chart}" ]]; then
     # --- Helm OCI bundle ---
     # Read values.yaml if present
