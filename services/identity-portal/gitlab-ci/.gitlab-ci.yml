@@ -1,0 +1,391 @@
+---
+# Identity Portal CI/CD Pipeline
+# Repo: gitlab.example.com/IDP/IdentityWebUI
+# Self-contained pipeline — no includes (separate GitLab instance)
+#
+# Required group-level CI/CD variables:
+#   DOMAIN             — e.g. example.com
+#   VAULT_SERVER_URL   — e.g. https://vault.example.com
+#   VAULT_AUTH_ROLE    — Vault JWT auth role (e.g. gitlab-ci-idp)
+#
+# Secrets pulled from Vault at runtime (no credentials in GitLab):
+#   kv/ci/harbor-push     — username, password (Harbor robot account)
+#   kv/ci/argocd          — password (ArgoCD CI bot)
+#
+# SAST jobs (gitleaks, semgrep, sbom) require GitLab Ultimate.
+# Comment them out if deploying to an unlicensed GitLab instance.
+
+stages:
+  - lint
+  - test
+  - build
+  - scan
+  - deploy-staging
+  - deploy-production
+
+variables:
+  HARBOR_REGISTRY: harbor.dev.${DOMAIN}
+  HARBOR_PROJECT: idp
+  HARBOR_PROXY: harbor.${DOMAIN}
+  BACKEND_IMAGE: ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/identity-portal-backend
+  FRONTEND_IMAGE: ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/identity-portal-frontend
+  IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+  ARGOCD_SERVER: argo.${DOMAIN}
+  DEPLOY_BRANCH: deploy
+  # Language dependency proxies (via proxy-vm nginx caches)
+  GOPROXY: "https://go.${DOMAIN},direct"
+  GONOSUMCHECK: ""
+  GONOSUMDB: ""
+  NPM_CONFIG_REGISTRY: "https://npm.${DOMAIN}/"
+
+default:
+  tags:
+    - kubernetes
+
+# ---------------------------------------------------------------------------
+# Lint
+# ---------------------------------------------------------------------------
+
+golangci-lint:
+  stage: lint
+  image: ${HARBOR_PROXY}/docker.io/golangci/golangci-lint:v2.7.2-alpine
+  script:
+    - golangci-lint run --timeout 5m ./...
+  rules:
+    - changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - .golangci.yml
+
+eslint:
+  stage: lint
+  image: ${HARBOR_PROXY}/docker.io/library/node:22-alpine
+  script:
+    - cd frontend && npm ci --prefer-offline
+    - npx eslint .
+  rules:
+    - changes:
+        - "frontend/**"
+
+hadolint-backend:
+  stage: lint
+  image: ${HARBOR_PROXY}/docker.io/hadolint/hadolint:v2.12.0-alpine
+  script:
+    - hadolint Dockerfile
+  rules:
+    - changes:
+        - Dockerfile
+
+hadolint-frontend:
+  stage: lint
+  image: ${HARBOR_PROXY}/docker.io/hadolint/hadolint:v2.12.0-alpine
+  script:
+    - hadolint frontend/Dockerfile
+  rules:
+    - changes:
+        - frontend/Dockerfile
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
+
+go-test:
+  stage: test
+  image: ${HARBOR_PROXY}/docker.io/library/golang:1.25.7-alpine
+  script:
+    - apk add --no-cache gcc musl-dev
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go tool cover -func=coverage.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  artifacts:
+    paths:
+      - coverage.out
+    expire_in: 7 days
+  rules:
+    - changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+
+# ---------------------------------------------------------------------------
+# Build (Kaniko)
+# ---------------------------------------------------------------------------
+
+build-backend:
+  stage: build
+  image:
+    name: ${HARBOR_PROXY}/gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  secrets:
+    HARBOR_CI_USER:
+      vault: ci/harbor-push/username@kv
+    HARBOR_CI_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"username\":\"$(cat $HARBOR_CI_USER)\",\"password\":\"$(cat $HARBOR_CI_PASSWORD)\"}}}" \
+        > /kaniko/.docker/config.json
+    - |
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}" \
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+        --destination "${BACKEND_IMAGE}:${IMAGE_TAG}" \
+        --destination "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        --cache=true \
+        --cache-repo="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/ci-cache/backend" \
+        --snapshot-mode=redo \
+        --registry-certificate "${HARBOR_REGISTRY}=/etc/ssl/certs/vault-root-ca.pem"
+  rules:
+    - changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - Dockerfile
+        - .dockerignore
+
+build-frontend:
+  stage: build
+  image:
+    name: ${HARBOR_PROXY}/gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  secrets:
+    HARBOR_CI_USER:
+      vault: ci/harbor-push/username@kv
+    HARBOR_CI_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"username\":\"$(cat $HARBOR_CI_USER)\",\"password\":\"$(cat $HARBOR_CI_PASSWORD)\"}}}" \
+        > /kaniko/.docker/config.json
+    - |
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}/frontend" \
+        --dockerfile "${CI_PROJECT_DIR}/frontend/Dockerfile" \
+        --destination "${FRONTEND_IMAGE}:${IMAGE_TAG}" \
+        --destination "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        --cache=true \
+        --cache-repo="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/ci-cache/frontend" \
+        --snapshot-mode=redo \
+        --registry-certificate "${HARBOR_REGISTRY}=/etc/ssl/certs/vault-root-ca.pem"
+  rules:
+    - changes:
+        - "frontend/**"
+
+# ---------------------------------------------------------------------------
+# Scan (Trivy)
+# ---------------------------------------------------------------------------
+
+trivy-backend:
+  stage: scan
+  image:
+    name: ${HARBOR_PROXY}/docker.io/aquasec/trivy:0.69.3
+    entrypoint: [""]
+  secrets:
+    TRIVY_USERNAME:
+      vault: ci/harbor-push/username@kv
+    TRIVY_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - export TRIVY_USERNAME="$(cat $TRIVY_USERNAME)"
+    - export TRIVY_PASSWORD="$(cat $TRIVY_PASSWORD)"
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 --format table "${BACKEND_IMAGE}:${IMAGE_TAG}"
+  needs:
+    - job: build-backend
+      optional: true
+  rules:
+    - changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - Dockerfile
+
+trivy-frontend:
+  stage: scan
+  image:
+    name: ${HARBOR_PROXY}/docker.io/aquasec/trivy:0.69.3
+    entrypoint: [""]
+  secrets:
+    TRIVY_USERNAME:
+      vault: ci/harbor-push/username@kv
+    TRIVY_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - export TRIVY_USERNAME="$(cat $TRIVY_USERNAME)"
+    - export TRIVY_PASSWORD="$(cat $TRIVY_PASSWORD)"
+    - trivy image --severity HIGH,CRITICAL --exit-code 1 --format table "${FRONTEND_IMAGE}:${IMAGE_TAG}"
+  needs:
+    - job: build-frontend
+      optional: true
+  rules:
+    - changes:
+        - "frontend/**"
+
+# ---------------------------------------------------------------------------
+# SAST / SBOM (requires GitLab Ultimate)
+# ---------------------------------------------------------------------------
+
+gitleaks:
+  stage: scan
+  image:
+    name: ${HARBOR_PROXY}/docker.io/zricethezav/gitleaks:v8.30.0
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --verbose --redact
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+semgrep:
+  stage: scan
+  image: ${HARBOR_PROXY}/docker.io/semgrep/semgrep:1.153.1
+  variables:
+    SEMGREP_RULES: "auto"
+  script:
+    - semgrep ci --json --output=semgrep-results.json || true
+    - semgrep ci
+  artifacts:
+    paths:
+      - semgrep-results.json
+    when: always
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+sbom-backend:
+  stage: scan
+  image:
+    name: ${HARBOR_PROXY}/docker.io/anchore/syft:v1.38.0
+    entrypoint: [""]
+  script:
+    - syft "${BACKEND_IMAGE}:${IMAGE_TAG}" -o spdx-json=sbom-backend.spdx.json
+  artifacts:
+    paths:
+      - sbom-backend.spdx.json
+  needs:
+    - job: build-backend
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+sbom-frontend:
+  stage: scan
+  image:
+    name: ${HARBOR_PROXY}/docker.io/anchore/syft:v1.38.0
+    entrypoint: [""]
+  script:
+    - syft "${FRONTEND_IMAGE}:${IMAGE_TAG}" -o spdx-json=sbom-frontend.spdx.json
+  artifacts:
+    paths:
+      - sbom-frontend.spdx.json
+  needs:
+    - job: build-frontend
+      optional: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+# ---------------------------------------------------------------------------
+# Deploy — Staging (GitOps: update deploy branch, ArgoCD syncs automatically)
+# ---------------------------------------------------------------------------
+
+deploy-staging:
+  stage: deploy-staging
+  image: ${HARBOR_PROXY}/docker.io/alpine:3.21
+  before_script:
+    - apk add --no-cache git
+  needs:
+    - job: build-backend
+      optional: true
+    - job: build-frontend
+      optional: true
+    - job: trivy-backend
+      optional: true
+    - job: trivy-frontend
+      optional: true
+  script:
+    - |
+      git clone "https://oauth2:${CI_JOB_TOKEN}@gitlab.${DOMAIN}/${CI_PROJECT_PATH}.git" deploy-repo
+      cd deploy-repo
+
+      # Switch to deploy branch or create from main
+      if git ls-remote --exit-code --heads origin "${DEPLOY_BRANCH}" >/dev/null 2>&1; then
+        git checkout "${DEPLOY_BRANCH}"
+      else
+        git checkout -b "${DEPLOY_BRANCH}"
+      fi
+
+      # Update image tags in rollout manifests
+      sed -i "s|image: .*identity-portal-backend:.*|image: ${BACKEND_IMAGE}:${IMAGE_TAG}|g" \
+        k8s/base/backend/rollout.yaml
+      sed -i "s|image: .*identity-portal-frontend:.*|image: ${FRONTEND_IMAGE}:${IMAGE_TAG}|g" \
+        k8s/base/frontend/rollout.yaml
+
+      git config user.name "${GITLAB_USER_NAME:-CI Pipeline}"
+      git config user.email "${GITLAB_USER_EMAIL:-ci@${DOMAIN}}"
+      git add .
+      git diff --cached --quiet && { echo "No changes to deploy"; exit 0; }
+      git commit -m "deploy: update images to ${IMAGE_TAG}
+
+      Triggered by: ${GITLAB_USER_LOGIN:-ci}
+      Pipeline: ${CI_PIPELINE_URL}"
+      git push origin "${DEPLOY_BRANCH}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ---------------------------------------------------------------------------
+# Deploy — Production (manual promotion)
+# ---------------------------------------------------------------------------
+
+promote-backend:
+  stage: deploy-production
+  image:
+    name: ${HARBOR_PROXY}/gcr.io/go-containerregistry/crane:v0.21.1
+    entrypoint: [""]
+  secrets:
+    HARBOR_CI_USER:
+      vault: ci/harbor-push/username@kv
+    HARBOR_CI_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - crane auth login "${HARBOR_REGISTRY}" -u "$(cat $HARBOR_CI_USER)" -p "$(cat $HARBOR_CI_PASSWORD)"
+    - crane tag "${BACKEND_IMAGE}:${IMAGE_TAG}" "production"
+    - crane tag "${BACKEND_IMAGE}:${IMAGE_TAG}" "v${CI_PIPELINE_IID}"
+  needs:
+    - job: deploy-staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+promote-frontend:
+  stage: deploy-production
+  image:
+    name: ${HARBOR_PROXY}/gcr.io/go-containerregistry/crane:v0.21.1
+    entrypoint: [""]
+  secrets:
+    HARBOR_CI_USER:
+      vault: ci/harbor-push/username@kv
+    HARBOR_CI_PASSWORD:
+      vault: ci/harbor-push/password@kv
+  script:
+    - crane auth login "${HARBOR_REGISTRY}" -u "$(cat $HARBOR_CI_USER)" -p "$(cat $HARBOR_CI_PASSWORD)"
+    - crane tag "${FRONTEND_IMAGE}:${IMAGE_TAG}" "production"
+    - crane tag "${FRONTEND_IMAGE}:${IMAGE_TAG}" "v${CI_PIPELINE_IID}"
+  needs:
+    - job: deploy-staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+promote-rollout:
+  stage: deploy-production
+  image: ${HARBOR_PROXY}/quay.io/argoproj/kubectl-argo-rollouts:v1.7.2
+  script:
+    - kubectl-argo-rollouts promote identity-portal-backend -n identity-portal
+    - kubectl-argo-rollouts promote identity-portal-frontend -n identity-portal
+  needs:
+    - job: deploy-staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual

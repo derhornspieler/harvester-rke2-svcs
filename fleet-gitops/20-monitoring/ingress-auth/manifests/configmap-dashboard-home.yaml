@@ -666,7 +666,7 @@ data:
           "links": [
             {
               "title": "Traefik Dashboard",
-              "url": "/d/traefik-ingress-controller/traefik-overview?orgId=1",
+              "url": "/d/n5bu_kv4k/traefik-overview?orgId=1",
               "targetBlank": true
             }
           ],
@@ -1181,7 +1181,7 @@ data:
           "links": [
             {
               "title": "CNPG Dashboard",
-              "url": "/d/cnpg-cluster/cloudnativepg-cluster?orgId=1",
+              "url": "/d/cloudnative-pg/cloudnativepg-cluster?orgId=1",
               "targetBlank": true
             }
           ],
@@ -1261,7 +1261,7 @@ data:
           "links": [
             {
               "title": "Redis Dashboard",
-              "url": "/d/redis-overview/redis-overview?orgId=1",
+              "url": "/d/xDLNRKUWz3/redis-overview?orgId=1",
               "targetBlank": true
             }
           ],
@@ -1378,7 +1378,7 @@ data:
           "links": [
             {
               "title": "Vault Dashboard",
-              "url": "/d/vault-cluster-overview/vault-cluster-overview?orgId=1",
+              "url": "/d/vaults/vault-cluster-overview?orgId=1",
               "targetBlank": true
             }
           ],
@@ -1473,7 +1473,7 @@ data:
           "links": [
             {
               "title": "cert-manager Dashboard",
-              "url": "/d/cert-manager-certificates/cert-manager?orgId=1",
+              "url": "/d/u6M5igpWk/cert-manager?orgId=1",
               "targetBlank": true
             }
           ],
@@ -1638,7 +1638,7 @@ data:
           "links": [
             {
               "title": "Loki Dashboard",
-              "url": "/d/loki-logs/loki-logs?orgId=1",
+              "url": "/d/loki_stack_monitoring_quortex/loki-logs?orgId=1",
               "targetBlank": true
             }
           ],
@@ -2388,7 +2388,7 @@ data:
           "links": [
             {
               "title": "GitLab Dashboard",
-              "url": "/d/gitlab-overview/gitlab-overview?orgId=1",
+              "url": "/d/gitlab-self-managed/gitlab-overview?orgId=1",
               "targetBlank": true
             }
           ],
@@ -2479,7 +2479,7 @@ data:
           "links": [
             {
               "title": "MinIO Dashboard",
-              "url": "/d/minio-overview/minio-overview?orgId=1",
+              "url": "/d/TgmJnqnnk/minio-overview?orgId=1",
               "targetBlank": true
             }
           ],
