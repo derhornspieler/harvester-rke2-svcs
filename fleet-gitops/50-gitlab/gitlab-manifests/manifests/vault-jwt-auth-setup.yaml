@@ -161,12 +161,32 @@ spec:
               "
               log "Role gitlab-ci-protected created"
 
+              # --- Create IDP role (used by VAULT_AUTH_ROLE=gitlab-ci-idp) ---
+              log "Creating IDP JWT role..."
+              kubectl exec -n vault vault-0 -- sh -c "
+                cat > /tmp/gitlab-ci-idp-role.json <<ROLE
+              {
+                \"role_type\": \"jwt\",
+                \"policies\": [\"gitlab-ci-read\"],
+                \"token_explicit_max_ttl\": 300,
+                \"user_claim\": \"user_email\",
+                \"bound_audiences\": [\"${GITLAB_URL}\"],
+                \"bound_claims_type\": \"glob\",
+                \"bound_claims\": {\"iss\": \"${GITLAB_URL}\"}
+              }
+              ROLE
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' \
+                  vault write auth/jwt/role/gitlab-ci-idp @/tmp/gitlab-ci-idp-role.json
+                rm -f /tmp/gitlab-ci-idp-role.json
+              "
+              log "Role gitlab-ci-idp created"
+
               log "Vault JWT auth setup complete"
               log ""
               log "Usage in .gitlab-ci.yml:"
               log "  variables:"
               log "    VAULT_SERVER_URL: https://vault.${DOMAIN}"
-              log "    VAULT_AUTH_ROLE: gitlab-ci"
+              log "    VAULT_AUTH_ROLE: gitlab-ci  # or gitlab-ci-idp / gitlab-ci-protected"
               log "  secrets:"
               log "    MY_SECRET:"
               log "      vault: services/ci/my-secret/key"
