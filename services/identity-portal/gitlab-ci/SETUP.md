@@ -152,21 +152,25 @@ kubectl apply -f argocd/analysis-templates.yaml
 ## Troubleshooting
 
 ### Pipeline fails at build stage
+
 - Verify `HARBOR_CI_USER` / `HARBOR_CI_PASSWORD` are set correctly
 - Check that the `idp` project exists in Harbor
 - Ensure GitLab runners have the Vault root CA trusted
 
 ### ArgoCD not syncing
+
 - Verify the `deploy` branch exists and has the `k8s/` directory
 - Check ArgoCD can access the GitLab repo (may need deploy key)
 - Check `argocd app get identity-portal` for sync errors
 
 ### OIDC login fails
+
 - Verify the Keycloak client secret matches what's in Vault
 - Check ESO is syncing the secret: `kubectl get externalsecret -n identity-portal`
 - Verify the OIDC issuer URL is reachable from the cluster
 
 ### Gateway/TLS issues
+
 - Verify cert-manager has issued the certificate: `kubectl get certificate -n identity-portal`
 - Check the Gateway is ready: `kubectl get gateway -n identity-portal`
 - Verify Cilium L2 has announced the LoadBalancer IP
