@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: minio-create-buckets
+  name: minio-init
   namespace: minio
 spec:
   backoffLimit: 4
@@ -24,6 +24,26 @@ spec:
                 secretKeyRef:
                   name: minio-root-credentials
                   key: root-password
+            - name: GITLAB_SA_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-gitlab-sa-credentials
+                  key: accesskey
+            - name: GITLAB_SA_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-gitlab-sa-credentials
+                  key: secretkey
+            - name: HARBOR_SA_ACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-harbor-sa-credentials
+                  key: accesskey
+            - name: HARBOR_SA_SECRETKEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-harbor-sa-credentials
+                  key: secretkey
           command:
             - /bin/sh
             - -euc
@@ -33,7 +53,83 @@ spec:
                 echo "MinIO not ready, retrying in 5s..."
                 sleep 5
               done
+
+              echo "=== Creating buckets ==="
               mc mb --ignore-existing local/harbor
-              mc mb --ignore-existing local/gitlab
               mc mb --ignore-existing local/cnpg-backups
-              echo "Buckets created successfully"
+              mc mb --ignore-existing local/gitlab-artifacts
+              mc mb --ignore-existing local/gitlab-lfs
+              mc mb --ignore-existing local/gitlab-uploads
+              mc mb --ignore-existing local/gitlab-packages
+              mc mb --ignore-existing local/gitlab-pages
+              echo "Buckets created"
+
+              echo "=== Creating GitLab service account ==="
+              cat > /tmp/gitlab-policy.json <<'POLICY'
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "s3:GetBucketLocation",
+                      "s3:ListBucket",
+                      "s3:ListBucketMultipartUploads"
+                    ],
+                    "Resource": ["arn:aws:s3:::gitlab-*"]
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "s3:GetObject",
+                      "s3:PutObject",
+                      "s3:DeleteObject",
+                      "s3:ListMultipartUploadParts",
+                      "s3:AbortMultipartUpload"
+                    ],
+                    "Resource": ["arn:aws:s3:::gitlab-*/*"]
+                  }
+                ]
+              }
+              POLICY
+              mc admin policy create local gitlab-buckets /tmp/gitlab-policy.json 2>/dev/null || \
+                mc admin policy info local gitlab-buckets >/dev/null
+              mc admin user add local "$GITLAB_SA_ACCESSKEY" "$GITLAB_SA_SECRETKEY" 2>/dev/null || true
+              mc admin policy attach local gitlab-buckets --user "$GITLAB_SA_ACCESSKEY" 2>/dev/null || true
+              echo "GitLab SA created: $GITLAB_SA_ACCESSKEY"
+
+              echo "=== Creating Harbor service account ==="
+              cat > /tmp/harbor-policy.json <<'POLICY'
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "s3:GetBucketLocation",
+                      "s3:ListBucket",
+                      "s3:ListBucketMultipartUploads"
+                    ],
+                    "Resource": ["arn:aws:s3:::harbor"]
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "s3:GetObject",
+                      "s3:PutObject",
+                      "s3:DeleteObject",
+                      "s3:ListMultipartUploadParts",
+                      "s3:AbortMultipartUpload"
+                    ],
+                    "Resource": ["arn:aws:s3:::harbor/*"]
+                  }
+                ]
+              }
+              POLICY
+              mc admin policy create local harbor-bucket /tmp/harbor-policy.json 2>/dev/null || \
+                mc admin policy info local harbor-bucket >/dev/null
+              mc admin user add local "$HARBOR_SA_ACCESSKEY" "$HARBOR_SA_SECRETKEY" 2>/dev/null || true
+              mc admin policy attach local harbor-bucket --user "$HARBOR_SA_ACCESSKEY" 2>/dev/null || true
+              echo "Harbor SA created: $HARBOR_SA_ACCESSKEY"
+
+              echo "=== MinIO init complete ==="
