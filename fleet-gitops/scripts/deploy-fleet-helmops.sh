@@ -149,6 +149,7 @@ HELMOP_DEFS=(
   "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|identity-keycloak-config,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-core|"
   "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
+  "gitlab-runner-golden-image|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/runners/golden-image-runner-values.yaml"
 )
 
 # ============================================================
