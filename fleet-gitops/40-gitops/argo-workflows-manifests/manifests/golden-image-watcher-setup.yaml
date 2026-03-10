@@ -160,7 +160,9 @@ spec:
 
               # --- Create Project Access Token ---
               log "Creating project access token for watcher..."
-              EXPIRES_AT=$(date -d "+1 year" +%Y-%m-%d 2>/dev/null || date -v+1y +%Y-%m-%d 2>/dev/null)
+              # Compute expiry 1 year from now (works with GNU, BSD, or busybox date)
+              NEXT_YEAR=$(( $(date +%Y) + 1 ))
+              EXPIRES_AT="${NEXT_YEAR}-$(date +%m-%d)"
               PAT_RESP=$(curl -sk -X POST \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Content-Type: application/json" \
