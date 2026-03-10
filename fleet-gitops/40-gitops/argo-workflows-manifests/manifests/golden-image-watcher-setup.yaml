@@ -68,8 +68,8 @@ spec:
             - |
               DOMAIN="${DOMAIN}"
               GITLAB_URL="https://gitlab.${DOMAIN}"
-              GITLAB_REPO_URL="gitlab.${DOMAIN}/infrastructure/harvester-golden-images.git"
-              PROJECT_PATH="infrastructure/harvester-golden-images"
+              GITLAB_REPO_URL="gitlab.${DOMAIN}/infra_and_platform_services/harvester-golden-images.git"
+              PROJECT_PATH="infra_and_platform_services/harvester-golden-images"
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }
               die()  { log "FATAL: $*"; exit 1; }
@@ -125,11 +125,11 @@ spec:
                 grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
               if [[ -z "$PROJECT_ID" ]]; then
-                # Create the infrastructure group if needed
-                log "Project not found — creating group 'infrastructure'..."
+                # Create the infra_and_platform_services group if needed
+                log "Project not found — creating group 'infra_and_platform_services'..."
                 GROUP_ID=$(curl -sfk \
                   -H "Authorization: Bearer ${TOKEN}" \
-                  "${GITLAB_URL}/api/v4/groups?search=infrastructure" | \
+                  "${GITLAB_URL}/api/v4/groups?search=infra_and_platform_services" | \
                   grep -o '"id":[0-9]*' | head -1 | cut -d: -f2 || true)
 
                 if [[ -z "$GROUP_ID" ]]; then
@@ -137,10 +137,10 @@ spec:
                     -H "Authorization: Bearer ${TOKEN}" \
                     -H "Content-Type: application/json" \
                     "${GITLAB_URL}/api/v4/groups" \
-                    -d '{"name":"infrastructure","path":"infrastructure","visibility":"internal"}' | \
+                    -d '{"name":"Infra and Platform Services","path":"infra_and_platform_services","visibility":"internal"}' | \
                     grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-                  [[ -n "$GROUP_ID" ]] || die "Failed to create infrastructure group"
-                  log "Created group: infrastructure (ID: ${GROUP_ID})"
+                  [[ -n "$GROUP_ID" ]] || die "Failed to create infra_and_platform_services group"
+                  log "Created group: infra_and_platform_services (ID: ${GROUP_ID})"
                 fi
 
                 # Create the project
