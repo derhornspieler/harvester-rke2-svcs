@@ -4,6 +4,7 @@ metadata:
   name: minio-init
   namespace: minio
 spec:
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 4
   template:
     spec:
