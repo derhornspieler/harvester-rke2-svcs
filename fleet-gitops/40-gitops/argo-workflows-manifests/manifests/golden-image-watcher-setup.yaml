@@ -164,7 +164,7 @@ spec:
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Content-Type: application/json" \
                 "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/access_tokens" \
-                -d "{\"name\":\"golden-image-watcher\",\"scopes\":[\"read_repository\",\"write_repository\"],\"access_level\":30,\"expires_at\":\"${EXPIRES_AT}\"}")
+                -d "{\"name\":\"golden-image-watcher\",\"scopes\":[\"read_repository\",\"write_repository\"],\"access_level\":40,\"expires_at\":\"${EXPIRES_AT}\"}")
 
               PAT_TOKEN=$(echo "$PAT_RESP" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
               [[ -n "$PAT_TOKEN" ]] || die "Failed to create project access token: ${PAT_RESP}"
