@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: golden-image-watcher
+  namespace: argo-workflows
+  labels:
+    app: golden-image-watcher
+spec:
+  schedule: "0 */6 * * *"
+  timezone: "Europe/Zurich"
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    entrypoint: check-upstream
+    serviceAccountName: argo-workflow
+    volumes:
+      - name: watcher-script
+        configMap:
+          name: golden-image-watcher-script
+          defaultMode: 0755
+      - name: vault-root-ca
+        configMap:
+          name: vault-root-ca
+    templates:
+      - name: check-upstream
+        container:
+          image: alpine/git:2.43.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              cp /etc/ssl/custom/ca.crt /usr/local/share/ca-certificates/vault-root-ca.crt &&
+              update-ca-certificates &&
+              apk add --no-cache curl jq bash coreutils &&
+              bash /scripts/check-upstream.sh
+          env:
+            - name: GITLAB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-golden-images-token
+                  key: GITLAB_USER
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-golden-images-token
+                  key: GITLAB_TOKEN
+            - name: GITLAB_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-golden-images-token
+                  key: GITLAB_REPO_URL
+          volumeMounts:
+            - name: watcher-script
+              mountPath: /scripts
+            - name: vault-root-ca
+              mountPath: /etc/ssl/custom
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"

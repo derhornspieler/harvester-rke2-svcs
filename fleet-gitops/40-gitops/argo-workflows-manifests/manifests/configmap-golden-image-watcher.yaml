@@ -1,0 +1,232 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golden-image-watcher-script
+  namespace: argo-workflows
+data:
+  check-upstream.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # =============================================================================
+    # check-upstream.sh — Check upstream cloud images for new releases
+    # =============================================================================
+    # Fetches checksum files from upstream distro mirrors, compares against stored
+    # values in upstream-versions.json, and commits updates if changes are detected.
+    #
+    # Required environment variables:
+    #   GITLAB_USER      GitLab username for git push
+    #   GITLAB_TOKEN     GitLab project access token
+    #   GITLAB_REPO_URL  GitLab repo URL (without protocol)
+    #
+    # Optional:
+    #   GIT_BRANCH       Branch to push to (default: main)
+    #   DRY_RUN          Set to "true" to skip git push (for testing)
+    # =============================================================================
+
+    # --- Configuration ---
+    ROCKY_CHECKSUM_URL="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/CHECKSUM"
+    DEBIAN_CHECKSUM_URL="https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS"
+    GIT_BRANCH="${GIT_BRANCH:-main}"
+    DRY_RUN="${DRY_RUN:-false}"
+    WORK_DIR="/tmp/upstream-check"
+
+    # --- Logging ---
+    log_info()  { echo "[INFO]  $*"; }
+    log_ok()    { echo "[OK]    $*"; }
+    log_warn()  { echo "[WARN]  $*" >&2; }
+    log_error() { echo "[ERROR] $*" >&2; }
+
+    die() {
+      log_error "$@"
+      exit 1
+    }
+
+    # --- Functions ---
+
+    # Parse Rocky 9 CHECKSUM file to extract version and checksum
+    # Format: SHA256 (Rocky-9-GenericCloud-Base-9.5-20241118.0.x86_64.qcow2) = abc123...
+    parse_rocky_checksum() {
+      local checksum_file="$1"
+      local line
+      line=$(grep 'GenericCloud-Base.*\.qcow2' "$checksum_file" | grep '^SHA256' | head -1)
+
+      if [[ -z "$line" ]]; then
+        log_warn "Could not find Rocky GenericCloud qcow2 in checksum file"
+        return 1
+      fi
+
+      local filename
+      filename=$(echo "$line" | sed -n 's/.*(\(.*\)).*/\1/p')
+
+      local version
+      version=$(echo "$filename" | sed -n 's/Rocky-9-GenericCloud-Base-\([0-9]*\.[0-9]*\)-.*/\1/p')
+
+      local build
+      build=$(echo "$filename" | sed -n 's/Rocky-9-GenericCloud-Base-[0-9]*\.[0-9]*-\([0-9]*\.[0-9]*\)\..*/\1/p')
+
+      local checksum
+      checksum=$(echo "$line" | awk '{print $NF}')
+
+      local image_url="https://dl.rockylinux.org/pub/rocky/9/images/x86_64/${filename}"
+
+      echo "${version}|${build}|sha256:${checksum}|${image_url}"
+    }
+
+    # Parse Debian SHA512SUMS to extract checksum for generic-amd64 qcow2
+    # Format: abc123...  debian-12-generic-amd64.qcow2
+    # Note: Debian "latest" uses a stable filename without build IDs. The checksum
+    # itself is the change indicator. We use the SHA512SUMS Last-Modified date as
+    # the build identifier.
+    parse_debian_checksum() {
+      local checksum_file="$1"
+      local line
+      line=$(grep 'debian-12-generic-amd64\.qcow2$' "$checksum_file" | head -1)
+
+      if [[ -z "$line" ]]; then
+        log_warn "Could not find Debian 12 generic-amd64 qcow2 in checksum file"
+        return 1
+      fi
+
+      local checksum
+      checksum=$(echo "$line" | awk '{print $1}')
+
+      local last_modified
+      last_modified=$(curl -sfI "$DEBIAN_CHECKSUM_URL" | grep -i 'last-modified' | sed 's/[Ll]ast-[Mm]odified: //' | tr -d '\r')
+      local build
+      build=$(date -d "$last_modified" +%Y%m%d 2>/dev/null || echo "unknown")
+
+      local image_url="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+
+      echo "12|${build}|sha512:${checksum}|${image_url}"
+    }
+
+    # Read current stored checksum for a distro from upstream-versions.json
+    read_stored_checksum() {
+      local distro="$1"
+      local versions_file="$2"
+
+      if [[ ! -f "$versions_file" ]]; then
+        echo ""
+        return
+      fi
+
+      jq -r ".${distro}.checksum // \"\"" "$versions_file"
+    }
+
+    # Update upstream-versions.json for a specific distro
+    update_versions_json() {
+      local distro="$1"
+      local version="$2"
+      local build="$3"
+      local checksum="$4"
+      local image_url="$5"
+      local versions_file="$6"
+      local now
+      now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+      jq --arg distro "$distro" \
+         --arg version "$version" \
+         --arg build "$build" \
+         --arg checksum "$checksum" \
+         --arg image_url "$image_url" \
+         --arg detected_at "$now" \
+         '.[$distro] = {
+            version: $version,
+            build: $build,
+            checksum: $checksum,
+            detected_at: $detected_at,
+            image_url: $image_url
+          }' "$versions_file" > "${versions_file}.tmp" && mv "${versions_file}.tmp" "$versions_file"
+    }
+
+    # --- Main ---
+
+    log_info "Starting upstream version check..."
+
+    # Validate required env vars
+    for var in GITLAB_USER GITLAB_TOKEN GITLAB_REPO_URL; do
+      if [[ -z "${!var:-}" ]]; then
+        die "Required environment variable ${var} is not set"
+      fi
+    done
+
+    # Set up working directory
+    rm -rf "$WORK_DIR"
+    mkdir -p "$WORK_DIR"
+
+    # Fetch upstream checksum files
+    log_info "Fetching Rocky 9 checksums..."
+    curl -sfL "$ROCKY_CHECKSUM_URL" -o "${WORK_DIR}/rocky-checksum" || die "Failed to fetch Rocky checksums"
+
+    log_info "Fetching Debian 12 checksums..."
+    curl -sfL "$DEBIAN_CHECKSUM_URL" -o "${WORK_DIR}/debian-checksum" || die "Failed to fetch Debian checksums"
+
+    # Parse upstream checksums
+    log_info "Parsing checksums..."
+    rocky_data=$(parse_rocky_checksum "${WORK_DIR}/rocky-checksum") || die "Failed to parse Rocky checksum"
+    debian_data=$(parse_debian_checksum "${WORK_DIR}/debian-checksum") || die "Failed to parse Debian checksum"
+
+    IFS='|' read -r rocky_version rocky_build rocky_checksum rocky_url <<< "$rocky_data"
+    IFS='|' read -r debian_version debian_build debian_checksum debian_url <<< "$debian_data"
+
+    log_info "Rocky 9: version=${rocky_version} build=${rocky_build}"
+    log_info "Debian 12: version=${debian_version} build=${debian_build}"
+
+    # Clone repo
+    log_info "Cloning repository..."
+    git clone --depth 1 --branch "${GIT_BRANCH}" \
+      "https://${GITLAB_USER}:${GITLAB_TOKEN}@${GITLAB_REPO_URL}" \
+      "${WORK_DIR}/repo" || die "Failed to clone repository"
+
+    cd "${WORK_DIR}/repo"
+
+    # Configure git
+    git config user.name "Golden Image Watcher"
+    git config user.email "golden-image-watcher@example.com"
+
+    VERSIONS_FILE="${WORK_DIR}/repo/upstream-versions.json"
+
+    # Compare checksums
+    changed_distros=()
+
+    stored_rocky=$(read_stored_checksum "rocky9" "$VERSIONS_FILE")
+    if [[ "$stored_rocky" != "$rocky_checksum" ]]; then
+      log_info "Rocky 9: checksum changed (${stored_rocky:-empty} -> ${rocky_checksum})"
+      update_versions_json "rocky9" "$rocky_version" "$rocky_build" "$rocky_checksum" "$rocky_url" "$VERSIONS_FILE"
+      changed_distros+=("Rocky ${rocky_version}")
+    else
+      log_ok "Rocky 9: no change"
+    fi
+
+    stored_debian=$(read_stored_checksum "debian12" "$VERSIONS_FILE")
+    if [[ "$stored_debian" != "$debian_checksum" ]]; then
+      log_info "Debian 12: checksum changed (${stored_debian:-empty} -> ${debian_checksum})"
+      update_versions_json "debian12" "$debian_version" "$debian_build" "$debian_checksum" "$debian_url" "$VERSIONS_FILE"
+      changed_distros+=("Debian ${debian_version}")
+    else
+      log_ok "Debian 12: no change"
+    fi
+
+    # Commit and push if anything changed
+    if [[ ${#changed_distros[@]} -eq 0 ]]; then
+      log_ok "No upstream changes detected. Exiting."
+      exit 0
+    fi
+
+    commit_msg="chore: detected upstream $(IFS=', '; echo "${changed_distros[*]}")"
+    log_info "Changes detected. Committing: ${commit_msg}"
+
+    git add upstream-versions.json
+    git commit -m "$commit_msg"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+      log_warn "DRY_RUN=true — skipping git push"
+      git log --oneline -1
+      jq '.' "$VERSIONS_FILE"
+    else
+      git push origin "${GIT_BRANCH}"
+      log_ok "Pushed to ${GIT_BRANCH}"
+    fi
+
+    log_ok "Done. Changed: ${changed_distros[*]}"
