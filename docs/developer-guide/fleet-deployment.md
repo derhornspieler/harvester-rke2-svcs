@@ -43,7 +43,7 @@ There are two kinds of bundles:
 defaultNamespace: argocd
 helm:
   releaseName: argocd
-  chart: oci://harbor.example.com/helm/argo-cd
+  chart: oci://harbor.<DOMAIN>/helm/argo-cd
   version: "9.4.7"
   valuesFiles:
     - values.yaml
@@ -75,7 +75,7 @@ Fleet applies everything in `manifests/` as raw Kubernetes resources.
 
 ## The HelmOps Pattern: OCI-First Bootstrap
 
-The platform cannot depend on Git for bootstrap -- GitLab does not exist yet at cluster bring-up time. Instead, `push-bundles.sh` pre-packages every raw-manifest bundle as a Helm chart and pushes it to `oci://harbor.example.com/fleet/`.
+The platform cannot depend on Git for bootstrap -- GitLab does not exist yet at cluster bring-up time. Instead, `push-bundles.sh` pre-packages every raw-manifest bundle as a Helm chart and pushes it to `oci://harbor.<DOMAIN>/fleet/`.
 
 ### How push-bundles.sh Works
 
@@ -87,7 +87,7 @@ The script at `fleet-gitops/scripts/push-bundles.sh`:
    - Creates a temporary `Chart.yaml` with the bundle's chart name and version.
    - Copies all YAML files from `manifests/` into `templates/`.
    - Runs `helm package` to produce a `.tgz`.
-   - Runs `helm push` to upload to `oci://harbor.example.com/fleet/<chart-name>`.
+   - Runs `helm push` to upload to `oci://harbor.<DOMAIN>/fleet/<chart-name>`.
 
 Usage:
 
@@ -159,7 +159,7 @@ The `BUNDLES` array maps directory paths to chart names using `<dir-path>:<chart
     defaultNamespace: monitoring
     helm:
       releaseName: my-chart
-      chart: oci://harbor.example.com/helm/my-chart
+      chart: oci://harbor.<DOMAIN>/helm/my-chart
       version: "1.2.3"
       valuesFiles:
         - values.yaml
@@ -194,7 +194,7 @@ yamllint fleet-gitops/20-monitoring/my-exporter/manifests/
 kubeconform -strict fleet-gitops/20-monitoring/my-exporter/manifests/
 
 # For Helm chart bundles, template locally
-helm template my-chart oci://harbor.example.com/helm/my-chart \
+helm template my-chart oci://harbor.<DOMAIN>/helm/my-chart \
   --version 1.2.3 \
   -f fleet-gitops/20-monitoring/my-chart/values.yaml
 

@@ -17,6 +17,8 @@ scripts/oidc-client-secrets.json
 scripts/harbor-robot-credentials.json
 scripts/.deploy-keys/
 *-root-ca-key.pem
+root-ca.pem
+fleet-gitops/root-ca.pem
 
 # Kubeconfig files
 *.kubeconfig

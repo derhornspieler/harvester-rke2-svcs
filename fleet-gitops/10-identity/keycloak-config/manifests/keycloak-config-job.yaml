@@ -428,15 +428,15 @@ spec:
 
               log "Vault OIDC auth configured (default + admin roles)"
 
-              # =============== Phase 3c: Fix admin.user display name ===============
-              log "Fixing admin.user display name..."
-              _alice_id=$(kc_api GET "${KC_REALM}/users?username=${PLATFORM_ADMIN_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-              if [[ -n "$_alice_id" ]]; then
-                kc_api PUT "${KC_REALM}/users/${_alice_id}" -d '{
-                  "firstName": "Alice",
-                  "lastName": "Morgan"
-                }' || log "WARN: Could not update admin.user display name"
-                log "admin.user display name updated to Platform Admin"
+              # =============== Phase 3c: Fix platform admin display name ===============
+              log "Fixing ${PLATFORM_ADMIN_USER} display name..."
+              _admin_id=$(kc_api GET "${KC_REALM}/users?username=${PLATFORM_ADMIN_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [[ -n "$_admin_id" ]]; then
+                kc_api PUT "${KC_REALM}/users/${_admin_id}" -d '{
+                  "firstName": "'"${_admin_first}"'",
+                  "lastName": "'"${_admin_last}"'"
+                }' || log "WARN: Could not update ${PLATFORM_ADMIN_USER} display name"
+                log "${PLATFORM_ADMIN_USER} display name updated"
               fi
 
               # =============== Phase 4: Groups ===============

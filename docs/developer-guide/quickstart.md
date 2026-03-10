@@ -107,7 +107,7 @@ docker login harbor.<DOMAIN>
 docker push harbor.<DOMAIN>/library/microservice-demo:v1.0
 ```
 
-Replace `<DOMAIN>` with your actual domain (e.g., `dev.example.com`).
+Replace `<DOMAIN>` with your actual domain (e.g., `dev.<DOMAIN>`).
 
 ## Step 4: Configure for Your Environment
 
