@@ -17,31 +17,32 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
   source "${FLEET_DIR}/.env"
   set +a
 fi
+source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
-HARBOR="harbor.aegisgroup.ch"
+HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 HARBOR_USER="${HARBOR_USER:?Set HARBOR_USER in .env}"
 HARBOR_PASS="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 
 CHARTS=(
   # chart-name|repo-url|version
-  "cert-manager|https://charts.jetstack.io|v1.19.4"
-  "vault|https://helm.releases.hashicorp.com|0.32.0"
-  "external-secrets|https://charts.external-secrets.io|2.0.1"
-  "cloudnative-pg|https://cloudnative-pg.github.io/charts|0.27.1"
-  "prometheus-operator-crds|https://prometheus-community.github.io/helm-charts|27.0.0"
-  "kube-prometheus-stack|https://prometheus-community.github.io/helm-charts|82.10.0"
-  "harbor|https://helm.goharbor.io|1.18.2"
-  "gitlab|https://charts.gitlab.io|9.9.2"
-  "gitlab-runner|https://charts.gitlab.io|0.86.0"
-  "redis-operator|https://ot-container-kit.github.io/helm-charts|0.23.0"
+  "cert-manager|${HELM_REPO_CERT_MANAGER}|${CHART_VER_CERT_MANAGER}"
+  "vault|${HELM_REPO_VAULT}|${CHART_VER_VAULT}"
+  "external-secrets|${HELM_REPO_EXTERNAL_SECRETS}|${CHART_VER_EXTERNAL_SECRETS}"
+  "cloudnative-pg|${HELM_REPO_CNPG}|${CHART_VER_CNPG}"
+  "prometheus-operator-crds|${HELM_REPO_PROMETHEUS}|${CHART_VER_PROMETHEUS_CRDS}"
+  "kube-prometheus-stack|${HELM_REPO_PROMETHEUS}|${CHART_VER_PROMETHEUS_STACK}"
+  "harbor|${HELM_REPO_HARBOR}|${CHART_VER_HARBOR}"
+  "gitlab|${HELM_REPO_GITLAB}|${CHART_VER_GITLAB}"
+  "gitlab-runner|${HELM_REPO_GITLAB}|${CHART_VER_GITLAB_RUNNER}"
+  "redis-operator|${HELM_REPO_REDIS_OPERATOR}|${CHART_VER_REDIS_OPERATOR}"
 )
 
 # OCI charts (already OCI, just re-tag to Harbor)
 OCI_CHARTS=(
   # chart-name|oci-source|version
-  "argo-cd|oci://ghcr.io/argoproj/argo-helm/argo-cd|9.4.7"
-  "argo-rollouts|oci://ghcr.io/argoproj/argo-helm/argo-rollouts|2.40.6"
-  "argo-workflows|oci://ghcr.io/argoproj/argo-helm/argo-workflows|0.47.4"
+  "argo-cd|${OCI_SRC_ARGOCD}|${CHART_VER_ARGOCD}"
+  "argo-rollouts|${OCI_SRC_ARGO_ROLLOUTS}|${CHART_VER_ARGO_ROLLOUTS}"
+  "argo-workflows|${OCI_SRC_ARGO_WORKFLOWS}|${CHART_VER_ARGO_WORKFLOWS}"
 )
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }

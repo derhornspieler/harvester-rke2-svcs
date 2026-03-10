@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# deploy.sh — Unified Fleet GitOps deployment to an RKE2 cluster
+# deploy.sh — Unified Fleet GitOps deployment to a downstream cluster
 #
 # Pushes Helm charts to Harbor, seeds Root CA on the downstream cluster,
 # and creates Fleet Bundle CRs via Rancher API — all in one command.
@@ -18,7 +18,7 @@ set -euo pipefail
 #   - helm CLI with OCI support
 #   - kubectl CLI
 #   - jq, python3 with PyYAML
-#   - Harbor credentials (helm registry login harbor.aegisgroup.ch)
+#   - Harbor credentials (helm registry login <HARBOR_HOST>)
 #   - Rancher API access (reads from .env file or environment variables)
 
 # --- Colors ---
@@ -33,7 +33,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
 SVCS_DIR="$(dirname "${FLEET_DIR}")"
 
-HARBOR="harbor.aegisgroup.ch"
+# Source .env early so HARBOR_HOST and other variables are available
+if [[ -f "${FLEET_DIR}/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${FLEET_DIR}/.env"
+  set +a
+fi
+source "${SCRIPT_DIR}/lib/env-defaults.sh"
+
+HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 ROOT_CA_DIR="${SVCS_DIR}/services/pki/roots"
 ROOT_CA_PEM="${ROOT_CA_DIR}/root-ca.pem"
 ROOT_CA_KEY="${ROOT_CA_DIR}/root-ca-key.pem"
@@ -104,18 +113,18 @@ push_charts() {
 get_downstream_kubeconfig() {
   log_info "Fetching downstream cluster kubeconfig from Rancher..."
 
-  # Find the cluster ID for rke2-prod
+  # Find the cluster ID for the target cluster
   local cluster_id
   cluster_id=$(curl -sk \
     -H "Authorization: Bearer ${RANCHER_TOKEN}" \
-    "${RANCHER_URL}/v1/provisioning.cattle.io.clusters/fleet-default/rke2-prod" | \
+    "${RANCHER_URL}/v1/provisioning.cattle.io.clusters/${FLEET_NAMESPACE}/${FLEET_TARGET_CLUSTER}" | \
     python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('clusterName',''))" 2>/dev/null)
 
-  [[ -n "${cluster_id}" ]] || die "Could not find cluster ID for rke2-prod"
+  [[ -n "${cluster_id}" ]] || die "Could not find cluster ID for ${FLEET_TARGET_CLUSTER}"
   log_info "Cluster ID: ${cluster_id}"
 
   # Generate kubeconfig via Rancher API
-  DOWNSTREAM_KUBECONFIG=$(mktemp /tmp/rke2-prod-kubeconfig.XXXXXX)
+  DOWNSTREAM_KUBECONFIG=$(mktemp /tmp/downstream-kubeconfig.XXXXXX)
   curl -sk \
     -H "Authorization: Bearer ${RANCHER_TOKEN}" \
     -X POST \
@@ -184,8 +193,8 @@ seed_root_ca() {
   cat > "${cloud_config_tmp}" <<CLOUDCFG
 url: ${RANCHER_URL}
 token: ${RANCHER_TOKEN}
-clusterName: rke2-prod
-clusterNamespace: fleet-default
+clusterName: ${FLEET_TARGET_CLUSTER}
+clusterNamespace: ${FLEET_NAMESPACE}
 CLOUDCFG
   kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n cluster-autoscaler \
     create secret generic cluster-autoscaler-cloud-config \
@@ -228,7 +237,7 @@ CLOUDCFG
   local traefik_hcc="${SVCS_DIR}/services/traefik-dashboard/helmchartconfig.yaml"
   if [[ -f "${traefik_hcc}" ]]; then
     # Replace placeholder LB IP with actual value
-    sed "s/CHANGEME_TRAEFIK_LB_IP/192.168.48.2/" "${traefik_hcc}" | \
+    sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/" "${traefik_hcc}" | \
       kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply --server-side --force-conflicts -f -
     log_ok "Traefik HelmChartConfig applied (dashboard + Gateway API + CA trust)"
   else
@@ -383,7 +392,7 @@ EXTCONF
     vault write pki_int/intermediate/set-signed certificate=@/tmp/intermediate-chain.pem
 
   # Configure the signing role
-  local domain="aegisgroup.ch"
+  local domain="${DOMAIN}"
   local domain_dot="${domain//./-dot-}"
   kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault exec vault-0 -- \
     env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \

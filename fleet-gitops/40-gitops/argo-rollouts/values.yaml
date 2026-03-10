@@ -1,4 +1,4 @@
-# Argo Rollouts Helm values for RKE2 cluster (HA)
+# Argo Rollouts Helm values for target cluster (HA)
 # Chart: argo/argo-rollouts
 #
 # Deploy:

@@ -11,7 +11,7 @@ spec:
       namespace: argocd
       sectionName: https
   hostnames:
-    - "argo.aegisgroup.ch"
+    - "${ARGOCD_FQDN}"
   rules:
     - matches:
         - path:

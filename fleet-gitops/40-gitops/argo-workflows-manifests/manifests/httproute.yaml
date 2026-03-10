@@ -9,7 +9,7 @@ spec:
       namespace: argo-workflows
       sectionName: https
   hostnames:
-    - "workflows.aegisgroup.ch"
+    - "${WORKFLOWS_FQDN}"
   rules:
     - matches:
         - path:

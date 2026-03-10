@@ -13,7 +13,7 @@ metadata:
 spec:
   clusterSize: 3
   kubernetesConfig:
-    image: quay.io/opstree/redis:v7.0.15
+    image: ${IMAGE_REDIS}
     imagePullPolicy: IfNotPresent
     resources:
       requests:
@@ -24,7 +24,7 @@ spec:
       key: password
   redisExporter:
     enabled: true
-    image: oliver006/redis_exporter:v1.66.0
+    image: ${IMAGE_REDIS_EXPORTER}
     resources:
       requests:
         cpu: 50m
@@ -32,7 +32,7 @@ spec:
   storage:
     volumeClaimTemplate:
       spec:
-        storageClassName: harvester
+        storageClassName: ${STORAGE_CLASS}
         accessModes:
           - ReadWriteOnce
         resources:

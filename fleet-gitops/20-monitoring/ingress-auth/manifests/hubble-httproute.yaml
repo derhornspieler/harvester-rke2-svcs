@@ -9,7 +9,7 @@ spec:
       namespace: kube-system
       sectionName: https
   hostnames:
-    - "hubble.aegisgroup.ch"
+    - "${HUBBLE_FQDN}"
   rules:
     - matches:
         - path:

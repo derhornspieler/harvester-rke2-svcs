@@ -41,7 +41,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.0.8
+          image: ${IMAGE_KEYCLOAK}
           args:
             - start
           ports:
@@ -55,7 +55,7 @@ spec:
             - name: KC_DB
               value: postgres
             - name: KC_DB_URL_HOST
-              value: keycloak-pg-rw.database.svc.cluster.local
+              value: ${KEYCLOAK_DB_HOST}
             - name: KC_DB_URL_DATABASE
               value: keycloak
             - name: KC_DB_USERNAME
@@ -69,7 +69,7 @@ spec:
                   name: keycloak-postgres-secret
                   key: POSTGRES_PASSWORD
             - name: KC_HOSTNAME
-              value: keycloak.aegisgroup.ch
+              value: ${KEYCLOAK_FQDN}
             - name: KC_PROXY_HEADERS
               value: xforwarded
             - name: KC_HTTP_ENABLED

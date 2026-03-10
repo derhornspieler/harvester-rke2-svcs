@@ -4,4 +4,4 @@ dependsOn:
       matchLabels:
         fleet.cattle.io/bundle-name: vault
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}

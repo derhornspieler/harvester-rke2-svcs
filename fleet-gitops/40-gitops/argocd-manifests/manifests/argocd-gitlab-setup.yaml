@@ -88,11 +88,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: setup
-          image: docker.io/alpine/k8s:1.32.4
+          image: ${IMAGE_ALPINE_K8S}
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              DOMAIN="aegisgroup.ch"
+              DOMAIN="${DOMAIN}"
               GITLAB_URL="https://gitlab.${DOMAIN}"
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }

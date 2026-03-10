@@ -11,7 +11,7 @@ spec:
       namespace: keycloak
       sectionName: https
   hostnames:
-    - "keycloak.aegisgroup.ch"
+    - "${KEYCLOAK_FQDN}"
   rules:
     - matches:
         - path:

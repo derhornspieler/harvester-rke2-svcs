@@ -11,7 +11,7 @@ spec:
       namespace: vault
       sectionName: https
   hostnames:
-    - "vault.aegisgroup.ch"
+    - "${VAULT_FQDN}"
   rules:
     - matches:
         - path:

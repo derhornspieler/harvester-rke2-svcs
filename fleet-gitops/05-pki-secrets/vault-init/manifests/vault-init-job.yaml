@@ -71,7 +71,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: vault-init
-          image: docker.io/alpine/k8s:1.32.4
+          image: ${IMAGE_ALPINE_K8S}
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
@@ -82,7 +82,7 @@ spec:
               # signing by deploy.sh. The root CA private key never enters
               # the cluster.
 
-              DOMAIN="aegisgroup.ch"
+              DOMAIN="${DOMAIN}"
               DOMAIN_DOT="${DOMAIN//./-dot-}"
               ORG="Aegis Group"
               REPLICAS=3

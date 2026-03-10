@@ -9,7 +9,7 @@ spec:
       namespace: argo-rollouts
       sectionName: https
   hostnames:
-    - "rollouts.aegisgroup.ch"
+    - "${ROLLOUTS_FQDN}"
   rules:
     - matches:
         - path:

@@ -26,7 +26,7 @@ sources:
 
 # Only manage records in the IPA domain
 domainFilters:
-  - aegisgroup.ch
+  - ${DNS_ZONE}
 
 # Prevent accidental deletion — require explicit annotation to remove
 policy: upsert-only
@@ -40,13 +40,13 @@ logLevel: info
 # RFC2136-specific config
 extraArgs:
   # FreeIPA DNS server address (primary)
-  - --rfc2136-host=10.1.1.20
+  - --rfc2136-host=${DNS_SERVER_IP}
   # DNS port
   - --rfc2136-port=53
   # DNS zone
-  - --rfc2136-zone=aegisgroup.ch
+  - --rfc2136-zone=${DNS_ZONE}
   # TSIG authentication
-  - --rfc2136-tsig-keyname=external-dns-key
+  - --rfc2136-tsig-keyname=${TSIG_KEY_NAME}
   - --rfc2136-tsig-secret-alg=hmac-sha512
   # Allow zone transfer for listing existing records
   - --rfc2136-tsig-axfr
@@ -56,7 +56,7 @@ extraArgs:
   # - --annotation-filter=external-dns.alpha.kubernetes.io/enabled=true
   # TXT record ownership prefix
   - --txt-prefix=_externaldns.
-  - --txt-owner-id=rke2-prod
+  - --txt-owner-id=${FLEET_TARGET_CLUSTER}
 
 # TSIG secret from Vault via ExternalSecret
 extraEnv:

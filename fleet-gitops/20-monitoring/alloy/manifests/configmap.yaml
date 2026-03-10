@@ -17,7 +17,7 @@ data:
         url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
       }
       external_labels = {
-        cluster = "rke2-production",
+        cluster = "${FLEET_TARGET_CLUSTER}",
       }
     }
 

@@ -8,7 +8,7 @@ metadata:
     cert-manager.io/duration: "720h"
     cert-manager.io/renew-before: "168h"
 spec:
-  gatewayClassName: traefik
+  gatewayClassName: ${GATEWAY_CLASS}
   listeners:
     - name: http
       protocol: HTTP
@@ -19,11 +19,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: hubble.aegisgroup.ch
+      hostname: ${HUBBLE_FQDN}
       tls:
         mode: Terminate
         certificateRefs:
-          - name: hubble-aegisgroup-ch-tls
+          - name: ${HUBBLE_TLS_SECRET}
       allowedRoutes:
         namespaces:
           from: Same

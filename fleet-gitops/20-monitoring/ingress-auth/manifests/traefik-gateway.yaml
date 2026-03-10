@@ -8,7 +8,7 @@ metadata:
     cert-manager.io/duration: "720h"
     cert-manager.io/renew-before: "168h"
 spec:
-  gatewayClassName: traefik
+  gatewayClassName: ${GATEWAY_CLASS}
   listeners:
     - name: http
       protocol: HTTP
@@ -19,11 +19,11 @@ spec:
     - name: https
       protocol: HTTPS
       port: 8443
-      hostname: traefik.aegisgroup.ch
+      hostname: ${TRAEFIK_FQDN}
       tls:
         mode: Terminate
         certificateRefs:
-          - name: traefik-aegisgroup-ch-tls
+          - name: ${TRAEFIK_TLS_SECRET}
       allowedRoutes:
         namespaces:
           from: Same

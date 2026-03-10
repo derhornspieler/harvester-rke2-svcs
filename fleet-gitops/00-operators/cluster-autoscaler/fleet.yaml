@@ -1,3 +1,3 @@
 defaultNamespace: cluster-autoscaler
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}
