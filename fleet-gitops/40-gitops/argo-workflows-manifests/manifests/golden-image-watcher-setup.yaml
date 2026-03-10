@@ -113,45 +113,45 @@ spec:
               log "GitLab is ready"
 
               # --- Authenticate as root ---
-              TOKEN=$(curl -sfk --data "grant_type=password&username=root&password=${GITLAB_ROOT_PASS}" \
-                "${GITLAB_URL}/oauth/token" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
-              [[ -n "$TOKEN" ]] || die "Could not authenticate as root"
+              AUTH_RESP=$(curl -sk --data "grant_type=password&username=root&password=${GITLAB_ROOT_PASS}" \
+                "${GITLAB_URL}/oauth/token")
+              TOKEN=$(echo "$AUTH_RESP" | jq -r '.access_token // empty')
+              [[ -n "$TOKEN" ]] || die "Could not authenticate as root: ${AUTH_RESP}"
 
               # --- Find the project ---
               log "Looking for project: ${PROJECT_PATH}"
-              PROJECT_ID=$(curl -sfk \
-                -H "Authorization: Bearer ${TOKEN}" \
-                "${GITLAB_URL}/api/v4/projects/$(echo "${PROJECT_PATH}" | sed 's|/|%2F|g')" | \
-                grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+              ENCODED_PATH=$(echo "${PROJECT_PATH}" | sed 's|/|%2F|g')
+              PROJ_RESP=$(curl -sk -H "Authorization: Bearer ${TOKEN}" \
+                "${GITLAB_URL}/api/v4/projects/${ENCODED_PATH}" 2>&1 || true)
+              PROJECT_ID=$(echo "$PROJ_RESP" | jq -r '.id // empty' 2>/dev/null || true)
 
               if [[ -z "$PROJECT_ID" ]]; then
                 # Create the infra_and_platform_services group if needed
                 log "Project not found — creating group 'infra_and_platform_services'..."
-                GROUP_ID=$(curl -sfk \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  "${GITLAB_URL}/api/v4/groups?search=infra_and_platform_services" | \
-                  grep -o '"id":[0-9]*' | head -1 | cut -d: -f2 || true)
+                GROUPS_RESP=$(curl -sk -H "Authorization: Bearer ${TOKEN}" \
+                  "${GITLAB_URL}/api/v4/groups?search=infra_and_platform_services" || true)
+                GROUP_ID=$(echo "$GROUPS_RESP" | jq -r '.[0].id // empty' 2>/dev/null || true)
 
                 if [[ -z "$GROUP_ID" ]]; then
-                  GROUP_ID=$(curl -sfk -X POST \
+                  GROUP_RESP=$(curl -sk -X POST \
                     -H "Authorization: Bearer ${TOKEN}" \
                     -H "Content-Type: application/json" \
                     "${GITLAB_URL}/api/v4/groups" \
-                    -d '{"name":"Infra and Platform Services","path":"infra_and_platform_services","visibility":"internal"}' | \
-                    grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-                  [[ -n "$GROUP_ID" ]] || die "Failed to create infra_and_platform_services group"
+                    -d '{"name":"Infra and Platform Services","path":"infra_and_platform_services","visibility":"internal"}')
+                  GROUP_ID=$(echo "$GROUP_RESP" | jq -r '.id // empty')
+                  [[ -n "$GROUP_ID" ]] || die "Failed to create group: ${GROUP_RESP}"
                   log "Created group: infra_and_platform_services (ID: ${GROUP_ID})"
                 fi
 
                 # Create the project
                 log "Creating project: ${PROJECT_PATH}"
-                PROJECT_ID=$(curl -sfk -X POST \
+                CREATE_RESP=$(curl -sk -X POST \
                   -H "Authorization: Bearer ${TOKEN}" \
                   -H "Content-Type: application/json" \
                   "${GITLAB_URL}/api/v4/projects" \
-                  -d "{\"name\":\"harvester-golden-images\",\"namespace_id\":${GROUP_ID},\"visibility\":\"internal\",\"initialize_with_readme\":false}" | \
-                  grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-                [[ -n "$PROJECT_ID" ]] || die "Failed to create project"
+                  -d "{\"name\":\"harvester-golden-images\",\"namespace_id\":${GROUP_ID},\"visibility\":\"internal\",\"initialize_with_readme\":false}")
+                PROJECT_ID=$(echo "$CREATE_RESP" | jq -r '.id // empty')
+                [[ -n "$PROJECT_ID" ]] || die "Failed to create project: ${CREATE_RESP}"
                 log "Created project: ${PROJECT_PATH} (ID: ${PROJECT_ID})"
               else
                 log "Found project: ${PROJECT_PATH} (ID: ${PROJECT_ID})"
@@ -160,13 +160,13 @@ spec:
               # --- Create Project Access Token ---
               log "Creating project access token for watcher..."
               EXPIRES_AT=$(date -d "+1 year" +%Y-%m-%d 2>/dev/null || date -v+1y +%Y-%m-%d 2>/dev/null)
-              PAT_RESP=$(curl -sfk -X POST \
+              PAT_RESP=$(curl -sk -X POST \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Content-Type: application/json" \
                 "${GITLAB_URL}/api/v4/projects/${PROJECT_ID}/access_tokens" \
                 -d "{\"name\":\"golden-image-watcher\",\"scopes\":[\"read_repository\",\"write_repository\"],\"access_level\":40,\"expires_at\":\"${EXPIRES_AT}\"}")
 
-              PAT_TOKEN=$(echo "$PAT_RESP" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+              PAT_TOKEN=$(echo "$PAT_RESP" | jq -r '.token // empty')
               [[ -n "$PAT_TOKEN" ]] || die "Failed to create project access token: ${PAT_RESP}"
               log "Project access token created"
 
