@@ -30,7 +30,7 @@ Build applications that run on the platform.
 
 **[Platform Architecture](docs/architecture/overview.md)** -- How the system works
 
-[Leadership-readable ecosystem diagrams and technical deep dives](docs/architecture/)
+[Ecosystem diagrams and technical deep dives](docs/architecture/)
 
 ---
 
@@ -54,6 +54,7 @@ All deployed via Fleet GitOps on a 13-node RKE2 cluster.
 - **[Documentation Hub](docs/README.md)** -- Navigation for all docs
 - **[Contributing Guide](CONTRIBUTING.md)** -- How to add services
 - **[Architecture Overview](docs/architecture/overview.md)** -- System design
+- **[Platform Landscape](docs/architecture/landscape.md)** -- Full ecosystem visualization
 - **[Working Examples](examples/)** -- Clone and adapt
 
 ---
