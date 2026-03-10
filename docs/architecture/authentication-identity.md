@@ -214,14 +214,18 @@ BREAKGLASS_PASSWORD=""        # Break-glass user temporary password
 ```yaml
 Realm: platform
 Brute Force Protection: Enabled (5 failures → 15min lockout)
-Session Timeout: 30 minutes idle / 1 hour max
+Session Timeout: 8 hours idle / 10 hours max
 Access Token Lifespan: 5 minutes
 Authorization Code Lifespan: 2 minutes
 Default Client Scopes: openid, profile, email, roles, groups
 Authentication Flow: browser-prompt-login (forces re-auth on every login)
 ```
 
-The `prompt=login` browser flow is intentional: it prevents silent SSO across services, ensuring that permission changes and logouts take immediate effect.
+**Session Timeout Explanation:**
+- **8 hours idle**: A user session expires if no requests are made for 8 hours. This provides a long single sign-on window while maintaining reasonable security.
+- **10 hours max**: Even with continuous activity, a session expires after 10 hours maximum, forcing a re-login to Keycloak (which initiates the OIDC flow with dependent services like Grafana, ArgoCD, and Harbor).
+
+This extended timeout enables proper single sign-on (SSO) across all platform services — users log in once at Keycloak and remain authenticated across Prometheus, Grafana, Harbor, ArgoCD, and GitLab for the entire 8-hour idle window.
 
 ### OAuth2-Proxy Instances
 
