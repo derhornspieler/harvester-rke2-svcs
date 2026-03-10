@@ -95,7 +95,7 @@ spec:
 
               # Default platform admin password — generated randomly if not
               # pre-seeded at kv/services/keycloak/platform-admin in Vault
-              DEFAULT_PLATFORM_ADMIN_PASS="$(openssl rand -base64 24)"
+              DEFAULT_PLATFORM_ADMIN_PASS="$(head -c 24 /dev/urandom | base64)"
 
               # --- Load Vault root token and admin creds ---
               init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
@@ -246,7 +246,7 @@ spec:
                   rollouts-oidc)     redirect="https://rollouts.${DOMAIN}/oauth2/callback" ;;
                   workflows-oidc)    redirect="https://workflows.${DOMAIN}/oauth2/callback" ;;
                   argocd)            redirect="https://argo.${DOMAIN}/auth/callback" ;;
-                  harbor)            redirect="https://harbor.dev.${DOMAIN}/c/oidc/callback" ;;
+                  harbor)            redirect="https://${HARBOR_FQDN}/c/oidc/callback" ;;
                   gitlab)            redirect="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback" ;;
                   vault)             redirect="https://vault.${DOMAIN}/ui/vault/auth/oidc/oidc/callback" ;;
                 esac
