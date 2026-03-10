@@ -40,6 +40,7 @@ source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
 HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-1.0.0}"
+RENDERED_DIR="${FLEET_DIR}/rendered"
 
 # --- Logging ---
 log_info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
@@ -173,7 +174,7 @@ build_helmop_cr() {
   # Build values JSON from values file if provided
   local values_json="{}"
   if [[ -n "${values_file_rel}" ]]; then
-    local values_path="${FLEET_DIR}/${values_file_rel}"
+    local values_path="${RENDERED_DIR}/${values_file_rel}"
     if [[ -f "${values_path}" ]]; then
       values_json=$(python3 -c "
 import yaml, json
@@ -597,6 +598,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 load_config
+
+# Render templates (substitutes env vars into YAML for values files)
+log_info "Rendering templates..."
+"${SCRIPT_DIR}/render-templates.sh"
 
 echo -e "${BOLD}${BLUE}============================================================${NC}"
 echo -e "${BOLD}${BLUE}  Fleet GitOps — HelmOp Deployment${NC}"
