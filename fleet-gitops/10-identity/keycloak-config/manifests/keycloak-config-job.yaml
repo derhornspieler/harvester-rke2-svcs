@@ -489,49 +489,18 @@ spec:
                 log "Groups scope assigned to all clients"
               fi
 
-              # =============== Phase 5: Auth flow — no SSO, prompt login every time ===============
-              # Copy the built-in "browser" flow, then disable the Cookie authenticator
-              # so each service requires its own login (no cross-service SSO).
-              log "Configuring browser-prompt-login flow (no SSO)..."
-              _flow_exists=$(kc_api GET "${KC_REALM}/authentication/flows" | jq -r '[.[] | select(.alias=="browser-prompt-login")] | length' 2>/dev/null || echo "0")
-              if [[ "$_flow_exists" -eq 0 ]]; then
-                # Copy using flow alias (not UUID) — Keycloak API requirement
-                token=$(kc_get_token)
-                _copy_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
-                  -X POST "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/browser/copy" \
-                  -H "Authorization: Bearer ${token}" \
-                  -H "Content-Type: application/json" \
-                  -d '{"newName": "browser-prompt-login"}')
-                [[ "$_copy_code" =~ ^2 ]] && log "Copied browser flow to browser-prompt-login" || log "WARN: Flow copy returned HTTP $_copy_code"
+              # =============== Phase 5: Auth flow — restore SSO via default browser flow ===============
+              # Ensure the realm uses the default "browser" flow which respects SSO
+              # session cookies. Users log in once and get silent re-auth across all
+              # services until the Keycloak SSO session expires (default 30 min).
+              log "Ensuring default browser auth flow with SSO enabled..."
+              _current_flow=$(kc_api GET "${KC_REALM}" | jq -r '.browserFlow // "browser"' 2>/dev/null || echo "browser")
+              if [[ "$_current_flow" != "browser" ]]; then
+                kc_api PUT "${KC_REALM}" -d '{"browserFlow": "browser"}' || die "Failed to restore default browser flow"
+                log "Restored default browser flow (was: ${_current_flow})"
               else
-                log "browser-prompt-login flow already exists"
+                log "Default browser flow already active — SSO enabled"
               fi
-
-              # Disable the Cookie authenticator in the copied flow
-              _cookie_exec_id=$(kc_api GET "${KC_REALM}/authentication/flows/browser-prompt-login/executions" | \
-                jq -r '.[] | select(.providerId=="auth-cookie") | .id' 2>/dev/null || echo "")
-
-              if [[ -n "$_cookie_exec_id" ]]; then
-                _cookie_req=$(kc_api GET "${KC_REALM}/authentication/flows/browser-prompt-login/executions" | \
-                  jq -r '.[] | select(.providerId=="auth-cookie") | .requirement' 2>/dev/null || echo "")
-                if [[ "$_cookie_req" == "DISABLED" ]]; then
-                  log "Cookie authenticator already DISABLED"
-                else
-                  token=$(kc_get_token)
-                  _disable_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
-                    -X PUT "${KC_URL}/admin/realms/${KC_REALM}/authentication/flows/browser-prompt-login/executions" \
-                    -H "Authorization: Bearer ${token}" \
-                    -H "Content-Type: application/json" \
-                    -d '{"id":"'"${_cookie_exec_id}"'","requirement":"DISABLED"}')
-                  [[ "$_disable_code" =~ ^2 ]] && log "Cookie authenticator disabled in browser-prompt-login" || log "WARN: Cookie disable returned HTTP $_disable_code"
-                fi
-              else
-                log "WARN: Cookie authenticator not found in browser-prompt-login flow"
-              fi
-
-              # Set browser-prompt-login as the realm's browser flow
-              kc_api PUT "${KC_REALM}" -d '{"browserFlow": "browser-prompt-login"}' || die "Failed to set browser-prompt-login as realm browser flow"
-              log "Authentication flow configured — SSO disabled, each service prompts login"
 
               log "Keycloak configuration complete"
           securityContext:
