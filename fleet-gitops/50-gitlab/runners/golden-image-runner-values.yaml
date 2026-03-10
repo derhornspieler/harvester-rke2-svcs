@@ -40,7 +40,7 @@ runners:
       """
       [runners.kubernetes]
         namespace = "gitlab-runners"
-        image = "hashicorp/terraform:1.14"
+        image = "hashicorp/terraform:1.12"
         service_account = "gitlab-runner-sa"
         pull_policy = ["if-not-present"]
         # Golden image builds take 30-60 minutes
