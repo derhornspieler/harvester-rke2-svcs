@@ -162,7 +162,7 @@ When writing each ecosystem document, reference these connections:
 ## MDN for Ecosystem Authors
 
 Each ecosystem document should:
-1. **Start with the leadership diagram** (top, color-coded box from master)
+1. **Start with the ecosystem diagram** (top, color-coded box from master)
 2. **Include the "story" one-liner** from the design doc
 3. **Show technical flow details** (e.g., OIDC token exchange, cert renewal)
 4. **List the 2-5 key services** in that ecosystem
