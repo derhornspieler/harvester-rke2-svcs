@@ -128,13 +128,15 @@ graph LR
 
 ## Who Logs In Where
 
-Keycloak is the single identity provider. Some services integrate directly via OIDC; others sit behind OAuth2-proxy, which handles authentication at the gateway level so the service itself doesn't need to.
+Keycloak is the single identity provider. Some services integrate directly via OIDC; others sit behind OAuth2-proxy, which handles authentication at the gateway level so the service itself doesn't need to. Keycloak can optionally federate users from a FreeIPA directory service via LDAP.
 
 ```mermaid
 graph TD
+    FreeIPA["FreeIPA<br/>Directory Service"]:::optional
     User(["User"])
     KC["Keycloak<br/>OIDC Provider"]
 
+    FreeIPA -. "LDAP user federation<br/>(optional)" .-> KC
     User -- "authenticate" --> KC
 
     subgraph direct["Direct OIDC Integration"]
@@ -163,6 +165,7 @@ graph TD
     classDef identity fill:#6f42c1,color:#fff,stroke:#4a2a7f,stroke-width:2px
     classDef app fill:#e8dff5,color:#4a2a7f,stroke:#6f42c1,stroke-width:1px
     classDef protected fill:#fff3cd,color:#664d03,stroke:#ffc107,stroke-width:1px
+    classDef optional fill:#fff,color:#6c757d,stroke:#6c757d,stroke-width:2px,stroke-dasharray:5 5
 
     class User user
     class KC,OAuth identity
@@ -275,7 +278,10 @@ graph TD
         MinIO["MinIO<br/>Shared Instance"]
     end
 
+    FreeIPA["FreeIPA<br/>Directory Service"]:::optional
+
     PG_KC --> KC["Keycloak"]
+    FreeIPA -. "LDAP user federation<br/>(optional)" .-> KC
     PG_HB --> HB["Harbor"]
     PG_GL --> GL["GitLab"]
     Redis_GL --> GL
@@ -285,6 +291,7 @@ graph TD
 
     classDef data fill:#0dcaf0,color:#000,stroke:#0a9db5,stroke-width:2px
     classDef app fill:#e0f7fa,color:#004d57,stroke:#0dcaf0,stroke-width:1px
+    classDef optional fill:#fff,color:#6c757d,stroke:#6c757d,stroke-width:2px,stroke-dasharray:5 5
 
     class PG_KC,PG_HB,PG_GL,Redis_GL,Valkey_HB,MinIO data
     class KC,HB,GL app
