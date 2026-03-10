@@ -2,6 +2,18 @@
 crds:
   create: true
 
+# HA: 2 replicas with leader election (built-in)
+replicaCount: 2
+nodeSelector:
+  workload-type: general
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: cloudnative-pg
+
 config:
   data:
     INHERITED_ANNOTATIONS: "kustomize.toolkit.fluxcd.io/*"

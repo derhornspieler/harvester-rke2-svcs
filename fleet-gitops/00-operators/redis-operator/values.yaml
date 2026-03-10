@@ -1,2 +1,13 @@
-# Redis Operator (Spotahome) Helm values
-# Minimal — defaults are sane
+# Redis Operator (OT-Container-Kit) Helm values
+
+# HA: 2 replicas with leader election (built-in)
+replicas: 2
+nodeSelector:
+  workload-type: general
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: redis-operator

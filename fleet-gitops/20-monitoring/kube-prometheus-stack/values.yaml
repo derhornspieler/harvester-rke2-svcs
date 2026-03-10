@@ -17,6 +17,9 @@ prometheus:
   ingress:
     enabled: false
   prometheusSpec:
+    # HA: 2 replicas with external labels for dedup
+    replicas: 2
+    replicaExternalLabelName: __replica__
     # Discover all ServiceMonitors/PrometheusRules regardless of labels
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
@@ -62,6 +65,8 @@ alertmanager:
   ingress:
     enabled: false
   alertmanagerSpec:
+    # HA: 2 replicas with built-in mesh clustering
+    replicas: 2
     storage:
       volumeClaimTemplate:
         spec:
