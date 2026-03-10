@@ -266,6 +266,54 @@ Grafana includes 18 pre-built dashboards, auto-provisioned via ConfigMap. Each d
 
 ---
 
+## High Availability & Resilience
+
+Critical observability services are configured for high availability to prevent a single node failure from causing a monitoring outage:
+
+### Prometheus (2 Replicas)
+
+Prometheus runs with 2 replicas (both scraping targets independently) and uses the `__replica__` external label to deduplicate metrics in Grafana. Topology spread constraints ensure replicas run on different nodes.
+
+**Configuration:**
+- **Replicas**: 2
+- **Deduplication**: `__replica__` external label in Grafana queries
+- **Topology spread**: max-skew 1, prefer different nodes
+- **Node selector**: `workload-type: general`
+
+**Benefits:**
+- If one Prometheus pod is evicted by cluster-autoscaler, the other continues scraping
+- Metrics remain available without gaps
+- No single point of failure in metrics collection
+
+**Limitation**: Prometheus stores metrics locally on each replica. Metrics from evicted replicas are lost after 30-day retention. For long-term metric retention, use remote-write (planned, not yet implemented).
+
+### Alertmanager (2 Replicas)
+
+Alertmanager runs with 2 replicas and uses built-in mesh clustering to keep alert state synchronized across replicas. Topology spread constraints ensure replicas run on different nodes.
+
+**Configuration:**
+- **Replicas**: 2
+- **Mesh clustering**: Enabled (gossip protocol between replicas)
+- **Topology spread**: max-skew 1, prefer different nodes
+- **Node selector**: workload-type: general
+
+**Benefits:**
+- If one Alertmanager pod is evicted, the other has full alert state
+- Alerts are not re-sent to notification channels
+- Inhibition rules and grouping work across both replicas
+
+### Loki (Safe-to-Evict Annotation)
+
+Loki stores logs on a ReadWriteOnce (RWO) PVC, which means it cannot run multiple replicas on different nodes. Instead, we prevent autoscaler from evicting Loki by adding the `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` annotation to its pod.
+
+**Benefits:**
+- Loki continues accepting log writes even during node scaling events
+- RWO PVC prevents data corruption from concurrent access
+
+**Limitation**: Loki is still a single point of failure for log ingestion. A future improvement is to migrate to ReadWriteMany (RWX) storage (e.g., NFS, CephFS) to enable true multi-replica Loki.
+
+---
+
 ## Technical Reference
 
 ### ServiceMonitors

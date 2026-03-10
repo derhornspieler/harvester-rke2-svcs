@@ -109,6 +109,17 @@ The Harvester RKE2 cluster spans 13 nodes optimized for different workload types
 | GitLab Runners | `workload-type: compute` | CPU-intensive job execution |
 | Monitoring agents (Alloy, Hubble) | DaemonSet on all nodes | Observability everywhere |
 
+### Proactive Cluster Autoscaling
+
+The platform uses **cluster-autoscaler overprovisioning** to ensure nodes are added before production workloads experience resource contention. Low-priority pause pods reserve capacity in each pool:
+
+| Pool | Pause Pod Replicas | Reserved Capacity | Preemption |
+|------|-------------------|-------------------|-----------|
+| General | 2 | 4 CPU, 12 Gi memory | Production workloads trigger preemption → autoscaler adds nodes |
+| Database | 2 | 4 CPU, 20 Gi memory | Storage-intensive services trigger preemption → autoscaler adds nodes |
+
+When a real workload needs resources, pause pods are preempted and become Pending, immediately triggering cluster-autoscaler to provision a new node. This ensures production services never experience scheduling failures due to resource exhaustion.
+
 ### Domain and TLS
 
 - **Primary domain**: `&lt;DOMAIN&gt;`
@@ -123,28 +134,31 @@ The Harvester RKE2 cluster spans 13 nodes optimized for different workload types
 | # | Service | Namespace | Ecosystem | HA Mode | Bundle | Deployed |
 |---|---------|-----------|-----------|---------|--------|----------|
 | 1 | Vault | `vault` | Secrets | 3-replica Raft | 1 | ✓ |
-| 2 | cert-manager | `cert-manager` | PKI | 3-replica leader/follower | 1 | ✓ |
-| 3 | ESO Controller | `external-secrets` | Secrets | 2-replica | 1 | ✓ |
-| 4 | Keycloak | `keycloak` | Identity | 3-replica + HPA | 2 | ✓ |
-| 5 | CNPG (Keycloak DB) | `keycloak` | Data | 3-replica PostgreSQL | 2 | ✓ |
-| 6 | OAuth2-proxy | `keycloak` | Identity | 2-replica | 2 | ✓ |
-| 7 | Prometheus | `monitoring` | Observability | 2-replica federated | 3 | ✓ |
-| 8 | Grafana | `monitoring` | Observability | 2-replica + HPA | 3 | ✓ |
-| 9 | Alertmanager | `monitoring` | Observability | 3-replica | 3 | ✓ |
-| 10 | Loki | `monitoring` | Observability | 2-replica distributed | 3 | ✓ |
-| 11 | Alloy | `monitoring` | Observability | DaemonSet (all nodes) | 3 | ✓ |
-| 12 | Harbor | `harbor` | CI/CD | 2-replica + HPA | 4 | ✓ |
-| 13 | CNPG (Harbor DB) | `harbor` | Data | 3-replica PostgreSQL | 4 | ✓ |
-| 14 | MinIO | `harbor` | Data | 4-node distributed | 4 | ✓ |
-| 15 | Valkey Sentinel | `harbor` | Data | 3-node Sentinel + replicas | 4 | ✓ |
-| 16 | ArgoCD | `argocd` | CI/CD | 3-replica + HPA | 5 | ✓ |
-| 17 | Argo Rollouts | `argo-rollouts` | CI/CD | 2-replica | 5 | ✓ |
-| 18 | Argo Workflows | `argo-workflows` | CI/CD | 2-replica | 5 | ✓ |
-| 19 | GitLab EE | `gitlab` | CI/CD | 3-replica + HPA | 6 | ✓ |
-| 20 | Praefect/Gitaly | `gitlab` | CI/CD | 3-replica Praefect + 3 Gitaly | 6 | ✓ |
-| 21 | CNPG (GitLab DB) | `gitlab` | Data | 3-replica PostgreSQL | 6 | ✓ |
-| 22 | Redis Sentinel | `gitlab` | Data | 3-node Sentinel + replicas | 6 | ✓ |
-| 23 | GitLab Runners | `gitlab-runners` | CI/CD | Horizontal pod autoscaling | 6 | ✓ |
+| 2 | cert-manager | `cert-manager` | PKI | 2-replica (controller, webhook, cainjector) + topology spread | 1 | ✓ |
+| 3 | ESO Controller | `external-secrets` | Secrets | 2-replica (operator, webhook, cert-controller) + topology spread | 1 | ✓ |
+| 4 | CNPG Operator | `cnpg-system` | Data | 2-replica leader/follower + topology spread | 1 | ✓ |
+| 5 | Redis Operator | `redis-operator` | Data | 2-replica + topology spread | 1 | ✓ |
+| 6 | Keycloak | `keycloak` | Identity | 3-replica + HPA | 2 | ✓ |
+| 7 | CNPG (Keycloak DB) | `keycloak` | Data | 3-replica PostgreSQL | 2 | ✓ |
+| 8 | OAuth2-proxy | `keycloak` | Identity | 2-replica | 2 | ✓ |
+| 9 | Prometheus | `monitoring` | Observability | 2-replica with `__replica__` external label for dedup + topology spread | 3 | ✓ |
+| 10 | Grafana | `monitoring` | Observability | 2-replica + HPA | 3 | ✓ |
+| 11 | Alertmanager | `monitoring` | Observability | 2-replica with mesh clustering + topology spread | 3 | ✓ |
+| 12 | Loki | `monitoring` | Observability | 2-replica distributed (safe-to-evict=false for RWO PVC) | 3 | ✓ |
+| 13 | Alloy | `monitoring` | Observability | DaemonSet (all nodes) | 3 | ✓ |
+| 14 | Hubble | `cilium` | Observability | DaemonSet (all nodes) | 3 | ✓ |
+| 15 | Harbor | `harbor` | CI/CD | 2-replica + HPA | 4 | ✓ |
+| 16 | CNPG (Harbor DB) | `harbor` | Data | 3-replica PostgreSQL | 4 | ✓ |
+| 17 | MinIO | `minio` | Data | 1-replica distributed (safe-to-evict=false for RWO PVC) | 4 | ✓ |
+| 18 | Valkey Sentinel | `harbor` | Data | 3-node Sentinel + replicas | 4 | ✓ |
+| 19 | ArgoCD | `argocd` | CI/CD | 3-replica + HPA | 5 | ✓ |
+| 20 | Argo Rollouts | `argo-rollouts` | CI/CD | 2-replica | 5 | ✓ |
+| 21 | Argo Workflows | `argo-workflows` | CI/CD | 2-replica | 5 | ✓ |
+| 22 | GitLab EE | `gitlab` | CI/CD | 3-replica + HPA | 6 | ✓ |
+| 23 | Praefect/Gitaly | `gitlab` | CI/CD | 3-replica Praefect + 3 Gitaly | 6 | ✓ |
+| 24 | CNPG (GitLab DB) | `gitlab` | Data | 3-replica PostgreSQL | 6 | ✓ |
+| 25 | Redis Sentinel | `gitlab` | Data | 3-node Sentinel + replicas | 6 | ✓ |
+| 26 | GitLab Runners | `gitlab-runners` | CI/CD | Horizontal pod autoscaling | 6 | ✓ |
 
 ---
 
