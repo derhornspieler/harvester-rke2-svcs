@@ -12,7 +12,6 @@ Six stacks build on each other. Security underpins everything, identity enables 
 graph LR
     subgraph S1["1. Security &amp; PKI"]
         direction TB
-        s1_pad[ ]:::hidden
         Vault["Vault HA"]
         CM["cert-manager"]
         ESO["ESO"]
@@ -20,14 +19,12 @@ graph LR
 
     subgraph S2["2. Identity"]
         direction TB
-        s2_pad[ ]:::hidden
         KC["Keycloak"]
         OAuth["OAuth2-proxy"]
     end
 
     subgraph S3["3. Observability"]
         direction TB
-        s3_pad[ ]:::hidden
         Prom["Prometheus"]
         Grafana["Grafana"]
         Loki["Loki"]
@@ -35,20 +32,17 @@ graph LR
 
     subgraph S4["4. Registry"]
         direction TB
-        s4_pad[ ]:::hidden
         Harbor["Harbor"]
     end
 
     subgraph S5["5. GitOps"]
         direction TB
-        s5_pad[ ]:::hidden
         ArgoCD["ArgoCD"]
         Rollouts["Argo Rollouts"]
     end
 
     subgraph S6["6. CI/CD"]
         direction TB
-        s6_pad[ ]:::hidden
         GitLab["GitLab EE"]
         Runners["Runners"]
     end
@@ -68,7 +62,6 @@ graph LR
     class Harbor data
     class ArgoCD,Rollouts cicd
     class GitLab,Runners blue
-    classDef hidden display:none
 ```
 
 The rest of this document zooms into each major interaction pattern, one at a time.
@@ -146,7 +139,6 @@ graph TD
 
     subgraph direct["Direct OIDC Integration"]
         direction LR
-        d_pad[ ]:::hidden
         Grafana["Grafana"]
         ArgoCD["ArgoCD"]
         GitLab["GitLab"]
@@ -155,7 +147,6 @@ graph TD
 
     subgraph proxy["Protected by OAuth2-proxy"]
         direction LR
-        p_pad[ ]:::hidden
         OAuth["OAuth2-proxy<br/>S256 PKCE"]
         Prom["Prometheus"]
         Alert["Alertmanager"]
@@ -177,7 +168,6 @@ graph TD
     class KC,OAuth identity
     class Grafana,ArgoCD,GitLab,Harbor app
     class Prom,Alert,HubbleUI protected
-    classDef hidden display:none
 ```
 
 ---
@@ -222,14 +212,12 @@ Observability runs on every node and scrapes every service. Logs and metrics flo
 graph TD
     subgraph collectors["Collectors -- every node"]
         direction LR
-        c_pad[ ]:::hidden
         Alloy["Alloy<br/>Log Collector<br/>DaemonSet"]
         Hubble["Hubble<br/>Network Flows<br/>DaemonSet"]
     end
 
     subgraph targets["Scrape Targets"]
         direction LR
-        t_pad[ ]:::hidden
         T1["Keycloak"]
         T2["Harbor"]
         T3["GitLab"]
@@ -257,7 +245,6 @@ graph TD
     class Prom,Loki,AM,Grafana obs
     class T1,T2,T3,T4,T5,T6 target
     class Alloy,Hubble collector
-    classDef hidden display:none
 ```
 
 ---
@@ -314,13 +301,11 @@ The cluster has 4 node types. Stateful workloads land on database nodes (fast di
 graph TB
     subgraph cp["Controlplane -- 3 nodes"]
         direction LR
-        cp_pad[ ]:::hidden
         cp1["etcd + API server + scheduler"]
     end
 
     subgraph db["Database Nodes -- 4 nodes, workload-type: database"]
         direction LR
-        db_pad[ ]:::hidden
         db1["Vault HA"]
         db2["CNPG x3 clusters"]
         db3["Redis + Valkey"]
@@ -329,7 +314,6 @@ graph TB
 
     subgraph gen["General Nodes -- 4 nodes, workload-type: general"]
         direction LR
-        gen_pad[ ]:::hidden
         gen1["Keycloak, OAuth2-proxy"]
         gen2["Grafana, Prometheus, Alertmanager, Loki"]
         gen3["Harbor, ArgoCD, Argo Rollouts, Argo Workflows"]
@@ -338,13 +322,11 @@ graph TB
 
     subgraph comp["Compute Nodes -- 2 nodes, workload-type: compute"]
         direction LR
-        comp_pad[ ]:::hidden
         comp1["GitLab Runners"]
     end
 
     subgraph daemon["DaemonSet -- all 13 nodes"]
         direction LR
-        dmn_pad[ ]:::hidden
         d1["Alloy"]
         d2["Hubble"]
         d3["Traefik"]
@@ -361,7 +343,6 @@ graph TB
     class gen1,gen2,gen3,gen4 genn
     class comp1 compn
     class d1,d2,d3 dmn
-    classDef hidden display:none
 ```
 
 ---
@@ -374,7 +355,6 @@ Each bundle is deployed in order via Fleet GitOps. A bundle cannot deploy until 
 graph TB
     subgraph B1["Bundle 1 -- PKI &amp; Secrets"]
         direction LR
-        b1_pad[ ]:::hidden
         b1_vault["Vault HA"]
         b1_cm["cert-manager"]
         b1_eso["ESO"]
@@ -384,7 +364,6 @@ graph TB
 
     subgraph B2["Bundle 2 -- Identity"]
         direction LR
-        b2_pad[ ]:::hidden
         b2_kc["Keycloak"]
         b2_oauth["OAuth2-proxy"]
         b2_cnpg["CNPG Keycloak"]
@@ -392,7 +371,6 @@ graph TB
 
     subgraph B3["Bundle 3 -- Monitoring"]
         direction LR
-        b3_pad[ ]:::hidden
         b3_prom["Prometheus"]
         b3_graf["Grafana"]
         b3_loki["Loki"]
@@ -403,7 +381,6 @@ graph TB
 
     subgraph B4["Bundle 4 -- Harbor"]
         direction LR
-        b4_pad[ ]:::hidden
         b4_harbor["Harbor"]
         b4_cnpg["CNPG Harbor"]
         b4_minio["MinIO"]
@@ -412,7 +389,6 @@ graph TB
 
     subgraph B5["Bundle 5 -- GitOps"]
         direction LR
-        b5_pad[ ]:::hidden
         b5_argo["ArgoCD"]
         b5_ro["Argo Rollouts"]
         b5_wf["Argo Workflows"]
@@ -420,7 +396,6 @@ graph TB
 
     subgraph B6["Bundle 6 -- Git &amp; CI"]
         direction LR
-        b6_pad[ ]:::hidden
         b6_gl["GitLab EE"]
         b6_run["Runners"]
         b6_prae["Praefect + Gitaly"]
@@ -447,7 +422,6 @@ graph TB
     class b4_harbor,b4_cnpg,b4_minio,b4_valkey data
     class b5_argo,b5_ro,b5_wf cicd
     class b6_gl,b6_run,b6_prae,b6_cnpg,b6_redis blue
-    classDef hidden display:none
 ```
 
 ---
