@@ -247,10 +247,11 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 ### MinIO Availability
 
 **Single-Instance Design** (Known Limitation)
-- MinIO runs as a single pod with a 200Gi PVC
+- MinIO runs as a single pod with a 200Gi RWO PVC
 - If the MinIO pod fails, new backups cannot be created and new artifacts cannot be stored
+- **Eviction Protection**: Pod is annotated with `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"` to prevent cluster-autoscaler from terminating MinIO during node scale-down events
 - **Mitigation**: Monitoring alerts immediately notify operators if MinIO becomes unavailable
-- **Future improvement**: Deploy MinIO in distributed mode (4+ disks across multiple nodes) for automatic failover
+- **Future improvement**: Deploy MinIO in distributed mode (4+ disks across multiple nodes, RWX storage) for automatic failover and true multi-replica HA
 
 ### Vault Raft Storage
 
