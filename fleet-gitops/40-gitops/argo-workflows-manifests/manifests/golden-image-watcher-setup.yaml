@@ -44,6 +44,7 @@ metadata:
     app.kubernetes.io/name: golden-image-watcher-setup
     app.kubernetes.io/component: bootstrap
 spec:
+  ttlSecondsAfterFinished: 86400
   backoffLimit: 6
   template:
     metadata:
