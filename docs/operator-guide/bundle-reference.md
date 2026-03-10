@@ -102,7 +102,7 @@ Foundation for all security. Vault stores every credential and the Intermediate 
 ### What It Contains
 
 - **Keycloak** (3-replica + HPA) -- OIDC/OAuth2 identity provider
-- **keycloak-config** -- Job that configures the `aegis` realm, OIDC clients, groups, and mappers
+- **keycloak-config** -- Job that configures the `platform` realm, OIDC clients, groups, and mappers
 - **CNPG PostgreSQL cluster** -- 3-replica Keycloak database in `database` namespace
 - **SecretStore** -- Vault-backed SecretStore for Keycloak namespace
 

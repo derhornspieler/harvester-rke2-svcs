@@ -2467,8 +2467,8 @@ data:
         },
         {
           "aliasColors": {
-            "available 10.13.1.25:9000": "green",
-            "used 10.13.1.25:9000": "blue"
+            "available minio-endpoint:9000": "green",
+            "used minio-endpoint:9000": "blue"
           },
           "bars": false,
           "dashLength": 10,
@@ -2571,8 +2571,8 @@ data:
         },
         {
           "aliasColors": {
-            "Offline 10.13.1.25:9000": "dark-red",
-            "Total 10.13.1.25:9000": "blue"
+            "Offline minio-endpoint:9000": "dark-red",
+            "Total minio-endpoint:9000": "blue"
           },
           "bars": true,
           "dashLength": 10,

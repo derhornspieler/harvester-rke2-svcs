@@ -452,8 +452,8 @@ if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
     vault read -field=certificate "pki_int/issuer/${int_issuer}" 2>/dev/null)
   # update-ca-certificates requires exactly one cert per file with .crt extension
   kubectl -n gitlab create secret generic gitlab-root-ca \
-    --from-literal="aegis-root-ca.crt=${root_ca}" \
-    --from-literal="aegis-intermediate-ca.crt=${int_ca}" \
+    --from-literal="root-ca.crt=${root_ca}" \
+    --from-literal="intermediate-ca.crt=${int_ca}" \
     --dry-run=client -o yaml | kubectl apply -f -
 
   # Ensure gitlab-postgresql-app secret exists in gitlab namespace
@@ -628,7 +628,7 @@ if [[ $PHASE_FROM -le 9 && $PHASE_TO -ge 9 ]]; then
   fi
 
   # Promote OIDC user to admin (idempotent — skips if already admin or user not yet created)
-  GITLAB_ADMIN_OIDC_USER="${GITLAB_ADMIN_OIDC_USER:-admin.user}"
+  GITLAB_ADMIN_OIDC_USER="${GITLAB_ADMIN_OIDC_USER:-CHANGEME_ADMIN_USER}"
   log_info "Promoting ${GITLAB_ADMIN_OIDC_USER} to GitLab admin (if user exists)..."
   _toolbox_pod=$(kubectl -n gitlab get pods -l app=toolbox -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   if [[ -n "$_toolbox_pod" ]]; then
