@@ -384,14 +384,14 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
   # Disable SSO — set short realm SSO session so each service requires
   # independent login. Combined with --prompt=login on all OAuth2-proxies.
   # Timeouts must be long enough for OAuth authorization code flow to complete.
-  log_info "Configuring realm session timeouts (no cross-service SSO)..."
+  log_info "Configuring realm session timeouts (SSO enabled across all services)..."
   kc_api PUT "${KC_REALM}" -d '{
-    "ssoSessionIdleTimeout": 1800,
-    "ssoSessionMaxLifespan": 3600,
+    "ssoSessionIdleTimeout": 28800,
+    "ssoSessionMaxLifespan": 36000,
     "accessTokenLifespan": 300,
     "accessCodeLifespan": 120
   }'
-  log_ok "SSO session: 30m idle / 1h max (OAuth2-proxy --prompt=login forces re-auth per service)"
+  log_ok "SSO session: 8h idle / 10h max (single sign-on across all platform services)"
 
   # Retrieve generated client secrets and seed them into Vault
   log_info "Seeding OIDC client secrets into Vault..."
