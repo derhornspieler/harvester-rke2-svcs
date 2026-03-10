@@ -28,6 +28,7 @@ export VAULT_INTERNAL_URL="${VAULT_INTERNAL_URL:-http://vault.vault.svc.cluster.
 
 # --- Internal service URLs ---
 export MINIO_INTERNAL_URL="${MINIO_INTERNAL_URL:-http://minio.minio.svc.cluster.local:9000}"
+export MINIO_INTERNAL_HOST="${MINIO_INTERNAL_HOST:-minio.minio.svc.cluster.local}"
 export PROMETHEUS_INTERNAL_URL="${PROMETHEUS_INTERNAL_URL:-http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090}"
 export LOKI_INTERNAL_URL="${LOKI_INTERNAL_URL:-http://loki.monitoring.svc:3100}"
 export KEYCLOAK_INTERNAL_URL="${KEYCLOAK_INTERNAL_URL:-http://keycloak.keycloak.svc.cluster.local:8080}"
@@ -154,7 +155,7 @@ ${FLEET_TARGET_CLUSTER} ${FLEET_NAMESPACE}
 ${TRAEFIK_LB_IP} ${DNS_SERVER_IP} ${DNS_ZONE}
 ${TSIG_KEY_NAME}
 ${S3_REGION} ${STORAGE_CLASS} ${GATEWAY_CLASS}
-${VAULT_INTERNAL_URL} ${MINIO_INTERNAL_URL}
+${VAULT_INTERNAL_URL} ${MINIO_INTERNAL_URL} ${MINIO_INTERNAL_HOST}
 ${PROMETHEUS_INTERNAL_URL} ${LOKI_INTERNAL_URL}
 ${KEYCLOAK_INTERNAL_URL}
 ${KEYCLOAK_DB_HOST} ${KEYCLOAK_DB_NAME}

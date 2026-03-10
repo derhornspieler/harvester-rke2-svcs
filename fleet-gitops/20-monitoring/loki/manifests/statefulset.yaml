@@ -19,6 +19,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "3100"
         prometheus.io/path: /metrics
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
     spec:
       serviceAccountName: loki
       nodeSelector:
