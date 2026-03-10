@@ -5,7 +5,7 @@ metadata:
   namespace: database
 spec:
   instances: 3
-  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  imageName: ${IMAGE_POSTGRESQL_16}
 
   bootstrap:
     initdb:
@@ -30,7 +30,7 @@ spec:
 
   storage:
     size: 5Gi
-    storageClass: harvester
+    storageClass: ${STORAGE_CLASS}
 
   resources:
     requests:
@@ -48,8 +48,8 @@ spec:
 
   backup:
     barmanObjectStore:
-      destinationPath: "s3://cnpg-backups/grafana-pg"
-      endpointURL: "http://minio.minio.svc.cluster.local:9000"
+      destinationPath: "s3://${MINIO_BUCKET_CNPG_BACKUPS}/grafana-pg"
+      endpointURL: "${MINIO_INTERNAL_URL}"
       s3Credentials:
         accessKeyId:
           name: cnpg-minio-credentials

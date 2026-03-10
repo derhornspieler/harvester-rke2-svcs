@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # push-bundles.sh — Package raw-manifest Fleet bundles as Helm charts
-#                    and push to oci://harbor.example.com/fleet/
+#                    and push to oci://<HARBOR_HOST>/fleet/
 #
 # Usage: ./push-bundles.sh [--version 1.0.0]
 #
@@ -23,8 +23,9 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
   source "${FLEET_DIR}/.env"
   set +a
 fi
+source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
-HARBOR="harbor.example.com"
+HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 HARBOR_USER="${HARBOR_USER:?Set HARBOR_USER in .env}"
 HARBOR_PASS="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
 OCI_REGISTRY="oci://${HARBOR}/fleet"

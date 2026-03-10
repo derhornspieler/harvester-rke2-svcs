@@ -5,7 +5,7 @@
 replicas: 1
 
 ## GitLab instance URL — runner registers here
-gitlabUrl: https://gitlab.example.com
+gitlabUrl: ${GITLAB_URL}
 
 ## TLS certificates for GitLab instance trust (Vault CA chain)
 certsSecretName: gitlab-runner-certs

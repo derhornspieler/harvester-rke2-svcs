@@ -1,10 +1,4 @@
-## GitLab Helm Chart — RKE2-Prod Cluster Values (Medium Production)
-##
-## Cluster: rke2-prod (Harvester/RKE2 v1.34.2, Cilium CNI, Traefik v3.5.4)
-## Workers:
-##   - general  (workload-type=general):  4 vCPU,  8 GiB, 100Gi, autoscale 2-10
-##   - compute  (workload-type=compute):  8 vCPU, 32 GiB, 200Gi, autoscale 2-10
-##   - database (workload-type=database): 4 vCPU, 16 GiB, 200Gi, fixed 3 nodes
+## GitLab Helm Chart — Platform Values (Medium Production)
 ##
 ## Node scheduling strategy:
 ##   - Lightweight (shell, kas, exporter, toolbox, registry, minio)  → general
@@ -12,13 +6,10 @@
 ##   - Stateful    (CNPG PostgreSQL, OpsTree Redis)                  → database
 ##
 ## TLS: cert-manager with vault-issuer ClusterIssuer (already deployed)
-## Storage class: harvester (Harvester CSI, default)
-## Ingress: Gateway API (Traefik as GatewayClass) — NOT standard Ingress
+## Storage class: ${STORAGE_CLASS}
+## Ingress: Gateway API (${GATEWAY_CLASS} as GatewayClass) — NOT standard Ingress
 ## Redis: OpsTree Redis Operator (RedisReplication + RedisSentinel CRs)
-## PostgreSQL: CloudNativePG operator (Cluster CR in services/gitlab/cloudnativepg-cluster.yaml)
-##
-## Deploy with:
-##   ./scripts/setup-gitlab.sh
+## PostgreSQL: CloudNativePG operator (Cluster CR)
 ## ──────────────────────────────────────────────────────────────────────────────
 
 global:
@@ -41,7 +32,7 @@ global:
 
   ## ── Hostnames ──────────────────────────────────────────────────────────────
   hosts:
-    domain: example.com
+    domain: ${DOMAIN}
     https: true
 
   ## ── Gateway API (Traefik) ─────────────────────────────────────────────────
@@ -65,12 +56,12 @@ global:
   ## GitLab Rails routes SELECT queries to replicas via load_balancing.hosts,
   ## reducing primary load and improving read-heavy workload performance.
   psql:
-    host: gitlab-pg-pooler-rw.database.svc.cluster.local
+    host: ${GITLAB_DB_HOST_RW}
     port: 5432
     username: gitlab
-    database: gitlabhq_production
+    database: ${GITLAB_DB_NAME}
     preparedStatements: false
-    applicationName: gitlab-rke2-prod
+    applicationName: gitlab
     password:
       useSecret: true
       secret: gitlab-postgresql-app
@@ -87,7 +78,7 @@ global:
     ## are too far behind (default: 8MB difference or 60s lag).
     load_balancing:
       hosts:
-        - gitlab-pg-pooler-ro.database.svc.cluster.local
+        - ${GITLAB_DB_HOST_RO}
 
   ## ── External Redis (OpsTree Sentinel HA) ──────────────────────────────────
   ## Sentinel-aware: GitLab discovers the current primary via Sentinel.
@@ -95,14 +86,14 @@ global:
   ## Uses the ClusterIP service created by OpsTree Redis Operator — it
   ## load-balances across all sentinel pods, so a single entry suffices.
   redis:
-    host: mymaster
+    host: ${REDIS_MASTER_NAME}
     port: 6379
     auth:
       enabled: true
       secret: gitlab-redis-credentials
       key: password
     sentinels:
-      - host: gitlab-redis-sentinel.gitlab.svc.cluster.local
+      - host: ${GITLAB_REDIS_SENTINEL}
         port: 26379
 
   ## ── Gitaly ─────────────────────────────────────────────────────────────────
@@ -128,7 +119,7 @@ global:
         gitalyReplicas: 3
         maxUnavailable: 1
     psql:
-      host: gitlab-pg-pooler-rw.database.svc.cluster.local
+      host: ${GITLAB_DB_HOST_RW}
       port: 5432
       user: praefect
       dbName: praefect
@@ -164,7 +155,7 @@ global:
 
     ## ── Object Storage (shared MinIO in minio namespace) ───────────────────
     ## All GitLab object types use the consolidated object_store config.
-    ## Endpoint: minio.minio.svc.cluster.local:9000 (HTTP, not HTTPS)
+    ## Endpoint: ${MINIO_INTERNAL_URL} (HTTP, not HTTPS)
     object_store:
       enabled: true
       proxy_download: true
@@ -172,21 +163,21 @@ global:
         secret: gitlab-minio-storage
         key: connection
     lfs:
-      bucket: gitlab-lfs
+      bucket: ${MINIO_BUCKET_GITLAB_LFS}
     artifacts:
-      bucket: gitlab-artifacts
+      bucket: ${MINIO_BUCKET_GITLAB_ARTIFACTS}
     uploads:
-      bucket: gitlab-uploads
+      bucket: ${MINIO_BUCKET_GITLAB_UPLOADS}
     packages:
-      bucket: gitlab-packages
+      bucket: ${MINIO_BUCKET_GITLAB_PACKAGES}
     externalDiffs:
-      bucket: gitlab-mr-diffs
+      bucket: ${MINIO_BUCKET_GITLAB_MR_DIFFS}
     terraformState:
-      bucket: gitlab-terraform
+      bucket: ${MINIO_BUCKET_GITLAB_TERRAFORM}
     ciSecureFiles:
-      bucket: gitlab-ci-secure-files
+      bucket: ${MINIO_BUCKET_GITLAB_CI_SECURE_FILES}
     dependencyProxy:
-      bucket: gitlab-dependency-proxy
+      bucket: ${MINIO_BUCKET_GITLAB_DEPENDENCY_PROXY}
 
   ## ── Root CA Trust (Vault CA) ──────────────────────────────────────────────
   certificates:
@@ -211,7 +202,7 @@ installCertmanager: false
 ## global.gatewayApi.configureCertmanager=false. No Job or Issuer created.
 ## We use vault-issuer ClusterIssuer for TLS instead of ACME.
 certmanager-issuer:
-  email: admin@example.com
+  email: ${PLATFORM_ADMIN_EMAIL}
 
 ## ── Disable bundled NGINX ingress (using Traefik) ────────────────────────────
 nginx-ingress:
@@ -312,7 +303,7 @@ gitlab:
       enabled: true
       size: 100Gi
       accessMode: ReadWriteOnce
-      storageClass: harvester
+      storageClass: ${STORAGE_CLASS}
     maxUnavailable: 1
 
   ## ── Praefect (Gitaly HA proxy) → COMPUTE nodes ───────────────────────────

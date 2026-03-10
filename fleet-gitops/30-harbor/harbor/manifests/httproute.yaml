@@ -11,7 +11,7 @@ spec:
       namespace: harbor
       sectionName: https
   hostnames:
-    - "harbor.dev.example.com"
+    - "${HARBOR_FQDN}"
   rules:
     # Core API, Docker v2 registry, callbacks, service endpoints
     - matches:

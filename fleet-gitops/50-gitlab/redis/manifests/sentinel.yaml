@@ -19,7 +19,7 @@ metadata:
 spec:
   clusterSize: 3
   kubernetesConfig:
-    image: quay.io/opstree/redis-sentinel:v7.0.15
+    image: ${IMAGE_REDIS_SENTINEL}
     imagePullPolicy: IfNotPresent
     resources:
       requests:
@@ -27,7 +27,7 @@ spec:
         memory: 64Mi
   redisSentinelConfig:
     redisReplicationName: gitlab-redis
-    masterGroupName: mymaster
+    masterGroupName: ${REDIS_MASTER_NAME}
     redisPort: "6379"
     quorum: "2"
     redisReplicationPassword:

@@ -9,7 +9,7 @@ spec:
       namespace: monitoring
       sectionName: https
   hostnames:
-    - "alertmanager.example.com"
+    - "${ALERTMANAGER_FQDN}"
   rules:
     - matches:
         - path:

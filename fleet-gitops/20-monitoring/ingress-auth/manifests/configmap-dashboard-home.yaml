@@ -14,7 +14,7 @@ data:
       "annotations": {
         "list": []
       },
-      "description": "NOC/SOC command center for the RKE2 cluster. Resource utilization, service health, GatewayAPI traffic, and operational metrics.",
+      "description": "NOC/SOC command center for the target cluster. Resource utilization, service health, GatewayAPI traffic, and operational metrics.",
       "editable": true,
       "id": null,
       "links": [],
@@ -921,7 +921,7 @@ data:
           "links": [
             {
               "title": "Prometheus UI",
-              "url": "https://prometheus.example.com",
+              "url": "https://${PROMETHEUS_FQDN}",
               "targetBlank": true
             }
           ],
@@ -1723,7 +1723,7 @@ data:
           "links": [
             {
               "title": "Alertmanager UI",
-              "url": "https://alertmanager.example.com",
+              "url": "https://${ALERTMANAGER_FQDN}",
               "targetBlank": true
             }
           ],

@@ -1,8 +1,8 @@
 defaultNamespace: harbor
 helm:
   releaseName: harbor
-  chart: oci://harbor.example.com/helm/harbor
-  version: "1.18.2"
+  chart: ${OCI_HELM_PREFIX}/harbor
+  version: "${CHART_VER_HARBOR}"
   valuesFiles:
     - values.yaml
 dependsOn:
@@ -16,4 +16,4 @@ dependsOn:
       matchLabels:
         fleet.cattle.io/bundle-name: valkey
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}
