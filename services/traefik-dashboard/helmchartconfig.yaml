@@ -59,6 +59,7 @@ spec:
     service:
       spec:
         loadBalancerIP: "CHANGEME_TRAEFIK_LB_IP"
+        loadBalancerClass: "io.cilium/l2"
       type: LoadBalancer
     volumes:
       - mountPath: /vault-ca
