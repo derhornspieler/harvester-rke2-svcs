@@ -27,7 +27,7 @@ spec:
           requestRedirect:
             path:
               type: ReplaceFullPath
-              value: /dashboard/
+              replaceFullPath: /dashboard/
             statusCode: 302
     - matches:
         - path:
