@@ -30,8 +30,8 @@ configs:
   cm:
     timeout.reconciliation: 180s
     timeout.reconciliation.jitter: 60s
-    # Match Keycloak SSO session idle timeout (ssoSessionIdleTimeout=1800)
-    users.session.duration: 30m
+    # Match Keycloak SSO session idle timeout (ssoSessionIdleTimeout=28800)
+    users.session.duration: 8h
     url: https://${ARGOCD_FQDN}
     oidc.config: |
       name: Keycloak

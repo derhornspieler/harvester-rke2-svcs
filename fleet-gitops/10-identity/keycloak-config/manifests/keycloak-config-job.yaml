@@ -299,10 +299,12 @@ spec:
                 }'
               done
 
-              # Set session timeouts (no cross-service SSO)
+              # Set session timeouts — SSO enabled across all platform services
+              # ssoSessionIdleTimeout: 8h idle, ssoSessionMaxLifespan: 10h max
+              # Users authenticate once and get silent re-auth on every service
               kc_api PUT "${KC_REALM}" -d '{
-                "ssoSessionIdleTimeout": 1800,
-                "ssoSessionMaxLifespan": 3600,
+                "ssoSessionIdleTimeout": 28800,
+                "ssoSessionMaxLifespan": 36000,
                 "accessTokenLifespan": 300,
                 "accessCodeLifespan": 120
               }'
