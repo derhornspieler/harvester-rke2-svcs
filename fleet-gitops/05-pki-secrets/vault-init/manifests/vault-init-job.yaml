@@ -289,7 +289,7 @@ spec:
               ESO_NAMESPACES="database keycloak minio harbor gitlab monitoring gitlab-runners argo-workflows argo-rollouts kube-system external-dns"
               for ns in $ESO_NAMESPACES; do
                 local_sa="external-secrets"
-                [[ "$ns" == "external-dns" || "$ns" == "monitoring" ]] && local_sa="eso-secrets"
+                [[ "$ns" == "external-dns" || "$ns" == "monitoring" || "$ns" == "kube-system" ]] && local_sa="eso-secrets"
                 log "Creating Vault K8s auth role: eso-${ns} (SA: ${local_sa})"
                 vexec write "auth/kubernetes/role/eso-${ns}" \
                   bound_service_account_names="${local_sa}" \
@@ -321,7 +321,7 @@ spec:
               # Create writer roles for namespaces that push secrets
               for ns in $ESO_NAMESPACES; do
                 local_sa="external-secrets"
-                [[ "$ns" == "external-dns" || "$ns" == "monitoring" ]] && local_sa="eso-secrets"
+                [[ "$ns" == "external-dns" || "$ns" == "monitoring" || "$ns" == "kube-system" ]] && local_sa="eso-secrets"
                 log "Creating Vault K8s auth role: eso-writer-${ns} (SA: ${local_sa})"
                 vexec write "auth/kubernetes/role/eso-writer-${ns}" \
                   bound_service_account_names="${local_sa}" \
