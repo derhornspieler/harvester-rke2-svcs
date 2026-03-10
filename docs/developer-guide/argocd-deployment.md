@@ -10,7 +10,7 @@ The deployment boundary is clear:
 - **ArgoCD** deploys everything that lives in GitLab repos after the platform is up.
 - Fleet and ArgoCD never manage the same resources.
 
-ArgoCD is deployed in HA mode (2 controller replicas, 2+ server replicas, redis-ha with 3 replicas) and is accessible at `https://argo.aegisgroup.ch`. Authentication is via Keycloak OIDC -- the `platform-admins` and `infra-engineers` groups get admin access, while `developers` and `senior-developers` get read-only.
+ArgoCD is deployed in HA mode (2 controller replicas, 2+ server replicas, redis-ha with 3 replicas) and is accessible at `https://argo.<DOMAIN>`. Authentication is via Keycloak OIDC -- the `platform-admins` and `infra-engineers` groups get admin access, while `developers` and `senior-developers` get read-only.
 
 ## ArgoCD-GitLab Connection
 
@@ -21,7 +21,7 @@ ArgoCD cannot connect to GitLab until GitLab is running. The `argocd-gitlab-setu
 3. Waits for the GitLab API to become ready.
 4. Creates a Personal Access Token (PAT) with `read_repository`, `read_registry`, and `read_api` scopes.
 5. Stores the PAT in Vault at `kv/services/argocd`.
-6. Creates a `gitlab-repo-creds` Secret in the `argocd` namespace (labeled `argocd.argoproj.io/secret-type: repo-creds`) so ArgoCD can pull from any `https://gitlab.aegisgroup.ch/*` repo.
+6. Creates a `gitlab-repo-creds` Secret in the `argocd` namespace (labeled `argocd.argoproj.io/secret-type: repo-creds`) so ArgoCD can pull from any `https://gitlab.<DOMAIN>/*` repo.
 7. Patches the `default` AppProject to allow GitLab source repos and all cluster destinations.
 
 This Job is idempotent -- if a PAT already exists in Vault, it reuses it.
@@ -39,7 +39,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://gitlab.aegisgroup.ch/apps/my-service.git
+    repoURL: https://gitlab.<DOMAIN>/apps/my-service.git
     targetRevision: main
     path: deploy/
     helm:
@@ -58,7 +58,7 @@ spec:
 
 Key fields:
 
-- `source.repoURL` -- must be a GitLab repo under `https://gitlab.aegisgroup.ch/`. The template credential covers all repos.
+- `source.repoURL` -- must be a GitLab repo under `https://gitlab.<DOMAIN>/`. The template credential covers all repos.
 - `source.path` -- the directory containing your Helm chart or Kustomize overlay.
 - `syncPolicy.automated` -- enables auto-sync. Omit this for manual sync control.
 - `syncPolicy.syncOptions` -- `CreateNamespace=true` lets ArgoCD create the target namespace.
@@ -87,7 +87,7 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://gitlab.aegisgroup.ch/apps/my-service.git
+        repoURL: https://gitlab.<DOMAIN>/apps/my-service.git
         targetRevision: main
         path: deploy/
         helm:
@@ -136,7 +136,7 @@ spec:
     spec:
       containers:
         - name: my-service
-          image: harbor.aegisgroup.ch/apps/my-service:v1.2.3
+          image: harbor.<DOMAIN>/apps/my-service:v1.2.3
 ```
 
 ### ClusterAnalysisTemplates
@@ -177,7 +177,7 @@ spec:
     spec:
       containers:
         - name: my-service
-          image: harbor.aegisgroup.ch/apps/my-service:v1.2.3
+          image: harbor.<DOMAIN>/apps/my-service:v1.2.3
 ```
 
 This deploys the new version behind `my-service-preview`. After validation, promote manually:
@@ -215,7 +215,7 @@ argocd app history my-service
 argocd app rollback my-service <revision-id>
 ```
 
-Or use the ArgoCD UI at `https://argo.aegisgroup.ch` to view sync history and roll back to a previous state.
+Or use the ArgoCD UI at `https://argo.<DOMAIN>` to view sync history and roll back to a previous state.
 
 ## Troubleshooting
 

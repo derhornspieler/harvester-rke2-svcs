@@ -12,7 +12,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/listeners/0/hostname
-        value: "identity.aegisgroup.ch"
+        value: "identity.CHANGEME_DOMAIN"
       - op: replace
         path: /spec/listeners/0/tls/certificateRefs/0/name
         value: "identity-aegisgroup-ch-tls"
@@ -24,7 +24,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/hostnames/0
-        value: "identity.aegisgroup.ch"
+        value: "identity.CHANGEME_DOMAIN"
 
   # Substitute CHANGEME tokens in backend config
   - target:
@@ -33,19 +33,19 @@ patches:
     patch: |
       - op: replace
         path: /data/OIDC_ISSUER_URL
-        value: "https://keycloak.aegisgroup.ch/realms/platform"
+        value: "https://keycloak.CHANGEME_DOMAIN/realms/platform"
       - op: replace
         path: /data/KEYCLOAK_REALM
         value: "platform"
       - op: replace
         path: /data/DOMAIN
-        value: "aegisgroup.ch"
+        value: "CHANGEME_DOMAIN"
       - op: replace
         path: /data/VAULT_ADDR
         value: "http://vault.vault.svc.cluster.local:8200"
       - op: replace
         path: /data/KUBE_API_SERVER
-        value: "https://rancher.aegisgroup.ch"
+        value: "https://rancher.CHANGEME_DOMAIN"
 
   # Substitute CHANGEME_DOMAIN in backend rollout image
   - target:
@@ -54,7 +54,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/containers/0/image
-        value: "harbor.dev.aegisgroup.ch/idp/identity-portal-backend:v0.5.0"
+        value: "harbor.dev.CHANGEME_DOMAIN/idp/identity-portal-backend:v0.5.0"
 
   # Substitute CHANGEME_DOMAIN in frontend rollout image
   - target:
@@ -63,7 +63,7 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/containers/0/image
-        value: "harbor.dev.aegisgroup.ch/idp/identity-portal-frontend:v0.5.0"
+        value: "harbor.dev.CHANGEME_DOMAIN/idp/identity-portal-frontend:v0.5.0"
 
   # Substitute CHANGEME_DOMAIN in nginx CSP header
   - target:
@@ -86,7 +86,7 @@ patches:
               add_header Referrer-Policy "strict-origin-when-cross-origin" always;
               add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
               add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-              add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.aegisgroup.ch; font-src 'self';" always;
+              add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.CHANGEME_DOMAIN; font-src 'self';" always;
               gzip on;
               gzip_types text/css application/javascript application/json image/svg+xml;
               gzip_min_length 1000;

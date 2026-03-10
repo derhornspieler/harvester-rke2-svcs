@@ -10,7 +10,7 @@ deploying all platform services through Fleet GitOps.
 | Component | Purpose |
 |-----------|---------|
 | Rancher management cluster | Provisions downstream RKE2 clusters, runs Fleet controller |
-| Harbor registry (`harbor.aegisgroup.ch`) | OCI registry for Helm charts and manifest bundles |
+| Harbor registry (`harbor.<DOMAIN>`) | OCI registry for Helm charts and manifest bundles |
 | Rancher API token | Bearer token with cluster provisioning and Fleet management permissions |
 | Root CA keypair | Offline Root CA for signing the Vault intermediate CA |
 
@@ -56,7 +56,7 @@ BUNDLE_VERSION="1.0.0"
 Log in to Harbor OCI before pushing:
 
 ```bash
-helm registry login harbor.aegisgroup.ch
+helm registry login harbor.<DOMAIN>
 ```
 
 ---
@@ -96,9 +96,9 @@ cd fleet-gitops/scripts
 
 | Phase | Script | What it does |
 |-------|--------|--------------|
-| 1 | `push-charts.sh` | Pulls upstream Helm charts and pushes them to `oci://harbor.aegisgroup.ch/helm/` |
+| 1 | `push-charts.sh` | Pulls upstream Helm charts and pushes them to `oci://harbor.<DOMAIN>/helm/` |
 | 2 | `deploy.sh` (inline) | Seeds Root CA as a TLS Secret on the downstream cluster (`cert-manager/root-ca`), pre-creates namespaces (`cert-manager`, `vault`, `monitoring`, `cluster-autoscaler`), seeds cluster-autoscaler cloud-config |
-| 3 | `push-bundles.sh` | Packages raw Kubernetes manifests as OCI artifacts and pushes to `oci://harbor.aegisgroup.ch/fleet/` |
+| 3 | `push-bundles.sh` | Packages raw Kubernetes manifests as OCI artifacts and pushes to `oci://harbor.<DOMAIN>/fleet/` |
 | 4 | `deploy-fleet-helmops.sh` | Creates 37 HelmOp CRs on the Rancher management cluster via the Fleet API. Auto-bootstraps the `harbor-helm-ca` Secret in `fleet-default` namespace |
 | 5 | `deploy.sh` (inline) | Waits for `vault-init` Job to generate the intermediate CSR, signs it offline with the Root CA key, imports the signed chain into Vault `pki_int/`, configures the PKI signing role |
 | 5.5 | `deploy.sh` (inline) | Seeds service secrets into Vault KV v2 (database credentials, Keycloak admin, Harbor admin, MinIO, Grafana, GitLab). Write-once / idempotent |

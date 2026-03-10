@@ -84,7 +84,7 @@ spec:
 
               DOMAIN="${DOMAIN}"
               DOMAIN_DOT="${DOMAIN//./-dot-}"
-              ORG="Aegis Group"
+              ORG="${ORG:-CHANGEME_ORG}"
               REPLICAS=3
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }

@@ -4,8 +4,8 @@ Step-by-step guide for deploying the Identity Portal CI/CD pipeline.
 
 ## Prerequisites
 
-- GitLab instance at `gitlab.aegisgroup.ch`
-- Harbor registry at `harbor.dev.aegisgroup.ch`
+- GitLab instance at `gitlab.<DOMAIN>`
+- Harbor registry at `harbor.dev.<DOMAIN>`
 - ArgoCD deployed with access to target cluster
 - Keycloak with `platform` realm configured
 - Vault with ESO integration
@@ -18,14 +18,14 @@ Step-by-step guide for deploying the Identity Portal CI/CD pipeline.
 
 | Variable | Value | Protected | Masked |
 |----------|-------|-----------|--------|
-| `DOMAIN` | `aegisgroup.ch` | Yes | No |
+| `DOMAIN` | `<DOMAIN>` | Yes | No |
 | `HARBOR_CI_USER` | Harbor robot account username | Yes | No |
 | `HARBOR_CI_PASSWORD` | Harbor robot account password | Yes | Yes |
 | `ARGOCD_PASSWORD` | ArgoCD CI bot password | Yes | Yes |
 
 ## 2. Harbor Setup
 
-1. Log into Harbor at `https://harbor.dev.aegisgroup.ch`
+1. Log into Harbor at `https://harbor.dev.<DOMAIN>`
 2. Create a new project named `idp`
 3. Create a robot account with push/pull access to the `idp` project
 4. Use the robot account credentials for `HARBOR_CI_USER` / `HARBOR_CI_PASSWORD`
@@ -39,7 +39,7 @@ cp -r /path/to/operators/identity-portal/* /tmp/identity-webui/
 # Initialize git repo
 cd /tmp/identity-webui
 git init
-git remote add origin git@gitlab.aegisgroup.ch:IDP/IdentityWebUI.git
+git remote add origin git@gitlab.<DOMAIN>:IDP/IdentityWebUI.git
 
 # Copy CI/CD and K8s manifests
 cp /path/to/gitlab-ci/.gitlab-ci.yml .
@@ -64,9 +64,9 @@ Create the `identity-portal` OIDC client in the `platform` realm:
 - **Client ID**: `identity-portal`
 - **Client Protocol**: openid-connect
 - **Access Type**: confidential
-- **Valid Redirect URIs**: `https://identity.aegisgroup.ch/*`
-- **Web Origins**: `https://identity.aegisgroup.ch`
-- **Post Logout Redirect URIs**: `https://identity.aegisgroup.ch/*`
+- **Valid Redirect URIs**: `https://identity.<DOMAIN>/*`
+- **Web Origins**: `https://identity.<DOMAIN>`
+- **Post Logout Redirect URIs**: `https://identity.<DOMAIN>/*`
 - **Code Challenge Method**: S256 (PKCE)
 
 The OIDC client secret is **auto-generated** by ESO's Password generator and
@@ -132,7 +132,7 @@ vault kv put kv/services/identity-portal/oidc-secret \
 Apply the ArgoCD Application CRD (substitute `CHANGEME_DOMAIN`):
 
 ```bash
-sed 's/CHANGEME_DOMAIN/aegisgroup.ch/g' argocd/application.yaml | kubectl apply -f -
+sed 's/CHANGEME_DOMAIN/<DOMAIN>/g' argocd/application.yaml | kubectl apply -f -
 ```
 
 Also apply the AnalysisTemplates:
@@ -147,7 +147,7 @@ kubectl apply -f argocd/analysis-templates.yaml
 2. Check GitLab CI/CD → Pipelines for build status
 3. Check Harbor `idp` project for pushed images
 4. Check ArgoCD for the `identity-portal` application
-5. Verify `https://identity.aegisgroup.ch` loads the portal
+5. Verify `https://identity.<DOMAIN>` loads the portal
 
 ## Troubleshooting
 

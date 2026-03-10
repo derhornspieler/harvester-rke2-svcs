@@ -32,7 +32,7 @@ Hubble Relay (kube-system, 2 replicas)
 Hubble UI (kube-system, 1 replica)
     ↓ OAuth2-proxy ForwardAuth (keycloak)
     ↓
-User access: https://hubble.aegisgroup.ch
+User access: https://hubble.<DOMAIN>
 ```
 
 ## Configuration
@@ -144,7 +144,7 @@ Cilium overview dashboard with 9 panels:
 
 ### Ingress
 
-- **Hostname**: `hubble.dev.aegisgroup.ch` (matches domain placeholder `CHANGEME_DOMAIN`)
+- **Hostname**: `hubble.dev.<DOMAIN>` (matches domain placeholder `CHANGEME_DOMAIN`)
 - **Files**:
   - `services/hubble/gateway.yaml` — Cilium Gateway (listens 443, TLS from cert-manager)
   - `services/hubble/httproute.yaml` — HTTPRoute with OAuth2-proxy ForwardAuth middleware
@@ -187,11 +187,11 @@ kubectl -n monitoring get servicemonitor hubble-relay -o yaml
 
 - Relay pods not scheduled (resource requests too high)
 - ServiceMonitor selector mismatch — verify `k8s-app=hubble-relay` labels exist on relay pods
-- Prometheus not scraping — check Prometheus targets UI (`https://prometheus.dev.aegisgroup.ch/targets`)
+- Prometheus not scraping — check Prometheus targets UI (`https://prometheus.dev.<DOMAIN>/targets`)
 
 ### Hubble UI Not Accessible
 
-**Symptom**: `https://hubble.dev.aegisgroup.ch` returns 401/403 or blank page
+**Symptom**: `https://hubble.dev.<DOMAIN>` returns 401/403 or blank page
 
 **Check:**
 

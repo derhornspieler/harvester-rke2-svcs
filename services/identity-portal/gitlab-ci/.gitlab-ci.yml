@@ -1,11 +1,11 @@
 ---
 # Identity Portal CI/CD Pipeline
-# Repo: gitlab.aegisgroup.ch/IDP/IdentityWebUI
+# Repo: gitlab.<DOMAIN>/IDP/IdentityWebUI
 # Self-contained pipeline — no includes (separate GitLab instance)
 #
 # Required group-level CI/CD variables:
-#   DOMAIN             — e.g. aegisgroup.ch
-#   VAULT_SERVER_URL   — e.g. https://vault.aegisgroup.ch
+#   DOMAIN             — e.g. example.com
+#   VAULT_SERVER_URL   — e.g. https://vault.<DOMAIN>
 #   VAULT_AUTH_ROLE    — Vault JWT auth role (e.g. gitlab-ci-idp)
 #
 # Secrets pulled from Vault at runtime (no credentials in GitLab):
