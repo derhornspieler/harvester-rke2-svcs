@@ -325,6 +325,53 @@ If Vault is inaccessible and credentials are needed:
 
 ---
 
+## High Availability & Resilience
+
+Critical secret management services are configured for high availability to prevent a single node failure from blocking credential access:
+
+### External Secrets Operator (2 Replicas)
+
+ESO controller runs with 2 replicas (controller, webhook, cert-controller) and topology spread constraints to ensure no two replicas run on the same node.
+
+**Configuration:**
+- **Replicas**: 2 (controller, webhook, cert-controller each)
+- **Topology spread**: max-skew 1, prefer different nodes
+- **Node selector**: `workload-type: general`
+
+**Benefits:**
+- If one ESO pod is evicted by cluster-autoscaler, the other continues syncing Vault secrets to K8s Secrets
+- ExternalSecret reconciliation continues without gaps
+- Webhook (used by K8s admission control) remains available
+
+**Design note**: The webhook is replicated because it validates ExternalSecret resources during creation/update. A single evicted webhook would block new secret creation until the webhook pod restarts.
+
+### cert-manager (2 Replicas)
+
+cert-manager controller runs with 2 replicas (controller, webhook, cainjector) and topology spread constraints.
+
+**Configuration:**
+- **Replicas**: 2 (controller, webhook, cainjector each)
+- **Topology spread**: max-skew 1, prefer different nodes
+- **Node selector**: `workload-type: general`
+
+**Benefits:**
+- If one cert-manager pod is evicted, the other continues monitoring Certificate resources and renewing expiring certs
+- Webhook remains available to validate Certificate and ClusterIssuer resources
+- CA injector continues updating ConfigMaps/Secrets with CA bundles
+
+**Critical function**: The webhook blocks Certificate creation if unavailable. Two replicas ensure TLS certificate issuance continues even during node scale-down.
+
+### Vault (3-Replica Raft HA)
+
+Vault runs with 3 replicas using Raft for distributed consensus. See Technical Reference section for details.
+
+**Benefits:**
+- Tolerates 1 node failure (requires 2/3 quorum)
+- Automatic leader election
+- Real-time replication
+
+---
+
 ## Technical Reference
 
 ### Vault Architecture
