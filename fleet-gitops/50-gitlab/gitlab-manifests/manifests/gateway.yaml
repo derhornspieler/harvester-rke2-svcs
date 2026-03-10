@@ -8,27 +8,27 @@ metadata:
     cert-manager.io/duration: "720h"
     cert-manager.io/renew-before: "168h"
 spec:
-  gatewayClassName: traefik
+  gatewayClassName: ${GATEWAY_CLASS}
   listeners:
     - name: gitlab-web
       port: 8443
       protocol: HTTPS
-      hostname: "gitlab.example.com"
+      hostname: "${GITLAB_FQDN}"
       tls:
         mode: Terminate
         certificateRefs:
-          - name: gitlab-aegisgroup-ch-tls
+          - name: ${GITLAB_TLS_SECRET}
       allowedRoutes:
         namespaces:
           from: Same
     - name: kas-web
       port: 8443
       protocol: HTTPS
-      hostname: "kas.example.com"
+      hostname: "${KAS_FQDN}"
       tls:
         mode: Terminate
         certificateRefs:
-          - name: kas-aegisgroup-ch-tls
+          - name: ${KAS_TLS_SECRET}
       allowedRoutes:
         namespaces:
           from: Same

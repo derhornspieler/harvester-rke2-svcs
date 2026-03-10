@@ -29,16 +29,16 @@ spec:
         workload-type: general
       containers:
         - name: oauth2-proxy
-          image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+          image: ${IMAGE_OAUTH2_PROXY}
           args:
             - --provider=keycloak-oidc
             - --client-id=rollouts-oidc
-            - --oidc-issuer-url=https://keycloak.example.com/realms/platform
+            - --oidc-issuer-url=${OIDC_ISSUER_URL}
             - --oidc-groups-claim=groups
-            - --allowed-group=platform-admins
-            - --allowed-group=infra-engineers
-            - --allowed-group=senior-developers
-            - --redirect-url=https://rollouts.example.com/oauth2/callback
+            - --allowed-group=${RBAC_GROUP_ADMINS}
+            - --allowed-group=${RBAC_GROUP_INFRA}
+            - --allowed-group=${RBAC_GROUP_SENIOR_DEVS}
+            - --redirect-url=https://${ROLLOUTS_FQDN}/oauth2/callback
             - --upstream=static://202
             - --skip-provider-button=true
             - --cookie-secure=true
@@ -55,7 +55,7 @@ spec:
             - --reverse-proxy=true
             - --prompt=login
             - --session-store-type=cookie
-            - --whitelist-domain=.example.com
+            - --whitelist-domain=.${DOMAIN}
           env:
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:

@@ -17,7 +17,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Rancher API access (reads from .env file or environment variables)
 #   - Helm charts already pushed to Harbor (run push-charts.sh first)
-#   - Root CA secret pre-seeded on rke2-prod (for vault-init)
+#   - Root CA secret pre-seeded on downstream cluster (for vault-init)
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -45,6 +45,9 @@ load_config() {
     source "${env_file}"
     set +a
   fi
+
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
   [[ -n "${RANCHER_URL:-}" ]] || die "RANCHER_URL not set (export it or add to ${env_file})"
   [[ -n "${RANCHER_TOKEN:-}" ]] || die "RANCHER_TOKEN not set (export it or add to ${env_file})"
@@ -204,13 +207,13 @@ print(json.dumps(d if d else {}))
         kind: "Bundle",
         metadata: {
           name: $name,
-          namespace: "fleet-default",
+          namespace: "'"${FLEET_NAMESPACE}"'",
           labels: {
             "fleet.cattle.io/bundle-name": $name
           }
         },
         spec: {
-          targets: [{clusterName: "rke2-prod"}],
+          targets: [{clusterName: "'"${FLEET_TARGET_CLUSTER}"'"}],
           dependsOn: $deps,
           defaultNamespace: $ns,
           helm: {
@@ -247,13 +250,13 @@ print(json.dumps(d if d else {}))
         kind: "Bundle",
         metadata: {
           name: $name,
-          namespace: "fleet-default",
+          namespace: "'"${FLEET_NAMESPACE}"'",
           labels: {
             "fleet.cattle.io/bundle-name": $name
           }
         },
         spec: {
-          targets: [{clusterName: "rke2-prod"}],
+          targets: [{clusterName: "'"${FLEET_TARGET_CLUSTER}"'"}],
           dependsOn: $deps,
           defaultNamespace: $ns,
           resources: $resources[0]
@@ -312,18 +315,18 @@ create_bundle() {
 
   # Check if bundle already exists
   local existing
-  existing=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${bundle_name}" 2>/dev/null | \
+  existing=$(rancher_api GET "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${bundle_name}" 2>/dev/null | \
     python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('metadata',{}).get('name',''))" 2>/dev/null || echo "")
 
   if [[ "${existing}" == "${bundle_name}" ]]; then
     log_warn "Bundle ${bundle_name} already exists — updating"
     # GET current resourceVersion for PUT
     local rv
-    rv=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${bundle_name}" | \
+    rv=$(rancher_api GET "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${bundle_name}" | \
       python3 -c "import sys,json; print(json.load(sys.stdin)['metadata']['resourceVersion'])")
     jq --arg rv "${rv}" '.metadata.resourceVersion = $rv' "${tmpfile}" > "${tmpfile}.tmp" && mv "${tmpfile}.tmp" "${tmpfile}"
     local resp
-    resp=$(rancher_api PUT "/v1/fleet.cattle.io.bundles/fleet-default/${bundle_name}" -d "@${tmpfile}")
+    resp=$(rancher_api PUT "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${bundle_name}" -d "@${tmpfile}")
     local err
     err=$(echo "${resp}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null || echo "")
     if [[ -n "${err}" ]]; then
@@ -362,7 +365,7 @@ wait_for_bundle() {
     fi
 
     local state
-    state=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${bundle_name}" 2>/dev/null | \
+    state=$(rancher_api GET "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${bundle_name}" 2>/dev/null | \
       python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -386,10 +389,10 @@ delete_bundles() {
   for entry in "${BUNDLE_DEFS[@]}"; do
     IFS='|' read -r name _ _ <<< "${entry}"
     local existing
-    existing=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${name}" 2>/dev/null | \
+    existing=$(rancher_api GET "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${name}" 2>/dev/null | \
       python3 -c "import sys,json; print(json.load(sys.stdin).get('metadata',{}).get('name',''))" 2>/dev/null || echo "")
     if [[ "${existing}" == "${name}" ]]; then
-      rancher_api DELETE "/v1/fleet.cattle.io.bundles/fleet-default/${name}" > /dev/null 2>&1
+      rancher_api DELETE "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${name}" > /dev/null 2>&1
       log_ok "Deleted: ${name}"
     fi
   done
@@ -404,7 +407,7 @@ show_status() {
   for entry in "${BUNDLE_DEFS[@]}"; do
     IFS='|' read -r name _ _ <<< "${entry}"
     local info
-    info=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${name}" 2>/dev/null | \
+    info=$(rancher_api GET "/v1/fleet.cattle.io.bundles/${FLEET_NAMESPACE}/${name}" 2>/dev/null | \
       python3 -c "
 import sys,json
 try:
@@ -501,7 +504,7 @@ echo -e "  ${GREEN}Created/Updated:${NC} ${deployed}"
 echo ""
 
 if [[ "${DRY_RUN}" != true ]]; then
-  log_info "Bundles created. Fleet will now deploy them to rke2-prod."
+  log_info "Bundles created. Fleet will now deploy them to ${FLEET_TARGET_CLUSTER}."
   log_info "Monitor with: $0 --status"
   log_info "Or via Rancher UI: ${RANCHER_URL}/dashboard/c/local/fleet/fleet.cattle.io.bundle"
 fi

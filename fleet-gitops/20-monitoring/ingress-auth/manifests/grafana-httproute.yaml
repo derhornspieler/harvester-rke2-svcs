@@ -11,7 +11,7 @@ spec:
       namespace: monitoring
       sectionName: https
   hostnames:
-    - "grafana.example.com"
+    - "${GRAFANA_FQDN}"
   rules:
     - matches:
         - path:

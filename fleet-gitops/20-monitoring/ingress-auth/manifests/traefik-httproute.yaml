@@ -9,7 +9,7 @@ spec:
       namespace: kube-system
       sectionName: https
   hostnames:
-    - "traefik.example.com"
+    - "${TRAEFIK_FQDN}"
   rules:
     - matches:
         - path:

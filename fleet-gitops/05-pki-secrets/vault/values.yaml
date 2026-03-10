@@ -1,4 +1,4 @@
-# Vault Helm values for RKE2 cluster (HA + Raft)
+# Vault Helm values for target cluster (HA + Raft)
 # Chart: hashicorp/vault 0.32.0
 #
 # Deploy:
@@ -36,7 +36,7 @@ server:
 
   image:
     repository: hashicorp/vault
-    tag: "1.21.2"
+    tag: "${IMAGE_VAULT}"
 
   # Schedule on database pool (stateful workload)
   nodeSelector:
@@ -62,7 +62,7 @@ server:
   dataStorage:
     enabled: true
     size: 10Gi
-    storageClass: harvester
+    storageClass: "${STORAGE_CLASS}"
 
   # HA mode with integrated Raft storage (3 replicas)
   ha:

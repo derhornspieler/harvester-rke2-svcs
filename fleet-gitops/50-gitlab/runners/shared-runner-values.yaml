@@ -5,7 +5,7 @@
 replicas: 1
 
 ## GitLab instance URL — runner registers here
-gitlabUrl: https://gitlab.example.com
+gitlabUrl: ${GITLAB_URL}
 
 ## TLS certificates for GitLab instance trust (Vault CA chain)
 certsSecretName: gitlab-runner-certs
@@ -60,7 +60,7 @@ serviceAccount:
   name: gitlab-runner-sa
 
 ## VAULT_CACERT tells the runner's Vault secret resolver where to find
-## the private CA so it can verify vault.example.com TLS certificate
+## the private CA so it can verify the Vault TLS certificate
 ## during the "Resolving secrets" phase (before job pods start).
 envVars:
   - name: VAULT_CACERT
@@ -70,7 +70,7 @@ envVars:
 volumeMounts:
   - name: vault-root-ca
     mountPath: /etc/ssl/certs/vault-root-ca.pem
-    subPath: gitlab.example.com.crt
+    subPath: gitlab-ca.crt
     readOnly: true
 
 volumes:

@@ -1,6 +1,6 @@
 ---
-# gitlab-admin-setup: Promotes admin.user to GitLab admin after OIDC login
-# Requires: GitLab running, admin.user already logged in via Keycloak OIDC
+# gitlab-admin-setup: Promotes platform admin user to GitLab admin after OIDC login
+# Requires: GitLab running, admin user already logged in via Keycloak OIDC
 ---
 apiVersion: batch/v1
 kind: Job
@@ -29,14 +29,14 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gitlab-admin-setup
-          image: curlimages/curl:8.12.1
+          image: ${IMAGE_CURL}
           command: ["/bin/sh", "-c"]
           args:
             - |
               set -eu
 
-              GITLAB_URL="https://gitlab.example.com"
-              ADMIN_USER="admin.user"
+              GITLAB_URL="${GITLAB_URL}"
+              ADMIN_USER="${PLATFORM_ADMIN_USER}"
               ROOT_PASS="${GITLAB_ROOT_PASSWORD}"
 
               log() { echo "[$(date +%H:%M:%S)] $*"; }
@@ -60,7 +60,7 @@ spec:
                 "${GITLAB_URL}/oauth/token" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
               [ -n "$TOKEN" ] || { log "FATAL: Could not authenticate as root"; exit 1; }
 
-              # Trigger admin.user first login via OIDC if she doesn't exist yet
+              # Trigger admin user first login via OIDC if they don't exist yet
               # (she auto-provisions on first OIDC login, so we just need to check)
               log "Looking up user ${ADMIN_USER}..."
               USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
@@ -78,7 +78,7 @@ spec:
                   -d '{
                     "username": "'"${ADMIN_USER}"'",
                     "name": "Platform Admin",
-                    "email": "'"${ADMIN_USER}@example.com"'",
+                    "email": "'"${ADMIN_USER}@${DOMAIN}"'",
                     "password": "'"${ROOT_PASS}"'",
                     "skip_confirmation": true,
                     "admin": true

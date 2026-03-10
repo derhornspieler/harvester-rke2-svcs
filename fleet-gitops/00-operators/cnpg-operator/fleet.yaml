@@ -1,9 +1,9 @@
 defaultNamespace: cnpg-system
 helm:
   releaseName: cnpg
-  chart: oci://harbor.example.com/helm/cloudnative-pg
-  version: "0.27.1"
+  chart: ${OCI_HELM_PREFIX}/cloudnative-pg
+  version: "${CHART_VER_CNPG}"
   valuesFiles:
     - values.yaml
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}

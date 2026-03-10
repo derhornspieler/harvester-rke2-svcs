@@ -1,8 +1,8 @@
 defaultNamespace: external-secrets
 helm:
   releaseName: external-secrets
-  chart: oci://harbor.example.com/helm/external-secrets
-  version: "2.0.1"
+  chart: ${OCI_HELM_PREFIX}/external-secrets
+  version: "${CHART_VER_EXTERNAL_SECRETS}"
   valuesFiles:
     - values.yaml
 dependsOn:
@@ -10,4 +10,4 @@ dependsOn:
       matchLabels:
         fleet.cattle.io/bundle-name: vault-init
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}

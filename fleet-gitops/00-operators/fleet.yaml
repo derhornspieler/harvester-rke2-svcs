@@ -1,4 +1,4 @@
 # 00-operators: CRD operators that must be running before any service bundles
 # No dependencies — deploys first
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}

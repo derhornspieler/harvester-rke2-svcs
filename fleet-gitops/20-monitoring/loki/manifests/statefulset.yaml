@@ -30,7 +30,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: loki
-          image: docker.io/grafana/loki:3.4.6
+          image: ${IMAGE_LOKI}
           args:
             - -config.file=/etc/loki/loki.yaml
             - -target=all

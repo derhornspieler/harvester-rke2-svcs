@@ -14,8 +14,8 @@ set -euo pipefail
 #   ./deploy-fleet-helmops.sh --status               # Show deployment status
 #
 # Prerequisites:
-#   - Helm charts pushed to oci://harbor.example.com/helm/ (push-charts.sh)
-#   - Raw manifest bundles pushed to oci://harbor.example.com/fleet/ (push-bundles.sh)
+#   - Helm charts pushed to oci://<HARBOR_HOST>/helm/ (push-charts.sh)
+#   - Raw manifest bundles pushed to oci://<HARBOR_HOST>/fleet/ (push-bundles.sh)
 #   - Root CA secret pre-seeded on downstream cluster (deploy.sh handles this)
 
 # --- Colors ---
@@ -29,8 +29,6 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLEET_DIR="$(dirname "${SCRIPT_DIR}")"
 
-HARBOR="harbor.example.com"
-
 # Source .env early so BUNDLE_VERSION is available for HELMOP_DEFS array
 if [[ -f "${FLEET_DIR}/.env" ]]; then
   set -a
@@ -38,6 +36,9 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
   source "${FLEET_DIR}/.env"
   set +a
 fi
+source "${SCRIPT_DIR}/lib/env-defaults.sh"
+
+HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 BUNDLE_VERSION="${BUNDLE_VERSION:-1.0.0}"
 
 # --- Logging ---
@@ -88,21 +89,21 @@ HELMOP_DEFS=(
   # For OCI: repo = oci://harbor/project/chart-name, chart field MUST be empty
 
   # 00-operators (prometheus-operator-crds first so ServiceMonitor/PrometheusRule CRDs are available)
-  "operators-prometheus-crds|oci://${HARBOR}/helm/prometheus-operator-crds|27.0.0|monitoring|prometheus-operator-crds||"
-  "operators-cnpg|oci://${HARBOR}/helm/cloudnative-pg|0.27.1|cnpg-system|cnpg||00-operators/cnpg-operator/values.yaml"
-  "operators-redis|oci://${HARBOR}/helm/redis-operator|0.23.0|redis-operator|redis-operator||00-operators/redis-operator/values.yaml"
+  "operators-prometheus-crds|oci://${HARBOR}/helm/prometheus-operator-crds|${CHART_VER_PROMETHEUS_CRDS}|monitoring|prometheus-operator-crds||"
+  "operators-cnpg|oci://${HARBOR}/helm/cloudnative-pg|${CHART_VER_CNPG}|cnpg-system|cnpg||00-operators/cnpg-operator/values.yaml"
+  "operators-redis|oci://${HARBOR}/helm/redis-operator|${CHART_VER_REDIS_OPERATOR}|redis-operator|redis-operator||00-operators/redis-operator/values.yaml"
   "operators-node-labeler|oci://${HARBOR}/fleet/operators-node-labeler|${BUNDLE_VERSION}|node-labeler|operators-node-labeler|operators-prometheus-crds|"
   "operators-storage-autoscaler|oci://${HARBOR}/fleet/operators-storage-autoscaler|${BUNDLE_VERSION}|storage-autoscaler|operators-storage-autoscaler|operators-prometheus-crds|"
   "operators-cluster-autoscaler|oci://${HARBOR}/fleet/operators-cluster-autoscaler|${BUNDLE_VERSION}|cluster-autoscaler|operators-cluster-autoscaler|operators-prometheus-crds|"
   "operators-gateway-api-crds|oci://${HARBOR}/fleet/operators-gateway-api-crds|${BUNDLE_VERSION}|kube-system|operators-gateway-api-crds||"
 
   # 05-pki-secrets (depends on operators)
-  "pki-cert-manager|oci://${HARBOR}/helm/cert-manager|v1.19.4|cert-manager|cert-manager|operators-cnpg|05-pki-secrets/cert-manager/values.yaml"
-  "pki-vault|oci://${HARBOR}/helm/vault|0.32.0|vault|vault|operators-cnpg|05-pki-secrets/vault/values.yaml"
+  "pki-cert-manager|oci://${HARBOR}/helm/cert-manager|${CHART_VER_CERT_MANAGER}|cert-manager|cert-manager|operators-cnpg|05-pki-secrets/cert-manager/values.yaml"
+  "pki-vault|oci://${HARBOR}/helm/vault|${CHART_VER_VAULT}|vault|vault|operators-cnpg|05-pki-secrets/vault/values.yaml"
   "pki-vault-init|oci://${HARBOR}/fleet/pki-vault-init|${BUNDLE_VERSION}|vault|pki-vault-init|pki-vault|"
   "pki-vault-unsealer|oci://${HARBOR}/fleet/pki-vault-unsealer|${BUNDLE_VERSION}|vault|pki-vault-unsealer|pki-vault-init|"
   "pki-vault-pki-issuer|oci://${HARBOR}/fleet/pki-vault-pki-issuer|${BUNDLE_VERSION}|cert-manager|pki-vault-pki-issuer|pki-vault-init,pki-cert-manager|"
-  "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|2.0.1|external-secrets|external-secrets|pki-vault-init|05-pki-secrets/external-secrets/values.yaml"
+  "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init|05-pki-secrets/external-secrets/values.yaml"
 
   # 10-identity (depends on pki)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-external-secrets,operators-cnpg|"
@@ -121,32 +122,32 @@ HELMOP_DEFS=(
   "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|pki-external-secrets,identity-keycloak-config|"
   "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|identity-keycloak-config|"
   "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|identity-keycloak-config|"
-  "monitoring-prometheus-stack|oci://${HARBOR}/helm/kube-prometheus-stack|82.10.0|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
+  "monitoring-prometheus-stack|oci://${HARBOR}/helm/kube-prometheus-stack|${CHART_VER_PROMETHEUS_STACK}|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
   "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack|"
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
   "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-config|"
   "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-config,operators-cnpg|"
   "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|identity-keycloak-config,operators-redis|"
-  "harbor-core|oci://${HARBOR}/helm/harbor|1.18.2|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
+  "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
   "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|minio,harbor-cnpg,harbor-valkey|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
-  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|9.4.7|argocd|argocd|identity-keycloak-config|40-gitops/argocd/values.yaml"
+  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config|40-gitops/argocd/values.yaml"
   "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|identity-keycloak-config|"
-  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|2.40.6|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
+  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
-  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|0.47.4|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
+  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
   "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows|"
   "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|identity-keycloak-config|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
   "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-config,operators-cnpg|"
   "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-config,operators-redis|"
-  "gitlab-core|oci://${HARBOR}/helm/gitlab|9.9.2|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
+  "gitlab-core|oci://${HARBOR}/helm/gitlab|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
   "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|identity-keycloak-config,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-core|"
-  "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|0.86.0|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
+  "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
 )
 
 # ============================================================
@@ -194,7 +195,7 @@ print(json.dumps(d if d else {}))
     # Get downstream kubeconfig via Rancher API
     local cluster_id
     cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
-      python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='rke2-prod']" 2>/dev/null || true)
+      python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']" 2>/dev/null || true)
     if [[ -n "${cluster_id}" ]]; then
       local ds_kc
       ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
@@ -233,13 +234,15 @@ print(json.dumps(d))
     --arg namespace "${namespace}" \
     --arg release "${release_name}" \
     --argjson deps "${deps_json}" \
+    --arg fleet_ns "${FLEET_NAMESPACE}" \
+    --arg target_cluster "${FLEET_TARGET_CLUSTER}" \
     --slurpfile values "${values_file_tmp}" \
     '{
       apiVersion: "fleet.cattle.io/v1alpha1",
       kind: "HelmOp",
       metadata: {
         name: $name,
-        namespace: "fleet-default"
+        namespace: $fleet_ns
       },
       spec: {
         helm: {
@@ -253,7 +256,7 @@ print(json.dumps(d))
         helmSecretName: "harbor-helm-ca",
         dependsOn: $deps,
         defaultNamespace: $namespace,
-        targets: [{clusterName: "rke2-prod"}]
+        targets: [{clusterName: $target_cluster}]
       }
     }')
 
@@ -360,10 +363,10 @@ for i in d.get('data',[]):
   # Get downstream cluster kubeconfig
   local cluster_id
   cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
-    python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='rke2-prod']" 2>/dev/null || true)
+    python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']" 2>/dev/null || true)
 
   if [[ -z "${cluster_id}" ]]; then
-    log_warn "Could not find rke2-prod cluster — skipping downstream cleanup"
+    log_warn "Could not find ${FLEET_TARGET_CLUSTER} cluster — skipping downstream cleanup"
     return 0
   fi
 
@@ -721,7 +724,7 @@ echo -e "  ${GREEN}Created/Updated:${NC} ${deployed}"
 echo ""
 
 if [[ "${DRY_RUN}" != true ]]; then
-  log_info "HelmOps created. Fleet will generate bundles and deploy to rke2-prod."
+  log_info "HelmOps created. Fleet will generate bundles and deploy to ${FLEET_TARGET_CLUSTER}."
   log_info "Monitor with: $0 --status"
   log_info "View in Rancher UI: Continuous Delivery → App Bundles"
 fi

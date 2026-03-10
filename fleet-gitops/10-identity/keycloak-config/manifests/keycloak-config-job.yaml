@@ -69,17 +69,17 @@ spec:
           type: RuntimeDefault
       containers:
         - name: keycloak-config
-          image: docker.io/alpine/k8s:1.32.4
+          image: ${IMAGE_ALPINE_K8S}
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
               # keycloak-config: realm, users, OIDC clients, groups, auth flow
               # Idempotent — safe to re-run.
 
-              DOMAIN="example.com"
+              DOMAIN="${DOMAIN}"
               KC_REALM="platform"
               KC_URL="http://keycloak.keycloak.svc.cluster.local:8080"
-              PLATFORM_ADMIN_USER="admin.user"
+              PLATFORM_ADMIN_USER="${PLATFORM_ADMIN_USER}"
               PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_USER}@${DOMAIN}"
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }

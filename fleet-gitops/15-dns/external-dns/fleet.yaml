@@ -1,8 +1,8 @@
 defaultNamespace: external-dns
 helm:
   releaseName: external-dns
-  chart: oci://harbor.example.com/helm/external-dns
-  version: "1.16.1"
+  chart: ${OCI_HELM_PREFIX}/external-dns
+  version: "${CHART_VER_EXTERNAL_DNS}"
   valuesFiles:
     - values.yaml
 dependsOn:
@@ -10,4 +10,4 @@ dependsOn:
       matchLabels:
         fleet.cattle.io/bundle-name: pki-external-secrets
 targets:
-  - clusterName: rke2-prod
+  - clusterName: ${FLEET_TARGET_CLUSTER}
