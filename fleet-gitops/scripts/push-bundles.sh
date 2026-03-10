@@ -25,9 +25,6 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
 fi
 source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
-# Render templates before packaging (substitutes env vars into YAML)
-log "Rendering templates..."
-"${SCRIPT_DIR}/render-templates.sh"
 RENDERED_DIR="${FLEET_DIR}/rendered"
 
 HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
@@ -220,6 +217,10 @@ EOF
 ###############################################################################
 main() {
   log "=== push-bundles.sh — version ${VERSION} ==="
+
+  # Render templates (substitutes env vars into YAML)
+  log "Rendering templates..."
+  "${SCRIPT_DIR}/render-templates.sh"
 
   ensure_harbor_project
   helm_login
