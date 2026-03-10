@@ -340,8 +340,9 @@ cluster.
 
 1. Edit the manifests under `fleet-gitops/<group>/<bundle>/`
 2. Bump `BUNDLE_VERSION` in `.env` (or export it)
-3. Push bundles: `./push-bundles.sh`
-4. Re-run the deployment: `./deploy-fleet-helmops.sh`
+3. (Optional) Clean up completed Fleet Jobs to prevent immutability conflicts: `./cleanup-completed-jobs.sh`
+4. Push bundles: `./push-bundles.sh`
+5. Re-run the deployment: `./deploy-fleet-helmops.sh`
 
 ---
 

@@ -202,6 +202,14 @@ The cluster uses Cilium as its Container Network Interface. Cilium provides:
 - Flow tracking and metrics (visible in Grafana dashboards)
 - Cilium alerts in Prometheus for network anomalies
 
+### Traefik Dashboard Access
+
+The Traefik API dashboard is available at `https://traefik.&lt;DOMAIN&gt;/dashboard/` and shows real-time routing information, backend health, and middleware status. Access requires authentication via Keycloak (same as other platform services). Note that requests to `/` are redirected to `/dashboard/` to avoid 404 errors.
+
+### Known Issue: Harvester Cloud Provider LoadBalancer Noise
+
+The Harvester cloud provider's LoadBalancer controller periodically conflicts with Cilium's L2 load balancing announcements, generating `SyncLoadBalancerFailed` errors every ~2 minutes in the Cilium logs. This is **cosmetic only**—Cilium correctly manages the LoadBalancer IP and traffic routes normally. The error can be safely ignored. (Attempted resolution via `loadBalancerClass: "io.cilium/l2"` was reverted because Cilium does not register as a LoadBalancerClass provider.)
+
 ---
 
 ## Technical Reference

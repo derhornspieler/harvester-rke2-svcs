@@ -433,6 +433,22 @@ spec:
             name: "eso-secrets"
 ```
 
+#### ServiceAccount Creation
+
+Each namespace that uses ESO must have an `eso-secrets` ServiceAccount created before the SecretStore can authenticate to Vault. This ServiceAccount is referenced by the SecretStore's `serviceAccountRef` field.
+
+The `vault-init` Job creates this ServiceAccount in all namespaces that will access Vault:
+- `keycloak` — for Keycloak credentials
+- `harbor` — for Harbor credentials
+- `gitlab` — for GitLab credentials
+- `monitoring` — for Prometheus, Grafana, Loki, Alloy credentials
+- `argocd` — for ArgoCD credentials
+- `argo-rollouts` — for Argo Rollouts credentials
+- `argo-workflows` — for Argo Workflows credentials
+- `external-secrets` — for ESO itself
+- `kube-system` — for cluster-level components (external-dns, cilium)
+- `external-dns` — for external-dns credentials
+
 #### ExternalSecret Template
 
 Each service defines ExternalSecret resources mapping Vault paths to Kubernetes Secrets:
