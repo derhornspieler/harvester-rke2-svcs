@@ -176,14 +176,16 @@ redis-ha:
   enabled: true
 
   image:
-    repository: ${IMAGE_VALKEY}
+    repository: valkey/valkey
+    tag: 8-alpine
 
   replicas: 3
 
   haproxy:
     enabled: true
     image:
-      repository: ${IMAGE_HAPROXY}
+      repository: docker.io/library/haproxy
+      tag: 2.9.4-alpine
     affinity: |
       podAntiAffinity:
         preferredDuringSchedulingIgnoredDuringExecution:
