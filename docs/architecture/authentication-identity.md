@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-All platform users authenticate through a single identity provider (Keycloak) using industry-standard OIDC protocols. Services either integrate OIDC directly or use an authentication proxy (OAuth2-proxy) as a gateway. This centralized identity system eliminates per-service credential management and provides unified access control through group-based roles. Users log in once and gain access to the services their group membership authorizes.
+All platform users authenticate through a single identity provider (Keycloak) using industry-standard OIDC protocols. Services either integrate OIDC directly or use an authentication proxy (OAuth2-proxy) as a gateway. This centralized identity system eliminates per-service credential management and provides unified access control through group-based roles. Users log in once and gain access to the services their group membership authorizes. Keycloak optionally federates users from a FreeIPA directory service via LDAP, enabling centralized identity management across both the platform and traditional infrastructure.
 
 ---
 
@@ -18,6 +18,7 @@ graph TD
     D["🗄️ PostgreSQL (User Database)"]
     E["🔒 Vault (Secrets)"]
     F["💾 Redis Sentinel (Sessions)"]
+    FreeIPA["🏢 FreeIPA (Directory Service)"]
 
     G["Protected Service (via Proxy)<br/>Prometheus, Alertmanager, Hubble"]
     H["OAuth2-proxy Middleware"]
@@ -29,6 +30,7 @@ graph TD
     B -->|2b. Direct OIDC| I
     H -->|3. Redirect to login| C
     C -->|4. Authenticate| D
+    FreeIPA -.->|LDAP user federation<br/>optional| C
     C -->|5. Return token| H
     H -->|6. Verify token| F
     H -->|7. Forward to service| G
@@ -42,6 +44,7 @@ graph TD
     classDef middleware fill:#fd7e14,color:#000,stroke:#333,stroke-width:2px
     classDef datastore fill:#0dcaf0,color:#000,stroke:#333,stroke-width:2px
     classDef external fill:#f8f9fa,color:#000,stroke:#333,stroke-width:2px
+    classDef optional fill:#fff,color:#6c757d,stroke:#6c757d,stroke-width:2px,stroke-dasharray:5 5
 
     class C identity
     class G,I service
@@ -49,6 +52,7 @@ graph TD
     class D,F datastore
     class E datastore
     class A,B external
+    class FreeIPA optional
 ```
 
 ### Authentication Decision Tree
@@ -98,7 +102,7 @@ flowchart TD
    - **OAuth2-proxy path** (Prometheus, Alertmanager, Hubble): Unauthenticated requests are redirected to OAuth2-proxy, which redirects the browser to Keycloak's login page
    - **Native OIDC path** (Grafana, Harbor, ArgoCD, GitLab): These services handle OIDC negotiation directly
 3. The user enters their credentials at Keycloak
-4. Keycloak validates the username and password against its PostgreSQL database
+4. Keycloak validates the username and password against its PostgreSQL database (or, if LDAP federation is configured, against FreeIPA's directory service)
 5. Keycloak issues an OIDC token containing the user's identity and group memberships
 6. The token is returned to the browser and forwarded to the protected service
 7. The service validates the token and grants access based on the user's groups
@@ -161,8 +165,8 @@ Users gain access to services by membership in groups. Groups are managed in Key
 | `network-engineers` | Network team | Hubble (network flows only) |
 
 To grant a user access to services:
-1. Create a user in Keycloak (username, email, password)
-2. Add the user to the appropriate group
+1. Create a user in Keycloak (username, email, password) — or, if FreeIPA federation is enabled, the user is automatically synced from FreeIPA's LDAP directory
+2. Add the user to the appropriate group (groups can also be mapped from FreeIPA LDAP groups)
 3. The next time they log in, their token includes the group(s)
 4. Services automatically grant access based on group membership
 
@@ -382,6 +386,7 @@ All pods should be `Running`, all ExternalSecrets should show `SecretSynced`, an
 - **Secrets & Configuration**: OAuth2-proxy credentials (client secrets, cookie secrets) are stored in Vault and synced by ESO
 - **Data & Storage**: User identities and sessions are stored in PostgreSQL (CNPG) and Redis Sentinel
 - **Observability & Monitoring**: Keycloak exports metrics to Prometheus; alerts are sent to Alertmanager
+- **FreeIPA (Optional)**: Keycloak can federate users from a FreeIPA directory service via LDAP user federation. When enabled, users and groups are synced from FreeIPA into Keycloak, allowing centralized identity management across both Kubernetes platform services and traditional infrastructure. FreeIPA provides the directory (users, groups, host-based access), while Keycloak translates that into OIDC tokens for platform services
 
 ---
 
