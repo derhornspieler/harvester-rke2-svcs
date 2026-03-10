@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app: minio
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
     spec:
       nodeSelector:
         workload-type: database
