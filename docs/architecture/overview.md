@@ -66,7 +66,7 @@ block-beta
 | Stack | Depends On | Provides To |
 |-------|-----------|-------------|
 | Security &amp; PKI | — (foundation) | TLS certificates and secrets to all stacks |
-| Identity &amp; Access | Security (certs, secrets) | Single sign-on to Platform, CI/CD, Observability |
+| Identity &amp; Access | Security (certs, secrets); optionally FreeIPA (LDAP) | Single sign-on to Platform, CI/CD, Observability |
 | Observability | Security, Identity | Metrics, logs, alerts for all stacks |
 | Data &amp; Storage | Security (secrets) | PostgreSQL, Redis, MinIO for Platform and CI/CD |
 | Platform | Security, Identity, Data | GitOps deployment for all applications |
