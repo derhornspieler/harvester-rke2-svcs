@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This platform delivers a production-grade GitOps foundation on a 13-node Harvester RKE2 cluster, providing secure, observable, self-healing infrastructure for containerized workloads. It combines identity management (Keycloak + OAuth2-proxy), container registry (Harbor), policy-driven deployments (ArgoCD), and Git-native CI/CD (GitLab + Runners), all protected by zero-trust PKI and automated secrets management. Leadership gains visibility through integrated monitoring (Prometheus, Grafana, Loki) and audit trails across all ecosystems.
+This platform delivers a production-grade GitOps foundation on a 13-node Harvester RKE2 cluster, providing secure, observable, self-healing infrastructure for containerized workloads. It combines identity management (Keycloak + OAuth2-proxy), container registry (Harbor), policy-driven deployments (ArgoCD), and Git-native CI/CD (GitLab + Runners), all protected by zero-trust PKI and automated secrets management. Integrated monitoring (Prometheus, Grafana, Loki) and audit trails provide visibility across all ecosystems.
 
 ---
 
@@ -206,6 +206,7 @@ Stacks deploy in sequence via Fleet GitOps because each depends on earlier stack
 
 ## What's Next?
 
+- **Full Landscape**: See [landscape.md](landscape.md) for a complete visual map of all 26 services and their interconnections
 - **Getting Started**: Follow [../../getting-started.md](../../getting-started.md) for step-by-step deployment
 - **Deep Dives**: Pick an ecosystem from the index above for technical architecture and configuration
 - **Operations**: See [../operations/day2-operations.md](../operations/day2-operations.md) for runbooks and troubleshooting

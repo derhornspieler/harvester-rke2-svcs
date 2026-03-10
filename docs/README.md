@@ -20,7 +20,9 @@ Topics: Application design, CI/CD patterns, deployment options, platform integra
 
 ## For Everyone
 
-**[Platform Architecture](architecture/overview.md)** -- Leadership-readable overviews of how the platform works
+**[Platform Architecture](architecture/overview.md)** -- How the platform works
+
+**[Platform Landscape](architecture/landscape.md)** -- Full visual map of all 26 services and their connections
 
 Detailed ecosystem documentation:
 - [Authentication & Identity](architecture/authentication-identity.md)
