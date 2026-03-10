@@ -25,6 +25,11 @@ if [[ -f "${FLEET_DIR}/.env" ]]; then
 fi
 source "${SCRIPT_DIR}/lib/env-defaults.sh"
 
+# Render templates before packaging (substitutes env vars into YAML)
+log "Rendering templates..."
+"${SCRIPT_DIR}/render-templates.sh"
+RENDERED_DIR="${FLEET_DIR}/rendered"
+
 HARBOR="${HARBOR_HOST:?Set HARBOR_HOST in .env}"
 HARBOR_USER="${HARBOR_USER:?Set HARBOR_USER in .env}"
 HARBOR_PASS="${HARBOR_PASS:?Set HARBOR_PASS in .env}"
@@ -158,7 +163,7 @@ helm_login() {
 push_bundle() {
   local bundle_relpath="$1"
   local chart_name="$2"
-  local bundle_dir="${FLEET_DIR}/${bundle_relpath}"
+  local bundle_dir="${RENDERED_DIR}/${bundle_relpath}"
   local manifests_dir="${bundle_dir}/manifests"
 
   if [[ ! -d "${bundle_dir}" ]]; then
