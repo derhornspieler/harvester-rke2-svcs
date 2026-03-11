@@ -129,6 +129,11 @@ HELMOP_DEFS=(
   #"dns-external-dns-secrets|oci://${HARBOR}/fleet/dns-external-dns-secrets|${BUNDLE_VERSION}|external-dns|dns-external-dns-secrets|pki-external-secrets|"
   #"dns-external-dns|oci://${HARBOR}/helm/external-dns|1.16.1|external-dns|external-dns|dns-external-dns-secrets|15-dns/external-dns/values.yaml"
 
+  # 11-infra-auth (depends on identity — Traefik/Vault/Hubble oauth2-proxy)
+  "infra-auth-traefik|oci://${HARBOR}/fleet/infra-auth-traefik|${BUNDLE_VERSION}|kube-system|infra-auth-traefik|identity-keycloak-realm-init|"
+  "infra-auth-vault|oci://${HARBOR}/fleet/infra-auth-vault|${BUNDLE_VERSION}|vault|infra-auth-vault|identity-keycloak-realm-init|"
+  "infra-auth-hubble|oci://${HARBOR}/fleet/infra-auth-hubble|${BUNDLE_VERSION}|monitoring|infra-auth-hubble|identity-keycloak-realm-init|"
+
   # 20-monitoring (depends on pki + identity — waits for full identity stack)
   "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|pki-external-secrets,operators-cnpg,identity-keycloak-realm-init|"
   "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|pki-external-secrets,identity-keycloak-realm-init|"
