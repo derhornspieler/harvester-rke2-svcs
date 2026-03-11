@@ -105,6 +105,7 @@ HELMOP_DEFS=(
   "operators-node-labeler|oci://${HARBOR}/fleet/operators-node-labeler|${BUNDLE_VERSION}|node-labeler|operators-node-labeler|operators-prometheus-crds|"
   "operators-storage-autoscaler|oci://${HARBOR}/fleet/operators-storage-autoscaler|${BUNDLE_VERSION}|storage-autoscaler|operators-storage-autoscaler|operators-prometheus-crds|"
   "operators-cluster-autoscaler|oci://${HARBOR}/fleet/operators-cluster-autoscaler|${BUNDLE_VERSION}|cluster-autoscaler|operators-cluster-autoscaler|operators-prometheus-crds|"
+  "operators-overprovisioning|oci://${HARBOR}/fleet/operators-overprovisioning|${BUNDLE_VERSION}|cluster-autoscaler|operators-overprovisioning|operators-cluster-autoscaler|"
   "operators-gateway-api-crds|oci://${HARBOR}/fleet/operators-gateway-api-crds|${BUNDLE_VERSION}|kube-system|operators-gateway-api-crds||"
 
   # 05-pki-secrets (depends on operators)
@@ -149,6 +150,7 @@ HELMOP_DEFS=(
   "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|pki-external-secrets|"
   "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config,argocd-credentials|40-gitops/argocd/values.yaml"
   "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|gitops-argocd|"
+  "gitops-argocd-gitlab-setup|oci://${HARBOR}/fleet/gitops-argocd-gitlab-setup|${BUNDLE_VERSION}|argocd|gitops-argocd-gitlab-setup|gitops-argocd,gitlab-ready|"
   "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
   "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
@@ -488,12 +490,12 @@ purge_harbor_oci() {
 
   # Delete raw-manifest bundle repos from fleet/ project
   local bundle_names=(
-    operators-cluster-autoscaler operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
+    operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
     identity-cnpg-keycloak identity-keycloak identity-keycloak-config
     monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     minio harbor-cnpg-harbor harbor-valkey harbor-manifests
-    gitops-argocd-credentials gitops-argocd-manifests gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
+    gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-credentials gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
   )
 
