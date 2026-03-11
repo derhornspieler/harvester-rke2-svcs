@@ -206,6 +206,39 @@ print(json.dumps(d if d else {}))
     fi
   fi
 
+  # --- Inject secrets from downstream cluster into values at deploy time ---
+  # Harbor chart uses lookup() for existingSecret which is incompatible with
+  # Fleet's remote Helm rendering. Fetch the password from the downstream
+  # cluster's K8s secret and inject it as a literal value.
+  if [[ "${name}" == "harbor-core" ]]; then
+    local valkey_pw=""
+    local cluster_id
+    cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+      python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']" 2>/dev/null || true)
+    if [[ -n "${cluster_id}" ]]; then
+      local ds_kc
+      ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+      rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+        python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null || true
+      if [[ -s "${ds_kc}" ]]; then
+        valkey_pw=$(kubectl --kubeconfig="${ds_kc}" get secret harbor-valkey-credentials -n harbor \
+          -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+      fi
+      rm -f "${ds_kc}"
+    fi
+    if [[ -n "${valkey_pw}" ]]; then
+      values_json=$(echo "${values_json}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+d.setdefault('redis', {}).setdefault('external', {})['password'] = sys.argv[1]
+print(json.dumps(d))
+" "${valkey_pw}")
+      log_info "Injected Valkey password into harbor-core values"
+    else
+      log_warn "harbor-valkey-credentials not found — harbor-core will use placeholder Redis password (re-run after Valkey is ready)"
+    fi
+  fi
+
   local values_file_tmp
   values_file_tmp=$(mktemp /tmp/fleet-helmop-values-XXXXXX.json)
   echo "${values_json}" > "${values_file_tmp}"

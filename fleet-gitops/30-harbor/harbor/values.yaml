@@ -63,9 +63,9 @@ redis:
   external:
     sentinelMasterSet: "${REDIS_MASTER_NAME}"
     addr: "${HARBOR_REDIS_SENTINEL}"
-    # Password from ESO ExternalSecret (Vault kv/services/harbor/valkey)
-    # K8s Secret key must be REDIS_PASSWORD (set in valkey/manifests/external-secret.yaml)
-    existingSecret: harbor-valkey-credentials
+    # Password injected at deploy time from downstream K8s secret by deploy-fleet-helmops.sh
+    # (Fleet's Helm rendering doesn't support lookup() for existingSecret)
+    password: "PLACEHOLDER_REPLACED_AT_DEPLOY" # gitleaks:allow (injected at deploy time from Vault)
     coreDatabaseIndex: "0"
     jobserviceDatabaseIndex: "1"
     registryDatabaseIndex: "2"
