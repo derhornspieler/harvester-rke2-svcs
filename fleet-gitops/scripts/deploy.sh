@@ -511,6 +511,8 @@ seed_manual_secrets() {
 DRY_RUN=false
 DELETE_MODE=false
 STATUS_MODE=false
+WATCH_MODE=false
+WATCH_INTERVAL=""
 SKIP_PUSH=false
 SINGLE_GROUP=""
 
@@ -519,6 +521,8 @@ while [[ $# -gt 0 ]]; do
     --dry-run)     DRY_RUN=true; shift ;;
     --delete)      DELETE_MODE=true; shift ;;
     --status)      STATUS_MODE=true; shift ;;
+    --watch)       WATCH_MODE=true; STATUS_MODE=true; shift ;;
+    --interval)    WATCH_INTERVAL="$2"; shift 2 ;;
     --skip-push)   SKIP_PUSH=true; shift ;;
     --group)       SINGLE_GROUP="$2"; shift 2 ;;
     -h|--help)
@@ -529,6 +533,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --dry-run          Show HelmOp CRs without applying"
       echo "  --delete           Remove all Fleet HelmOps from cluster"
       echo "  --status           Show Fleet deployment status"
+      echo "  --watch            Live-watch status until all bundles converge (implies --status)"
+      echo "  --interval <sec>   Refresh interval for --watch (default: 10)"
       echo "  --group <group>    Deploy only one group (e.g., 00-operators)"
       echo "  -h, --help         Show this help"
       exit 0
@@ -546,7 +552,10 @@ load_config
 
 # Status / Delete modes delegate directly
 if [[ "${STATUS_MODE}" == true ]]; then
-  bash "${SCRIPT_DIR}/deploy-fleet-helmops.sh" --status
+  status_args=("--status")
+  [[ "${WATCH_MODE}" == true ]] && status_args+=("--watch")
+  [[ -n "${WATCH_INTERVAL}" ]] && status_args+=("--interval" "${WATCH_INTERVAL}")
+  bash "${SCRIPT_DIR}/deploy-fleet-helmops.sh" "${status_args[@]}"
   exit 0
 fi
 
@@ -573,6 +582,6 @@ echo -e "${BOLD}${GREEN}========================================================
 echo -e "${BOLD}${GREEN}  Deployment Complete${NC}"
 echo -e "${BOLD}${GREEN}============================================================${NC}"
 echo ""
-echo -e "Monitor progress:  ${BOLD}$0 --status${NC}"
+echo -e "Monitor progress:  ${BOLD}$0 --status${NC}  (or ${BOLD}$0 --watch${NC} for live updates)"
 echo -e "Rancher UI:        Continuous Delivery → App Bundles"
 echo ""
