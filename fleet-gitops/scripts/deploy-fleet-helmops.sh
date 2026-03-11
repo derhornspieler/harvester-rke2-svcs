@@ -128,9 +128,11 @@ HELMOP_DEFS=(
   "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack|"
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
-  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-config|"
+  # harbor-credentials runs early to generate+push harbor creds to Vault before minio needs them
+  "harbor-credentials|oci://${HARBOR}/fleet/harbor-credentials|${BUNDLE_VERSION}|harbor|harbor-credentials|pki-external-secrets|"
+  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-config,harbor-credentials|"
   "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-config,operators-cnpg|"
-  "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|identity-keycloak-config,operators-redis|"
+  "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-credentials,operators-redis|"
   "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
   "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|minio,harbor-cnpg,harbor-valkey|"
 
