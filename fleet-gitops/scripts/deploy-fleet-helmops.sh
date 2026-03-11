@@ -710,6 +710,68 @@ for c in data.get('data',[]):
 
 ensure_harbor_helm_ca
 
+# --- Seed CI secrets into Vault on downstream cluster ---
+# These secrets are read by ExternalSecrets in gitlab-runners and argo-workflows.
+# Values come from .env; if not set, the seeding is skipped with a warning.
+seed_ci_secrets() {
+  log_info "Checking CI secrets in Vault..."
+
+  # Get downstream cluster kubeconfig
+  local cluster_id ds_kc
+  cluster_id=$(rancher_api GET "/v3/clusters" | python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+  [[ -n "${cluster_id}" ]] || { log_warn "Cannot find cluster ${FLEET_TARGET_CLUSTER} — skipping CI secret seeding"; return 0; }
+
+  ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+  # shellcheck disable=SC2064
+  trap "rm -f '${ds_kc}'" RETURN
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null
+  [[ -s "${ds_kc}" ]] || { log_warn "Could not get downstream kubeconfig — skipping CI secret seeding"; return 0; }
+
+  # Helper: exec vault on downstream cluster
+  _vexec() {
+    local root_token
+    root_token=$(kubectl --kubeconfig="${ds_kc}" get secret vault-init-keys -n vault \
+      -o jsonpath='{.data.init\.json}' 2>/dev/null | base64 -d | \
+      grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+    [[ -n "${root_token}" ]] || { log_warn "Cannot read Vault root token — skipping"; return 1; }
+    kubectl --kubeconfig="${ds_kc}" exec -n vault vault-0 -- env \
+      VAULT_ADDR=http://127.0.0.1:8200 \
+      VAULT_TOKEN="${root_token}" \
+      vault "$@"
+  }
+
+  # Seed Harvester kubeconfig (for golden-image-builder runner)
+  if [[ -n "${HARVESTER_KUBECONFIG_PATH:-}" ]]; then
+    # Resolve relative path against FLEET_DIR
+    local kc_path="${HARVESTER_KUBECONFIG_PATH}"
+    if [[ "${kc_path}" != /* ]]; then
+      kc_path="${FLEET_DIR}/${kc_path#./}"
+    fi
+    if [[ -f "${kc_path}" ]]; then
+      local existing
+      existing=$(_vexec kv get -field=kubeconfig kv/services/ci/harvester-kubeconfig 2>/dev/null || true)
+      if [[ -n "${existing}" ]]; then
+        log_ok "Harvester kubeconfig already in Vault"
+      else
+        local kc_content
+        kc_content=$(cat "${kc_path}")
+        _vexec kv put kv/services/ci/harvester-kubeconfig kubeconfig="${kc_content}"
+        log_ok "Seeded Harvester kubeconfig into Vault (services/ci/harvester-kubeconfig)"
+      fi
+    else
+      log_warn "HARVESTER_KUBECONFIG_PATH=${HARVESTER_KUBECONFIG_PATH} — file not found at ${kc_path}"
+    fi
+  else
+    log_warn "HARVESTER_KUBECONFIG_PATH not set in .env — gitlab-runners harvester-kubeconfig will not sync"
+  fi
+}
+
+seed_ci_secrets
+
 # Deploy HelmOps
 deployed=0
 failed=0
