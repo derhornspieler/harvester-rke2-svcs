@@ -99,7 +99,7 @@ cd fleet-gitops/scripts
 | 1 | `push-charts.sh` | Pulls upstream Helm charts and pushes them to `oci://harbor.<DOMAIN>/helm/` |
 | 2 | `deploy.sh` (inline) | Seeds Root CA as a TLS Secret on the downstream cluster (`cert-manager/root-ca`), pre-creates namespaces (`cert-manager`, `vault`, `monitoring`, `cluster-autoscaler`), seeds cluster-autoscaler cloud-config |
 | 3 | `push-bundles.sh` | Packages raw Kubernetes manifests as OCI artifacts and pushes to `oci://harbor.<DOMAIN>/fleet/` |
-| 4 | `deploy-fleet-helmops.sh` | Creates 37 HelmOp CRs on the Rancher management cluster via the Fleet API. Auto-bootstraps the `harbor-helm-ca` Secret in `fleet-default` namespace |
+| 4 | `deploy-fleet-helmops.sh` | Creates 38 HelmOp CRs on the Rancher management cluster via the Fleet API. Auto-bootstraps the `harbor-helm-ca` Secret in `fleet-default` namespace |
 | 5 | `deploy.sh` (inline) | Waits for `vault-init` Job to generate the intermediate CSR, signs it offline with the Root CA key, imports the signed chain into Vault `pki_int/`, configures the PKI signing role |
 | 5.5 | `deploy.sh` (inline) | Seeds service secrets into Vault KV v2 (database credentials, Keycloak admin, Harbor admin, MinIO, Grafana, GitLab). Write-once / idempotent |
 
@@ -174,8 +174,9 @@ Bundles deploy in topological order across seven groups.
 
 | HelmOp | Chart / Bundle | Namespace | Depends on |
 |--------|---------------|-----------|------------|
-| `minio` | raw bundle | `minio` | `identity-keycloak-config` |
 | `harbor-cnpg` | raw bundle | `database` | `identity-keycloak-config`, `operators-cnpg` |
+| `harbor-credentials` | raw bundle | `harbor` | `identity-keycloak-config` |
+| `minio` | raw bundle | `minio` | `identity-keycloak-config`, `harbor-credentials` |
 | `harbor-valkey` | raw bundle | `harbor` | `identity-keycloak-config`, `operators-redis` |
 | `harbor-core` | `harbor` 1.18.2 | `harbor` | `minio`, `harbor-cnpg`, `harbor-valkey` |
 | `harbor-manifests` | raw bundle | `harbor` | `harbor-core` |
@@ -185,7 +186,7 @@ Bundles deploy in topological order across seven groups.
 | HelmOp | Chart / Bundle | Namespace | Depends on |
 |--------|---------------|-----------|------------|
 | `gitops-argocd` | `argo-cd` 9.4.7 | `argocd` | `identity-keycloak-config` |
-| `gitops-argocd-manifests` | raw bundle | `argocd` | `identity-keycloak-config` |
+| `gitops-argocd-manifests` | raw bundle | `argocd` | `identity-keycloak-config`, `gitops-argocd` |
 | `gitops-argo-rollouts` | `argo-rollouts` 2.40.6 | `argo-rollouts` | `identity-keycloak-config` |
 | `gitops-argo-rollouts-manifests` | raw bundle | `argo-rollouts` | `gitops-argo-rollouts` |
 | `gitops-argo-workflows` | `argo-workflows` 0.47.4 | `argo-workflows` | `identity-keycloak-config` |
@@ -196,8 +197,9 @@ Bundles deploy in topological order across seven groups.
 
 | HelmOp | Chart / Bundle | Namespace | Depends on |
 |--------|---------------|-----------|------------|
-| `gitlab-cnpg` | raw bundle | `database` | `identity-keycloak-config`, `operators-cnpg` |
 | `gitlab-redis` | raw bundle | `gitlab` | `identity-keycloak-config`, `operators-redis` |
+| `gitlab-credentials` | raw bundle | `gitlab` | `gitlab-redis` |
+| `gitlab-cnpg` | raw bundle | `database` | `identity-keycloak-config`, `operators-cnpg`, `gitlab-credentials` |
 | `gitlab-core` | `gitlab` 9.9.2 | `gitlab` | `gitlab-cnpg`, `gitlab-redis`, `harbor-core` |
 | `gitlab-manifests` | raw bundle | `gitlab` | `identity-keycloak-config` |
 | `gitlab-runners` | raw bundle | `gitlab-runners` | `gitlab-core` |
@@ -258,7 +260,7 @@ automatically once the ESO SecretStores are configured.
 ./deploy.sh --status
 ```
 
-This shows the state of all 37 HelmOps and their corresponding Fleet bundles.
+This shows the state of all 38 HelmOps and their corresponding Fleet bundles.
 All entries should show `active` state with `1/1` ready.
 
 You can also check directly:
