@@ -513,23 +513,28 @@ DELETE_MODE=false
 STATUS_MODE=false
 WATCH_MODE=false
 WATCH_INTERVAL=""
-SKIP_PUSH=false
+SKIP_CHARTS=false
+SKIP_BUNDLES=false
 SINGLE_GROUP=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dry-run)     DRY_RUN=true; shift ;;
-    --delete)      DELETE_MODE=true; shift ;;
-    --status)      STATUS_MODE=true; shift ;;
-    --watch)       WATCH_MODE=true; STATUS_MODE=true; shift ;;
-    --interval)    WATCH_INTERVAL="$2"; shift 2 ;;
-    --skip-push)   SKIP_PUSH=true; shift ;;
-    --group)       SINGLE_GROUP="$2"; shift 2 ;;
+    --dry-run)       DRY_RUN=true; shift ;;
+    --delete)        DELETE_MODE=true; shift ;;
+    --status)        STATUS_MODE=true; shift ;;
+    --watch)         WATCH_MODE=true; STATUS_MODE=true; shift ;;
+    --interval)      WATCH_INTERVAL="$2"; shift 2 ;;
+    --skip-push)     SKIP_CHARTS=true; SKIP_BUNDLES=true; shift ;;
+    --skip-charts)   SKIP_CHARTS=true; shift ;;
+    --skip-bundles)  SKIP_BUNDLES=true; shift ;;
+    --group)         SINGLE_GROUP="$2"; shift 2 ;;
     -h|--help)
       echo "Usage: $0 [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --skip-push        Skip pushing charts and bundles to Harbor"
+      echo "  --skip-push        Skip pushing both charts and bundles to Harbor"
+      echo "  --skip-charts      Skip pushing Helm charts to Harbor"
+      echo "  --skip-bundles     Skip pushing raw manifest bundles to Harbor"
       echo "  --dry-run          Show HelmOp CRs without applying"
       echo "  --delete           Remove all Fleet HelmOps from cluster"
       echo "  --status           Show Fleet deployment status"
@@ -565,11 +570,16 @@ if [[ "${DELETE_MODE}" == true ]]; then
 fi
 
 # Full deployment pipeline
-if [[ "${SKIP_PUSH}" != true ]]; then
+if [[ "${SKIP_CHARTS}" != true ]]; then
   push_charts
+else
+  log_info "Skipping Helm chart push (--skip-charts)"
+fi
+
+if [[ "${SKIP_BUNDLES}" != true ]]; then
   push_bundles
 else
-  log_info "Skipping chart/bundle push (--skip-push)"
+  log_info "Skipping bundle push (--skip-bundles)"
 fi
 
 seed_root_ca

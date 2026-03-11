@@ -39,6 +39,7 @@ VERSION="${BUNDLE_VERSION:-1.0.0}"
 ###############################################################################
 BUNDLES=(
   "00-operators/cluster-autoscaler:operators-cluster-autoscaler"
+  "00-operators/overprovisioning:operators-overprovisioning"
   "00-operators/node-labeler:operators-node-labeler"
   "00-operators/storage-autoscaler:operators-storage-autoscaler"
   "00-operators/gateway-api-crds:operators-gateway-api-crds"
@@ -61,6 +62,7 @@ BUNDLES=(
   "30-harbor/harbor-manifests:harbor-manifests"
   "40-gitops/argocd-credentials:gitops-argocd-credentials"
   "40-gitops/argocd-manifests:gitops-argocd-manifests"
+  "40-gitops/argocd-gitlab-setup:gitops-argocd-gitlab-setup"
   "40-gitops/argo-rollouts-manifests:gitops-argo-rollouts-manifests"
   "40-gitops/argo-workflows-manifests:gitops-argo-workflows-manifests"
   "40-gitops/analysis-templates:gitops-analysis-templates"
