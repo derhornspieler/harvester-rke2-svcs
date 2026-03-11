@@ -156,6 +156,26 @@ When a credential needs to rotate (password reset, key rollover, token refresh),
 
 Each namespace gets exactly what it needs. This follows the principle of least privilege—a compromise of one service cannot be leveraged to steal credentials for unrelated services.
 
+### Rancher API Token Lifecycle
+
+The Rancher API token (used by Fleet deployment scripts) is not stored in Vault—instead, it is managed via the interactive `prepare.sh` script:
+
+**Initial Setup:**
+1. Run `./scripts/prepare.sh` in `fleet-gitops/` directory
+2. Enter Rancher admin username and password when prompted
+3. Script logs in to Rancher API, creates a no-expiry global-scope API token, stores in `.env`
+
+**Token Refresh:**
+When your Rancher token expires, refresh it without re-entering credentials:
+```bash
+./scripts/prepare.sh --token-only
+```
+
+This logs in again with your username/password, deletes old `fleet-gitops-deploy` tokens from Rancher, and creates a new API token in `.env`.
+
+**Why not in Vault?**
+The Rancher token is needed *before* Vault is deployed (during Fleet bundle creation). Storing it in `.env` keeps the bootstrap sequence simple: prepare `.env` → push bundles → deploy Fleet bundles → Vault comes online → ESO syncs secrets from Vault.
+
 ### Per-Namespace Vault Roles
 
 For example, the `keycloak` namespace has:
