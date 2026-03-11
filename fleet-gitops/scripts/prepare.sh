@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077  # All created files are owner-only (secrets in .env)
 
 # prepare.sh — Interactive setup for Fleet GitOps deployment environment
 #
@@ -11,7 +12,7 @@ set -euo pipefail
 #   ./prepare.sh --token-only # Skip .env prompts, just refresh Rancher token
 #
 # Prerequisites:
-#   - curl, sed, python3
+#   - curl, python3, jq
 #   - Rancher admin credentials (prompted interactively, not stored)
 
 ###############################################################################
@@ -48,8 +49,8 @@ die()       { log_error "$*"; exit 1; }
 check_prereqs() {
   local missing=()
   command -v curl    &>/dev/null || missing+=("curl")
-  command -v sed     &>/dev/null || missing+=("sed")
   command -v python3 &>/dev/null || missing+=("python3")
+  command -v jq      &>/dev/null || missing+=("jq")
 
   if (( ${#missing[@]} > 0 )); then
     die "Missing required tools: ${missing[*]}"
@@ -60,16 +61,14 @@ check_prereqs() {
 # Helpers
 ###############################################################################
 
-# Mask a secret value for display
+# Mask a secret value for display — show minimal chars to confirm identity
 mask_secret() {
   local val="$1"
   local len=${#val}
-  if (( len <= 4 )); then
+  if (( len <= 8 )); then
     echo "****"
-  elif (( len <= 12 )); then
-    echo "${val:0:3}...${val: -2}"
   else
-    echo "${val:0:10}...${val: -4}"
+    echo "${val:0:4}...${val: -2}"
   fi
 }
 
@@ -96,8 +95,9 @@ prompt_var() {
   local user_input
   read -r user_input
 
+  # SECURITY: use printf -v instead of eval to prevent command injection
   if [[ -n "${user_input}" ]]; then
-    eval "${varname}=\"\${user_input}\""
+    printf -v "${varname}" '%s' "${user_input}"
   fi
 
   # Validate non-empty
@@ -107,29 +107,29 @@ prompt_var() {
 }
 
 # Update a variable in .env — handles both existing and missing keys
-# Uses python3 for safe replacement (avoids sed escaping issues with tokens)
+# Uses python3 for safe replacement with single-quoted values to prevent
+# shell expansion when .env is sourced
 update_env_var() {
   local varname="$1"
   local value="${!varname}"
 
-  if grep -q "^${varname}=" "${ENV_FILE}" 2>/dev/null; then
-    python3 -c "
-import sys, re
+  python3 -c "
+import sys, re, os
 varname, value, path = sys.argv[1], sys.argv[2], sys.argv[3]
+# Single-quote the value to prevent shell expansion when sourced
+# Escape any embedded single quotes: ' → '\''
+safe_value = \"'\" + value.replace(\"'\", \"'\\\\''\" ) + \"'\"
+line = varname + '=' + safe_value
 with open(path, 'r') as f:
     content = f.read()
-content = re.sub(
-    r'^' + re.escape(varname) + r'=.*$',
-    varname + '=' + value,
-    content,
-    flags=re.MULTILINE
-)
+pattern = r'^' + re.escape(varname) + r'=.*$'
+if re.search(pattern, content, flags=re.MULTILINE):
+    content = re.sub(pattern, line, content, flags=re.MULTILINE)
+else:
+    content = content.rstrip('\n') + '\n' + line + '\n'
 with open(path, 'w') as f:
     f.write(content)
 " "${varname}" "${value}" "${ENV_FILE}"
-  else
-    printf '%s=%s\n' "${varname}" "${value}" >> "${ENV_FILE}"
-  fi
 }
 
 ###############################################################################
@@ -142,34 +142,32 @@ rancher_login() {
   local username="$2"
   local password="$3"
 
+  # SECURITY: construct JSON via jq to prevent injection from credentials
+  # containing quotes or special characters. Pipe via stdin to avoid
+  # exposing the password in /proc/cmdline.
+  local payload
+  payload=$(jq -n --arg u "${username}" --arg p "${password}" \
+    '{"username": $u, "password": $p}')
+
   local response
-  response=$(curl -sk \
+  response=$(printf '%s' "${payload}" | curl -sk \
     -X POST \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"${username}\",\"password\":\"${password}\"}" \
+    -d @- \
     "${url}/v3-public/localProviders/local?action=login" 2>/dev/null) || true
 
   local token
-  token=$(echo "${response}" | python3 -c "
+  token=$(printf '%s' "${response}" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     print(d.get('token', ''))
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print('')
 " 2>/dev/null)
 
   if [[ -z "${token}" ]]; then
-    local error_msg
-    error_msg=$(echo "${response}" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('message', 'Unknown error'))
-except:
-    print('Could not parse response')
-" 2>/dev/null)
-    die "Rancher login failed: ${error_msg}"
+    die "Rancher login failed (check credentials and URL)"
   fi
 
   echo "${token}"
@@ -179,27 +177,28 @@ except:
 rancher_cleanup_tokens() {
   local url="$1"
   local session_token="$2"
-  local description_prefix="fleet-gitops-deploy"
 
-  log_info "Checking for existing ${description_prefix} tokens..."
+  log_info "Checking for existing fleet-gitops-deploy tokens..."
 
   # Stream the response through python3 to avoid loading the full /v3/tokens
-  # payload into a shell variable (can be tens of MB on busy Rancher instances)
+  # payload into a shell variable (can be tens of MB on busy Rancher instances).
+  # SECURITY: pass the prefix as a CLI arg to python3, not via shell interpolation
   local token_ids
   token_ids=$(curl -sk \
-    -H "Authorization: Bearer ${session_token}" \
+    --config <(printf 'header = "Authorization: Bearer %s"\n' "${session_token}") \
     "${url}/v3/tokens?limit=200" 2>/dev/null | \
     python3 -c "
 import sys, json
+prefix = sys.argv[1]
 try:
     d = json.load(sys.stdin)
     for t in d.get('data', []):
         desc = t.get('description', '') or ''
-        if desc.startswith('fleet-gitops-deploy'):
+        if desc.startswith(prefix):
             print(t['id'])
-except Exception:
+except (json.JSONDecodeError, KeyError, TypeError):
     pass
-" 2>/dev/null) || true
+" "fleet-gitops-deploy" 2>/dev/null) || true
 
   local count=0
   while IFS= read -r tid; do
@@ -207,7 +206,7 @@ except Exception:
     local code
     code=$(curl -sk -o /dev/null -w "%{http_code}" \
       -X DELETE \
-      -H "Authorization: Bearer ${session_token}" \
+      --config <(printf 'header = "Authorization: Bearer %s"\n' "${session_token}") \
       "${url}/v3/tokens/${tid}" 2>/dev/null)
     if [[ "${code}" == "204" || "${code}" == "200" ]]; then
       ((count++))
@@ -217,9 +216,9 @@ except Exception:
   done <<< "${token_ids}"
 
   if (( count > 0 )); then
-    log_ok "Deleted ${count} old ${description_prefix} token(s)"
+    log_ok "Deleted ${count} old fleet-gitops-deploy token(s)"
   else
-    log_info "No old ${description_prefix} tokens found"
+    log_info "No old fleet-gitops-deploy tokens found"
   fi
 }
 
@@ -231,38 +230,48 @@ rancher_create_token() {
 
   log_info "Creating new API token: ${description}"
 
+  # SECURITY: construct JSON via jq to prevent injection via description
+  local payload
+  payload=$(jq -n --arg desc "${description}" \
+    '{"type": "token", "description": $desc, "ttl": 0}')
+
   local response
-  response=$(curl -sk \
+  response=$(printf '%s' "${payload}" | curl -sk \
     -X POST \
-    -H "Authorization: Bearer ${session_token}" \
+    --config <(printf 'header = "Authorization: Bearer %s"\n' "${session_token}") \
     -H "Content-Type: application/json" \
-    -d "{\"type\":\"token\",\"description\":\"${description}\",\"ttl\":0}" \
+    -d @- \
     "${url}/v3/tokens" 2>/dev/null)
 
   local new_token
-  new_token=$(echo "${response}" | python3 -c "
+  new_token=$(printf '%s' "${response}" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     print(d.get('token', ''))
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print('')
 " 2>/dev/null)
 
   if [[ -z "${new_token}" ]]; then
-    local error_msg
-    error_msg=$(echo "${response}" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('message', 'Unknown error'))
-except:
-    print('Could not parse response')
-" 2>/dev/null)
-    die "Failed to create API token: ${error_msg}"
+    die "Failed to create API token (check Rancher permissions)"
   fi
 
   echo "${new_token}"
+}
+
+# Invalidate the session token after use
+rancher_logout() {
+  local url="$1"
+  local session_token="$2"
+
+  # Extract the token ID (everything before the colon)
+  local session_id="${session_token%%:*}"
+  curl -sk -o /dev/null \
+    -X DELETE \
+    --config <(printf 'header = "Authorization: Bearer %s"\n' "${session_token}") \
+    "${url}/v3/tokens/${session_id}" 2>/dev/null || true
+  log_info "Session token invalidated"
 }
 
 ###############################################################################
@@ -275,7 +284,7 @@ validate_rancher() {
 
   local code
   code=$(curl -sk -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer ${token}" \
+    --config <(printf 'header = "Authorization: Bearer %s"\n' "${token}") \
     "${url}/v3" 2>/dev/null)
 
   if [[ "${code}" == "200" ]]; then
@@ -292,9 +301,10 @@ validate_harbor() {
   local user="$2"
   local pass="$3"
 
+  # SECURITY: pass credentials via --config to avoid exposure in /proc/cmdline
   local code
   code=$(curl -sk -o /dev/null -w "%{http_code}" \
-    -u "${user}:${pass}" \
+    --config <(printf 'user = "%s:%s"\n' "${user}" "${pass}") \
     "https://${host}/api/v2.0/health" 2>/dev/null)
 
   if [[ "${code}" == "200" ]]; then
@@ -310,14 +320,19 @@ validate_root_ca() {
   local root_ca_pem="${SVCS_DIR}/services/pki/roots/root-ca.pem"
   local root_ca_key="${SVCS_DIR}/services/pki/roots/root-ca-key.pem"
 
-  if [[ -f "${root_ca_pem}" && -f "${root_ca_key}" ]]; then
-    log_ok "Root CA files found"
-    return 0
+  if [[ -f "${root_ca_pem}" ]]; then
+    log_ok "Root CA certificate found"
   else
-    log_warn "Root CA files missing (expected at services/pki/roots/root-ca.{pem,key})"
-    log_warn "Phase 2 (Seed Root CA) will fail without these — generate them first"
+    log_warn "Root CA certificate missing (expected at services/pki/roots/root-ca.pem)"
+    log_warn "Phase 2 (Seed Root CA) will fail without it — generate it first"
     return 1
   fi
+
+  if [[ -f "${root_ca_key}" ]]; then
+    log_warn "Root CA private key found on disk — move to offline storage after bootstrap"
+  fi
+
+  return 0
 }
 
 ###############################################################################
@@ -325,11 +340,11 @@ validate_root_ca() {
 ###############################################################################
 
 main() {
-  echo ""
-  echo -e "${BOLD}${BLUE}============================================================${NC}"
-  echo -e "${BOLD}${BLUE}  Fleet GitOps — Environment Preparation${NC}"
-  echo -e "${BOLD}${BLUE}============================================================${NC}"
-  echo ""
+  echo "" >&2
+  echo -e "${BOLD}${BLUE}============================================================${NC}" >&2
+  echo -e "${BOLD}${BLUE}  Fleet GitOps — Environment Preparation${NC}" >&2
+  echo -e "${BOLD}${BLUE}============================================================${NC}" >&2
+  echo "" >&2
 
   check_prereqs
 
@@ -338,11 +353,14 @@ main() {
     if [[ -f "${ENV_EXAMPLE}" ]]; then
       log_info "No .env found — copying from .env.example"
       cp "${ENV_EXAMPLE}" "${ENV_FILE}"
-      log_ok "Created ${ENV_FILE}"
+      chmod 600 "${ENV_FILE}"
+      log_ok "Created ${ENV_FILE} (mode 600)"
     else
       die ".env.example not found at ${ENV_EXAMPLE}"
     fi
   else
+    # Ensure existing .env has restrictive permissions
+    chmod 600 "${ENV_FILE}"
     log_ok "Using existing .env"
   fi
 
@@ -441,6 +459,9 @@ main() {
   RANCHER_TOKEN=$(rancher_create_token "${RANCHER_URL}" "${session_token}")
   log_ok "New API token created: $(mask_secret "${RANCHER_TOKEN}")"
 
+  # Invalidate the session token — no longer needed
+  rancher_logout "${RANCHER_URL}" "${session_token}"
+
   # Write to .env
   update_env_var RANCHER_TOKEN
   log_ok "Token saved to .env"
@@ -458,22 +479,22 @@ main() {
 }
 
 print_summary() {
-  echo ""
-  echo -e "${BOLD}${GREEN}============================================================${NC}"
-  echo -e "${BOLD}${GREEN}  Environment Ready${NC}"
-  echo -e "${BOLD}${GREEN}============================================================${NC}"
-  echo ""
-  echo -e "  Rancher:  ${RANCHER_URL}"
-  echo -e "  Harbor:   ${HARBOR_HOST}"
-  echo -e "  Domain:   ${DOMAIN}"
-  echo -e "  Cluster:  ${FLEET_TARGET_CLUSTER}"
-  echo -e "  Token:    $(mask_secret "${RANCHER_TOKEN}")"
-  echo ""
-  echo -e "  Next steps:"
-  echo -e "    ${BOLD}./scripts/deploy.sh${NC}              # Full deployment"
-  echo -e "    ${BOLD}./scripts/deploy.sh --skip-push${NC}  # Skip chart push"
-  echo -e "    ${BOLD}./scripts/prepare.sh --token-only${NC} # Refresh token only"
-  echo ""
+  echo "" >&2
+  echo -e "${BOLD}${GREEN}============================================================${NC}" >&2
+  echo -e "${BOLD}${GREEN}  Environment Ready${NC}" >&2
+  echo -e "${BOLD}${GREEN}============================================================${NC}" >&2
+  echo "" >&2
+  echo -e "  Rancher:  ${RANCHER_URL}" >&2
+  echo -e "  Harbor:   ${HARBOR_HOST}" >&2
+  echo -e "  Domain:   ${DOMAIN}" >&2
+  echo -e "  Cluster:  ${FLEET_TARGET_CLUSTER}" >&2
+  echo -e "  Token:    $(mask_secret "${RANCHER_TOKEN}")" >&2
+  echo "" >&2
+  echo -e "  Next steps:" >&2
+  echo -e "    ${BOLD}./scripts/deploy.sh${NC}              # Full deployment" >&2
+  echo -e "    ${BOLD}./scripts/deploy.sh --skip-push${NC}  # Skip chart push" >&2
+  echo -e "    ${BOLD}./scripts/prepare.sh --token-only${NC} # Refresh token only" >&2
+  echo "" >&2
 }
 
 main "$@"
