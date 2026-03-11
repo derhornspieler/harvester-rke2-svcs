@@ -69,9 +69,9 @@ See [Platform Overview](docs/architecture/overview.md) for the full diagram.
 
 ### For Operators
 
-1. [Read the Operator's Guide](docs/operator-guide/index.md)
-2. [Follow the Fleet Deployment Guide](docs/operator-guide/fleet-deployment.md)
-3. [Review the Bundle Reference](docs/operator-guide/bundle-reference.md)
+1. **Prepare your environment:** `cd fleet-gitops && ./scripts/prepare.sh`
+2. **Deploy the platform:** Follow [Getting Started Guide](docs/getting-started.md)
+3. **Manage day-2 operations:** See Troubleshooting section for token refresh, bundle updates, and scaling
 
 ### For Developers
 
