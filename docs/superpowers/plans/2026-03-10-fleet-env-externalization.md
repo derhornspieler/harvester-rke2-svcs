@@ -43,6 +43,7 @@ This keeps `.env` lean while allowing full override flexibility.
 ## File Map
 
 ### New files
+
 | File | Purpose |
 |------|---------|
 | `fleet-gitops/.env.example` | All variables documented (ALREADY CREATED) |
@@ -50,6 +51,7 @@ This keeps `.env` lean while allowing full override flexibility.
 | `fleet-gitops/scripts/lib/env-defaults.sh` | Computes derived variables (FQDNs, OIDC URLs, TLS secret names) |
 
 ### Modified files — Scripts (4 files)
+
 | File | Changes |
 |------|---------|
 | `fleet-gitops/scripts/deploy-fleet-helmops.sh` | Use env vars for HARBOR, chart versions, cluster name |
@@ -58,12 +60,15 @@ This keeps `.env` lean while allowing full override flexibility.
 | `fleet-gitops/scripts/deploy.sh` | Use env vars for HARBOR, DOMAIN, TRAEFIK_LB_IP |
 
 ### Modified files — Manifests (~60 files with hardcoded values)
+
 Every file containing `aegisgroup.ch`, hardcoded IPs, inline PEM certs, or hardcoded image references. Organized by bundle group below.
 
 ### Modified files — fleet.yaml (30+ files)
+
 Every `fleet.yaml` with `oci://harbor.aegisgroup.ch` and `clusterName: rke2-prod`.
 
 ### Modified files — values.yaml (8 files)
+
 Helm values files with hardcoded domains, OIDC URLs, database hosts, image references.
 
 ---
@@ -896,7 +901,7 @@ Replace all comment references with generic descriptions or `<DOMAIN>` placehold
 
 Replace environment-specific details in comments:
 - "RKE2 cluster" → "target cluster"
-- "rke2-prod" in comments → "<cluster>"
+- "rke2-prod" in comments → `<cluster>`
 - "Harvester CSI" → "cluster storage class"
 - Node pool descriptions (CPU/RAM specs) → remove or genericize
 

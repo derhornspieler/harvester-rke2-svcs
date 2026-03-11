@@ -117,7 +117,7 @@ Auto-generated `_sidebar.md` from directory structure:
 
 ## Mirror Strategy
 
-**Option chosen: GitLab pull mirror + GitHub push**
+### Option chosen: GitLab pull mirror + GitHub push
 
 - GitLab's built-in pull mirroring syncs from GitHub on a schedule
 - For pushes from GitLab -> GitHub, a CI job pushes to the GitHub remote
@@ -164,7 +164,7 @@ All under `infra_and_platform_services/`:
 Note: `harvester-rke2-cluster` on GitLab may be a mirror of the GitHub cluster
 repo. Verify before deleting — if it has unique CI, keep it.
 
-15. (conditional) harvester-rke2-cluster — verify first
+1. (conditional) harvester-rke2-cluster — verify first
 
 ## Risks
 
