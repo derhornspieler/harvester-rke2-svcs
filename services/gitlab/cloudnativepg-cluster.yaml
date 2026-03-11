@@ -132,6 +132,7 @@ spec:
   ## one instance per node for HA.
   affinity:
     enablePodAntiAffinity: true
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
     nodeSelector:
       workload-type: database

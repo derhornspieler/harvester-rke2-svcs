@@ -6,22 +6,60 @@ stages:
 
 variables:
   REGISTRY: harbor.CHANGEME_DOMAIN
+  HARBOR_PROXY: harbor.CHANGEME_DOMAIN
   IMAGE_NAME: $REGISTRY/library/microservice-demo
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
 
-# Build Docker image with Kaniko
+# Build Docker image with Buildah
 build:image:
   stage: build
-  image:
-    name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
+  image: quay.io/buildah/stable:v1.39
+  variables:
+    STORAGE_DRIVER: vfs
+  before_script:
+    - |
+      cat > /etc/containers/registries.conf <<REGISTRIES
+      unqualified-search-registries = ["docker.io"]
+
+      [[registry]]
+      prefix = "docker.io"
+      location = "${HARBOR_PROXY}/docker.io"
+
+      [[registry]]
+      prefix = "gcr.io"
+      location = "${HARBOR_PROXY}/gcr.io"
+
+      [[registry]]
+      prefix = "ghcr.io"
+      location = "${HARBOR_PROXY}/ghcr.io"
+
+      [[registry]]
+      prefix = "quay.io"
+      location = "${HARBOR_PROXY}/quay.io"
+
+      [[registry]]
+      prefix = "registry.k8s.io"
+      location = "${HARBOR_PROXY}/registry.k8s.io"
+
+      [[registry]]
+      prefix = "dhi.io"
+      location = "${HARBOR_PROXY}/dhi.io"
+      REGISTRIES
+    - |
+      if [ -f /etc/ssl/certs/vault-root-ca.pem ]; then
+        cp /etc/ssl/certs/vault-root-ca.pem /etc/pki/ca-trust/source/anchors/ 2>/dev/null || true
+        update-ca-trust 2>/dev/null || true
+      fi
+    - buildah login -u "${HARBOR_CI_USER}" -p "${HARBOR_CI_PASSWORD}" "${REGISTRY}"
   script:
     - |
-      /kaniko/executor \
-        --context "$CI_PROJECT_DIR" \
-        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
-        --destination "$IMAGE_NAME:$IMAGE_TAG" \
-        --destination "$IMAGE_NAME:latest"
+      buildah bud --layers \
+        -f "$CI_PROJECT_DIR/Dockerfile" \
+        -t "$IMAGE_NAME:$IMAGE_TAG" \
+        -t "$IMAGE_NAME:latest" \
+        "$CI_PROJECT_DIR"
+    - buildah push "$IMAGE_NAME:$IMAGE_TAG"
+    - buildah push "$IMAGE_NAME:latest"
   only:
     - main
 
