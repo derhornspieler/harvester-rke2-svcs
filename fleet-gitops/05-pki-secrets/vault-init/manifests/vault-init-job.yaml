@@ -286,7 +286,7 @@ spec:
               ENDPOLICY'
               vexec policy write eso-reader /tmp/eso-reader.hcl
 
-              ESO_NAMESPACES="database keycloak minio harbor gitlab monitoring gitlab-runners argo-workflows argo-rollouts kube-system external-dns"
+              ESO_NAMESPACES="database keycloak minio harbor gitlab monitoring gitlab-runners argo-workflows argo-rollouts kube-system external-dns argocd"
               for ns in $ESO_NAMESPACES; do
                 local_sa="external-secrets"
                 [[ "$ns" == "external-dns" || "$ns" == "monitoring" || "$ns" == "kube-system" ]] && local_sa="eso-secrets"
@@ -330,6 +330,109 @@ spec:
                   ttl=1h
               done
               log "ESO writer roles created for PushSecret support"
+
+              # --- Step 9: Pre-create per-namespace template policies ---
+              # Per-service init Jobs bind these policies to ESO auth roles.
+              # Scoped to each namespace's own KV path only.
+              for ns in $ESO_NAMESPACES; do
+                kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/eso-reader-${ns}.hcl <<ENDPOLICY
+              path \"kv/data/services/${ns}/*\" {
+                capabilities = [\"read\", \"list\"]
+              }
+              path \"kv/metadata/services/${ns}/*\" {
+                capabilities = [\"read\", \"list\"]
+              }
+              ENDPOLICY"
+                vexec policy write "eso-reader-${ns}" "/tmp/eso-reader-${ns}.hcl"
+
+                kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/eso-writer-${ns}.hcl <<ENDPOLICY
+              path \"kv/data/services/${ns}/*\" {
+                capabilities = [\"create\", \"update\", \"read\", \"list\"]
+              }
+              path \"kv/metadata/services/${ns}/*\" {
+                capabilities = [\"read\", \"list\", \"delete\"]
+              }
+              ENDPOLICY"
+                vexec policy write "eso-writer-${ns}" "/tmp/eso-writer-${ns}.hcl"
+              done
+              log "Per-namespace template policies created"
+
+              # --- Step 10: Admin credential reader policies (scoped) ---
+              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/admin-keycloak-reader.hcl <<ENDPOLICY
+              path "kv/data/admin/keycloak" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY'
+              vexec policy write admin-keycloak-reader /tmp/admin-keycloak-reader.hcl
+
+              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/admin-minio-reader.hcl <<ENDPOLICY
+              path "kv/data/admin/minio" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY'
+              vexec policy write admin-minio-reader /tmp/admin-minio-reader.hcl
+              log "Admin credential reader policies created"
+
+              # --- Step 11: Scoped bootstrap auth roles ---
+              # Base bootstrap (Vault + ESO only):
+              BOOTSTRAP_BASE="keycloak monitoring kube-system external-dns argocd argo-workflows argo-rollouts"
+              for ns in $BOOTSTRAP_BASE; do
+                vexec write "auth/kubernetes/role/bootstrap-base-${ns}" \
+                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-reader-${ns},eso-writer-${ns}" \
+                  ttl=1h
+              done
+
+              # Bootstrap + Keycloak admin access (create OIDC clients):
+              BOOTSTRAP_KEYCLOAK="keycloak monitoring harbor gitlab argocd"
+              for ns in $BOOTSTRAP_KEYCLOAK; do
+                vexec write "auth/kubernetes/role/bootstrap-keycloak-${ns}" \
+                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-reader-${ns},eso-writer-${ns},admin-keycloak-reader" \
+                  ttl=1h
+              done
+
+              # Bootstrap + MinIO admin access (create buckets + access keys):
+              BOOTSTRAP_MINIO="harbor gitlab"
+              for ns in $BOOTSTRAP_MINIO; do
+                vexec write "auth/kubernetes/role/bootstrap-minio-${ns}" \
+                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-reader-${ns},eso-writer-${ns},admin-minio-reader" \
+                  ttl=1h
+              done
+
+              # ClusterSecretStore reader for bootstrap ExternalSecrets
+              vexec write "auth/kubernetes/role/bootstrap-cluster-reader" \
+                bound_service_account_names="eso-secrets" \
+                bound_service_account_namespaces="external-secrets" \
+                policies="admin-keycloak-reader,admin-minio-reader" \
+                ttl=1h
+              log "Bootstrap auth roles created"
+
+              # --- Step 12: Seed admin credentials (idempotent) ---
+              EXISTING_KC_PASS=$(vexec kv get -field=admin-password kv/admin/keycloak 2>/dev/null || true)
+              if [[ -z "${EXISTING_KC_PASS}" ]]; then
+                KEYCLOAK_ADMIN_PASS=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32)
+                vexec kv put kv/admin/keycloak admin-password="${KEYCLOAK_ADMIN_PASS}"
+                log "Seeded Keycloak admin password"
+              else
+                log "Keycloak admin password already exists, skipping"
+              fi
+
+              EXISTING_MINIO_PASS=$(vexec kv get -field=root-password kv/admin/minio 2>/dev/null || true)
+              if [[ -z "${EXISTING_MINIO_PASS}" ]]; then
+                MINIO_ROOT_USER="minio-admin"
+                MINIO_ROOT_PASS=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32)
+                vexec kv put kv/admin/minio \
+                  root-user="${MINIO_ROOT_USER}" \
+                  root-password="${MINIO_ROOT_PASS}"
+                log "Seeded MinIO root credentials"
+              else
+                log "MinIO root credentials already exist, skipping"
+              fi
 
               log "Vault init Job complete — all phases successful"
           securityContext:
