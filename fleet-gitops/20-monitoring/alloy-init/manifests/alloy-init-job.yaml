@@ -1,0 +1,72 @@
+---
+# alloy-init: Binds ESO reader/writer roles for the monitoring namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-base-monitoring role). NO root token.
+# Requires: Vault unsealed with K8s auth configured.
+# No OIDC client needed — Alloy has no user-facing UI.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: alloy-init
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alloy-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: alloy-init
+    spec:
+      serviceAccountName: monitoring-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: init-lib
+          configMap:
+            name: init-lib
+      containers:
+        - name: alloy-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # alloy-init: bind ESO roles for monitoring namespace
+              # Idempotent — safe to re-run.
+
+              source /init-lib/init-lib.sh
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-base-monitoring"
+
+              # --- Bind ESO reader/writer roles for monitoring namespace ---
+              log "[INFO] Binding ESO roles for monitoring namespace..."
+              vault_bind_eso_roles "monitoring"
+
+              log "[INFO] Alloy init complete"
+          volumeMounts:
+            - name: init-lib
+              mountPath: /init-lib
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

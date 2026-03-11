@@ -118,7 +118,8 @@ HELMOP_DEFS=(
   "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait|05-pki-secrets/external-secrets/values.yaml"
 
   # 10-identity (depends on pki)
-  "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-external-secrets,operators-cnpg|"
+  "identity-keycloak-init|oci://${HARBOR}/fleet/identity-keycloak-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-init|pki-external-secrets|"
+  "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|identity-keycloak-init,operators-cnpg|"
   "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
   "identity-keycloak-realm-init|oci://${HARBOR}/fleet/identity-keycloak-realm-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-realm-init|identity-keycloak|"
   # NOT YET: LDAP federation requires FreeIPA to be running
@@ -135,12 +136,17 @@ HELMOP_DEFS=(
   "infra-auth-hubble|oci://${HARBOR}/fleet/infra-auth-hubble|${BUNDLE_VERSION}|monitoring|infra-auth-hubble|identity-keycloak-realm-init|"
 
   # 20-monitoring (depends on pki + identity — waits for full identity stack)
-  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|pki-external-secrets,operators-cnpg,identity-keycloak-realm-init|"
-  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|pki-external-secrets,identity-keycloak-realm-init|"
-  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|identity-keycloak-realm-init|"
-  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|identity-keycloak-realm-init|"
+  "monitoring-grafana-init|oci://${HARBOR}/fleet/monitoring-grafana-init|${BUNDLE_VERSION}|monitoring|monitoring-grafana-init|identity-keycloak-realm-init,pki-external-secrets|"
+  "monitoring-prometheus-init|oci://${HARBOR}/fleet/monitoring-prometheus-init|${BUNDLE_VERSION}|monitoring|monitoring-prometheus-init|identity-keycloak-realm-init,pki-external-secrets|"
+  "monitoring-alertmanager-init|oci://${HARBOR}/fleet/monitoring-alertmanager-init|${BUNDLE_VERSION}|monitoring|monitoring-alertmanager-init|identity-keycloak-realm-init,pki-external-secrets|"
+  "monitoring-loki-init|oci://${HARBOR}/fleet/monitoring-loki-init|${BUNDLE_VERSION}|monitoring|monitoring-loki-init|pki-external-secrets|"
+  "monitoring-alloy-init|oci://${HARBOR}/fleet/monitoring-alloy-init|${BUNDLE_VERSION}|monitoring|monitoring-alloy-init|pki-external-secrets|"
+  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|monitoring-grafana-init,operators-cnpg|"
+  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|monitoring-grafana-init|"
+  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|monitoring-loki-init|"
+  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|monitoring-alloy-init|"
   "monitoring-prometheus-stack|oci://${HARBOR}/helm/kube-prometheus-stack|${CHART_VER_PROMETHEUS_STACK}|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
-  "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack|"
+  "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack,monitoring-prometheus-init,monitoring-alertmanager-init|"
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
   # harbor-credentials runs early to generate+push harbor creds to Vault before minio needs them
@@ -530,8 +536,8 @@ purge_harbor_oci() {
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-realm-init
-    monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
+    identity-cnpg-keycloak identity-keycloak identity-keycloak-realm-init identity-keycloak-init
+    monitoring-grafana-init monitoring-prometheus-init monitoring-alertmanager-init monitoring-loki-init monitoring-alloy-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-credentials gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
