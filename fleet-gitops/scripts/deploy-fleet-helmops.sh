@@ -745,28 +745,49 @@ import json,sys
   }
 
   # Seed Harvester kubeconfig (for golden-image-builder runner)
-  if [[ -n "${HARVESTER_KUBECONFIG_PATH:-}" ]]; then
-    # Resolve relative path against FLEET_DIR
-    local kc_path="${HARVESTER_KUBECONFIG_PATH}"
-    if [[ "${kc_path}" != /* ]]; then
-      kc_path="${FLEET_DIR}/${kc_path#./}"
-    fi
-    if [[ -f "${kc_path}" ]]; then
-      local existing
-      existing=$(_vexec kv get -field=kubeconfig kv/services/ci/harvester-kubeconfig 2>/dev/null || true)
-      if [[ -n "${existing}" ]]; then
-        log_ok "Harvester kubeconfig already in Vault"
-      else
-        local kc_content
-        kc_content=$(cat "${kc_path}")
-        _vexec kv put kv/services/ci/harvester-kubeconfig kubeconfig="${kc_content}"
-        log_ok "Seeded Harvester kubeconfig into Vault (services/ci/harvester-kubeconfig)"
-      fi
-    else
-      log_warn "HARVESTER_KUBECONFIG_PATH=${HARVESTER_KUBECONFIG_PATH} — file not found at ${kc_path}"
-    fi
+  local existing
+  existing=$(_vexec kv get -field=kubeconfig kv/services/ci/harvester-kubeconfig 2>/dev/null || true)
+  if [[ -n "${existing}" ]]; then
+    log_ok "Harvester kubeconfig already in Vault"
   else
-    log_warn "HARVESTER_KUBECONFIG_PATH not set in .env — gitlab-runners harvester-kubeconfig will not sync"
+    local kc_content=""
+
+    # Try 1: Fetch from Rancher API (Harvester is a registered cluster)
+    local harvester_id
+    harvester_id=$(rancher_api GET "/v3/clusters" | python3 -c "
+import json,sys
+for c in json.load(sys.stdin).get('data',[]):
+    if c.get('name') not in ('local','${FLEET_TARGET_CLUSTER}','') and c.get('state')=='active':
+        print(c['id'])
+        break
+" 2>/dev/null || echo "")
+
+    if [[ -n "${harvester_id}" ]]; then
+      kc_content=$(rancher_api POST "/v3/clusters/${harvester_id}?action=generateKubeconfig" | \
+        python3 -c "import json,sys; print(json.load(sys.stdin).get('config',''))" 2>/dev/null || echo "")
+      if [[ -n "${kc_content}" ]]; then
+        log_info "Fetched Harvester kubeconfig from Rancher API (cluster ${harvester_id})"
+      fi
+    fi
+
+    # Try 2: Fall back to local file from .env
+    if [[ -z "${kc_content}" && -n "${HARVESTER_KUBECONFIG_PATH:-}" ]]; then
+      local kc_path="${HARVESTER_KUBECONFIG_PATH}"
+      if [[ "${kc_path}" != /* ]]; then
+        kc_path="${FLEET_DIR}/${kc_path#./}"
+      fi
+      if [[ -f "${kc_path}" ]]; then
+        kc_content=$(cat "${kc_path}")
+        log_info "Using Harvester kubeconfig from ${kc_path}"
+      fi
+    fi
+
+    if [[ -n "${kc_content}" ]]; then
+      _vexec kv put kv/services/ci/harvester-kubeconfig kubeconfig="${kc_content}"
+      log_ok "Seeded Harvester kubeconfig into Vault (services/ci/harvester-kubeconfig)"
+    else
+      log_warn "Could not obtain Harvester kubeconfig (not in Rancher API or HARVESTER_KUBECONFIG_PATH) — gitlab-runners will not sync"
+    fi
   fi
 }
 
