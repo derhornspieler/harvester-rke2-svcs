@@ -1,0 +1,163 @@
+---
+# gitlab-init: Bootstrap Vault ESO roles, SecretStore, OIDC client, MinIO
+# buckets/user, and seed credentials for the gitlab namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-keycloak-gitlab role). NO root token.
+# Requires: Vault unsealed, Keycloak running, MinIO running,
+#           keycloak-admin-bootstrap and minio-admin-bootstrap secrets.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitlab-init
+  namespace: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitlab-init
+    spec:
+      serviceAccountName: gitlab-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: init-lib
+          configMap:
+            name: init-lib
+        - name: bootstrap-secrets
+          secret:
+            secretName: keycloak-admin-bootstrap
+      containers:
+        - name: gitlab-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+            - name: MINIO_ENDPOINT
+              value: "${MINIO_INTERNAL_URL}"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-password
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # gitlab-init: ESO roles, SecretStore, OIDC client, MinIO buckets/user,
+              # GitLab service credentials (Gitaly, Praefect, Redis, DB, Runner).
+              # Idempotent — safe to re-run.
+
+              source /init-lib/init-lib.sh
+
+              DOMAIN="${DOMAIN}"
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-keycloak-gitlab"
+
+              # --- Bind ESO reader/writer roles for gitlab namespace ---
+              vault_bind_eso_roles "gitlab"
+
+              # --- Create namespace SecretStores ---
+              vault_create_secretstore "gitlab"
+
+              # --- Create GitLab OIDC client in Keycloak ---
+              log "[INFO] Creating GitLab OIDC client..."
+              keycloak_create_oidc_client "gitlab" \
+                "https://gitlab.${DOMAIN}/users/auth/openid_connect/callback" \
+                "disabled"
+              log "[INFO] GitLab OIDC client created"
+
+              # --- MinIO: setup alias, create buckets, create service user ---
+              log "[INFO] Configuring MinIO for GitLab..."
+              minio_setup_alias
+              minio_create_bucket "gitlab-lfs"
+              minio_create_bucket "gitlab-artifacts"
+              minio_create_bucket "gitlab-uploads"
+              minio_create_bucket "gitlab-packages"
+              minio_create_bucket "gitlab-pages"
+              minio_create_bucket "gitlab-mr-diffs"
+              minio_create_bucket "gitlab-terraform"
+              minio_create_bucket "gitlab-ci-secure-files"
+              minio_create_bucket "gitlab-dependency-proxy"
+              minio_create_service_user "gitlab-sa" "gitlab-*" "services/gitlab/minio-storage"
+              log "[INFO] MinIO configuration complete"
+
+              # --- Generate and store Gitaly token ---
+              log "[INFO] Seeding Gitaly credentials..."
+              GITALY_TOKEN=$(vault_get_or_generate "services/gitlab/gitaly-secret" "token" 64)
+              vault_kv_put "services/gitlab/gitaly-secret" \
+                token="${GITALY_TOKEN}"
+              log "[INFO] Gitaly credentials stored"
+
+              # --- Generate and store Praefect token ---
+              log "[INFO] Seeding Praefect credentials..."
+              PRAEFECT_TOKEN=$(vault_get_or_generate "services/gitlab/praefect-secret" "token" 64)
+              vault_kv_put "services/gitlab/praefect-secret" \
+                token="${PRAEFECT_TOKEN}"
+              log "[INFO] Praefect credentials stored"
+
+              # --- Generate and store Praefect DB secret ---
+              log "[INFO] Seeding Praefect DB credentials..."
+              PRAEFECT_DB_SECRET=$(vault_get_or_generate "services/gitlab/praefect-dbsecret" "secret" 32)
+              vault_kv_put "services/gitlab/praefect-dbsecret" \
+                secret="${PRAEFECT_DB_SECRET}"
+              log "[INFO] Praefect DB credentials stored"
+
+              # --- Generate and store Redis password ---
+              log "[INFO] Seeding Redis credentials..."
+              REDIS_PASSWORD=$(vault_get_or_generate "services/gitlab/redis" "password" 32)
+              vault_kv_put "services/gitlab/redis" \
+                password="${REDIS_PASSWORD}"
+              log "[INFO] Redis credentials stored"
+
+              # --- Generate and store GitLab DB password ---
+              log "[INFO] Seeding gitlab-pg database credentials..."
+              DB_PASSWORD=$(vault_get_or_generate "services/database/gitlab-pg" "password" 32)
+              vault_kv_put "services/database/gitlab-pg" \
+                username="gitlab" \
+                password="${DB_PASSWORD}"
+              log "[INFO] gitlab-pg database credentials stored"
+
+              # --- Generate and store Runner registration token ---
+              log "[INFO] Seeding Runner registration token..."
+              RUNNER_TOKEN=$(vault_get_or_generate "services/gitlab/runner-token" "token" 32)
+              vault_kv_put "services/gitlab/runner-token" \
+                token="${RUNNER_TOKEN}"
+              log "[INFO] Runner registration token stored"
+
+              log "[INFO] gitlab-init complete"
+          volumeMounts:
+            - name: init-lib
+              mountPath: /init-lib
+              readOnly: true
+            - name: bootstrap-secrets
+              mountPath: /secrets
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

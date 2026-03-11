@@ -79,7 +79,7 @@ BUNDLES=(
   "40-gitops/argo-rollouts-manifests:gitops-argo-rollouts-manifests"
   "40-gitops/argo-workflows-manifests:gitops-argo-workflows-manifests"
   "40-gitops/analysis-templates:gitops-analysis-templates"
-  "50-gitlab/gitlab-credentials:gitlab-credentials"
+  "50-gitlab/gitlab-init:gitlab-init"
   "50-gitlab/cnpg-gitlab:gitlab-cnpg-gitlab"
   "50-gitlab/redis:gitlab-redis"
   "50-gitlab/gitlab-ready:gitlab-ready"
