@@ -59,6 +59,7 @@ BUNDLES=(
   "30-harbor/cnpg-harbor:harbor-cnpg-harbor"
   "30-harbor/valkey:harbor-valkey"
   "30-harbor/harbor-manifests:harbor-manifests"
+  "40-gitops/argocd-credentials:gitops-argocd-credentials"
   "40-gitops/argocd-manifests:gitops-argocd-manifests"
   "40-gitops/argo-rollouts-manifests:gitops-argo-rollouts-manifests"
   "40-gitops/argo-workflows-manifests:gitops-argo-workflows-manifests"
