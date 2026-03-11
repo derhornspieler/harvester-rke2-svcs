@@ -103,8 +103,9 @@ HELMOP_DEFS=(
   "pki-vault|oci://${HARBOR}/helm/vault|${CHART_VER_VAULT}|vault|vault|operators-cnpg|05-pki-secrets/vault/values.yaml"
   "pki-vault-init|oci://${HARBOR}/fleet/pki-vault-init|${BUNDLE_VERSION}|vault|pki-vault-init|pki-vault|"
   "pki-vault-unsealer|oci://${HARBOR}/fleet/pki-vault-unsealer|${BUNDLE_VERSION}|vault|pki-vault-unsealer|pki-vault-init|"
+  "pki-vault-init-wait|oci://${HARBOR}/fleet/pki-vault-init-wait|${BUNDLE_VERSION}|vault|pki-vault-init-wait|pki-vault-init|"
   "pki-vault-pki-issuer|oci://${HARBOR}/fleet/pki-vault-pki-issuer|${BUNDLE_VERSION}|cert-manager|pki-vault-pki-issuer|pki-vault-init,pki-cert-manager|"
-  "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init|05-pki-secrets/external-secrets/values.yaml"
+  "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait|05-pki-secrets/external-secrets/values.yaml"
 
   # 10-identity (depends on pki)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-external-secrets,operators-cnpg|"

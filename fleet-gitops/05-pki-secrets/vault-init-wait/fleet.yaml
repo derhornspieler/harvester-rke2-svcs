@@ -1,0 +1,7 @@
+defaultNamespace: vault
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: vault-init
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}

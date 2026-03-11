@@ -1,0 +1,115 @@
+---
+# vault-init-wait: Sentinel job that blocks Fleet bundle readiness until
+# vault-init has finished configuring Vault K8s auth roles.
+#
+# Fleet marks a bundle "Ready" when resources are applied, NOT when Jobs
+# complete. This job waits for the vault-init Job to succeed, then verifies
+# Vault K8s auth is functional by attempting a login. Downstream bundles
+# (external-secrets) depend on this bundle instead of vault-init directly.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init-wait
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init-wait
+  namespace: vault
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init-wait
+  namespace: vault
+subjects:
+  - kind: ServiceAccount
+    name: vault-init-wait
+    namespace: vault
+roleRef:
+  kind: Role
+  name: vault-init-wait
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init-wait
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault-init-wait
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-init-wait
+    spec:
+      serviceAccountName: vault-init-wait
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wait
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              log() { echo "[$(date +%H:%M:%S)] $*"; }
+
+              # Phase 1: Wait for vault-init Job to complete
+              log "Waiting for vault-init Job to complete..."
+              for i in $(seq 1 120); do
+                status=$(kubectl get job vault-init -n vault \
+                  -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
+                if [[ "$status" == "True" ]]; then
+                  log "vault-init Job completed successfully"
+                  break
+                fi
+                failed=$(kubectl get job vault-init -n vault \
+                  -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+                if [[ "$failed" == "True" ]]; then
+                  log "FATAL: vault-init Job failed"
+                  exit 1
+                fi
+                sleep 5
+              done
+              [[ "$status" == "True" ]] || { log "FATAL: vault-init did not complete within 10 minutes"; exit 1; }
+
+              # Phase 2: Verify Vault K8s auth is functional
+              log "Verifying Vault K8s auth endpoint is responsive..."
+              VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+              for i in $(seq 1 12); do
+                http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+                  "${VAULT_ADDR}/v1/auth/kubernetes/config" 2>/dev/null || echo "000")
+                if [[ "$http_code" == "200" || "$http_code" == "403" ]]; then
+                  log "Vault K8s auth endpoint is responsive (HTTP ${http_code})"
+                  break
+                fi
+                sleep 5
+              done
+
+              log "Vault init verification complete — safe for ESO to deploy"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi

@@ -43,6 +43,7 @@ BUNDLES=(
   "00-operators/storage-autoscaler:operators-storage-autoscaler"
   "00-operators/gateway-api-crds:operators-gateway-api-crds"
   "05-pki-secrets/vault-init:pki-vault-init"
+  "05-pki-secrets/vault-init-wait:pki-vault-init-wait"
   "05-pki-secrets/vault-unsealer:pki-vault-unsealer"
   "05-pki-secrets/vault-pki-issuer:pki-vault-pki-issuer"
   "10-identity/cnpg-keycloak:identity-cnpg-keycloak"
