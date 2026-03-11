@@ -65,6 +65,7 @@ BUNDLES=(
   "40-gitops/analysis-templates:gitops-analysis-templates"
   "50-gitlab/cnpg-gitlab:gitlab-cnpg-gitlab"
   "50-gitlab/redis:gitlab-redis"
+  "50-gitlab/gitlab-ready:gitlab-ready"
   "50-gitlab/gitlab-manifests:gitlab-manifests"
   "50-gitlab/runners:gitlab-runners"
 )

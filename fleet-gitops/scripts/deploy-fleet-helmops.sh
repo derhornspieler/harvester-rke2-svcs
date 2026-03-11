@@ -138,19 +138,20 @@ HELMOP_DEFS=(
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
   "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config|40-gitops/argocd/values.yaml"
-  "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|identity-keycloak-config|"
+  "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|identity-keycloak-config,gitlab-ready|"
   "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
   "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
-  "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows|"
+  "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows,gitlab-ready|"
   "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|identity-keycloak-config|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
   "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-config,operators-cnpg|"
   "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-config,operators-redis|"
   "gitlab-core|oci://${HARBOR}/helm/gitlab|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
-  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|identity-keycloak-config,operators-gateway-api-crds|"
-  "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-core|"
+  "gitlab-ready|oci://${HARBOR}/fleet/gitlab-ready|${BUNDLE_VERSION}|gitlab|gitlab-ready|gitlab-core|"
+  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,identity-keycloak-config,operators-gateway-api-crds|"
+  "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
   "gitlab-runner-golden-image|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/runners/golden-image-runner-values.yaml"
 )
@@ -257,6 +258,23 @@ print(json.dumps(d))
           values: $values[0],
           takeOwnership: true,
           waitForJobs: true
+        },
+        correctDrift: {
+          enabled: false
+        },
+        diff: {
+          comparePatches: [
+            {
+              apiVersion: "apps/v1",
+              kind: "Deployment",
+              jsonPointers: ["/spec/replicas"]
+            },
+            {
+              apiVersion: "apps/v1",
+              kind: "StatefulSet",
+              jsonPointers: ["/spec/replicas"]
+            }
+          ]
         },
         helmSecretName: "harbor-helm-ca",
         dependsOn: $deps,
@@ -481,7 +499,7 @@ purge_harbor_oci() {
     monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-manifests gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
-    gitlab-cnpg-gitlab gitlab-redis gitlab-manifests gitlab-runners
+    gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
   )
 
   for repo in "${bundle_names[@]}"; do
