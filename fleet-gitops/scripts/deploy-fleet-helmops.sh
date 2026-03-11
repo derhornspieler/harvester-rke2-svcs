@@ -60,8 +60,17 @@ load_config() {
     set +a
   fi
 
-  [[ -n "${RANCHER_URL:-}" ]] || die "RANCHER_URL not set (export it or add to ${env_file})"
-  [[ -n "${RANCHER_TOKEN:-}" ]] || die "RANCHER_TOKEN not set (export it or add to ${env_file})"
+  [[ -n "${RANCHER_URL:-}" ]] || die "RANCHER_URL not set — run ./scripts/prepare.sh first"
+  [[ -n "${RANCHER_TOKEN:-}" ]] || die "RANCHER_TOKEN not set — run ./scripts/prepare.sh first"
+
+  # Validate token is still active
+  local http_code
+  http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer ${RANCHER_TOKEN}" \
+    "${RANCHER_URL}/v3" 2>/dev/null)
+  if [[ "${http_code}" != "200" ]]; then
+    die "Rancher token expired or invalid (HTTP ${http_code}) — run ./scripts/prepare.sh --token-only to refresh"
+  fi
 }
 
 # --- Rancher API ---
