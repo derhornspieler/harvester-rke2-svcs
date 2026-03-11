@@ -173,13 +173,12 @@ HELMOP_DEFS=(
   "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|gitops-rollouts-init|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
-  # gitlab-credentials runs early to generate+push gitlab creds to Vault before minio/cnpg need them
-  "gitlab-credentials|oci://${HARBOR}/fleet/gitlab-credentials|${BUNDLE_VERSION}|gitlab|gitlab-credentials|gitlab-redis|"
-  "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-realm-init,operators-cnpg,gitlab-credentials|"
-  "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-realm-init,operators-redis|"
+  "gitlab-init|oci://${HARBOR}/fleet/gitlab-init|${BUNDLE_VERSION}|gitlab|gitlab-init|minio,identity-keycloak-realm-init,pki-external-secrets|"
+  "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|gitlab-init,operators-cnpg|"
+  "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|gitlab-init,operators-redis|"
   "gitlab-core|oci://${HARBOR}/helm/gitlab|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
   "gitlab-ready|oci://${HARBOR}/fleet/gitlab-ready|${BUNDLE_VERSION}|gitlab|gitlab-ready|gitlab-core|"
-  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,identity-keycloak-realm-init,operators-gateway-api-crds|"
+  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,gitlab-init,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
   "gitlab-runner-golden-image|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/runners/golden-image-runner-values.yaml"
@@ -544,7 +543,7 @@ purge_harbor_oci() {
     monitoring-grafana-init monitoring-prometheus-init monitoring-alertmanager-init monitoring-loki-init monitoring-alloy-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     harbor-init minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-init gitops-rollouts-init gitops-workflows-init gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
-    gitlab-credentials gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
+    gitlab-init gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
   )
 
   for repo in "${bundle_names[@]}"; do
