@@ -117,6 +117,12 @@ export RBAC_GROUP_SENIOR_DEVS="${RBAC_GROUP_SENIOR_DEVS:-senior-developers}"
 export RBAC_GROUP_DEVS="${RBAC_GROUP_DEVS:-developers}"
 
 # --- Root CA cert content (read from file if provided) ---
+# Resolve relative paths against FLEET_DIR (parent of scripts/)
+if [[ -n "${ROOT_CA_PEM_FILE:-}" && "${ROOT_CA_PEM_FILE}" != /* ]]; then
+  _ENV_DEFAULTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  _FLEET_DIR="$(dirname "$(dirname "${_ENV_DEFAULTS_DIR}")")"
+  ROOT_CA_PEM_FILE="${_FLEET_DIR}/${ROOT_CA_PEM_FILE#./}"
+fi
 if [[ -n "${ROOT_CA_PEM_FILE:-}" && -f "${ROOT_CA_PEM_FILE}" ]]; then
   export ROOT_CA_PEM_CONTENT
   ROOT_CA_PEM_CONTENT="$(cat "${ROOT_CA_PEM_FILE}")"
