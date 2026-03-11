@@ -25,8 +25,8 @@ stages:
 
 variables:
   HARBOR_REGISTRY: harbor.dev.${DOMAIN}
-  HARBOR_PROJECT: idp
   HARBOR_PROXY: harbor.${DOMAIN}
+  HARBOR_PROJECT: idp
   BACKEND_IMAGE: ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/identity-portal-backend
   FRONTEND_IMAGE: ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/identity-portal-frontend
   IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
@@ -48,7 +48,7 @@ default:
 
 golangci-lint:
   stage: lint
-  image: ${HARBOR_PROXY}/docker.io/golangci/golangci-lint:v2.7.2-alpine
+  image: docker.io/golangci/golangci-lint:v2.7.2-alpine
   script:
     - golangci-lint run --timeout 5m ./...
   rules:
@@ -60,7 +60,7 @@ golangci-lint:
 
 eslint:
   stage: lint
-  image: ${HARBOR_PROXY}/docker.io/library/node:22-alpine
+  image: docker.io/library/node:22-alpine
   script:
     - cd frontend && npm ci --prefer-offline
     - npx eslint .
@@ -70,7 +70,7 @@ eslint:
 
 hadolint-backend:
   stage: lint
-  image: ${HARBOR_PROXY}/docker.io/hadolint/hadolint:v2.12.0-alpine
+  image: docker.io/hadolint/hadolint:v2.12.0-alpine
   script:
     - hadolint Dockerfile
   rules:
@@ -79,7 +79,7 @@ hadolint-backend:
 
 hadolint-frontend:
   stage: lint
-  image: ${HARBOR_PROXY}/docker.io/hadolint/hadolint:v2.12.0-alpine
+  image: docker.io/hadolint/hadolint:v2.12.0-alpine
   script:
     - hadolint frontend/Dockerfile
   rules:
@@ -92,7 +92,7 @@ hadolint-frontend:
 
 go-test:
   stage: test
-  image: ${HARBOR_PROXY}/docker.io/library/golang:1.25.7-alpine
+  image: docker.io/library/golang:1.25.7-alpine
   script:
     - apk add --no-cache gcc musl-dev
     - go test -v -race -coverprofile=coverage.out ./...
@@ -109,34 +109,66 @@ go-test:
         - go.sum
 
 # ---------------------------------------------------------------------------
-# Build (Kaniko)
+# Build (Buildah)
 # ---------------------------------------------------------------------------
 
+.buildah-setup:
+  image: quay.io/buildah/stable:v1.39
+  variables:
+    STORAGE_DRIVER: vfs
+  before_script:
+    - |
+      cat > /etc/containers/registries.conf <<REGISTRIES
+      unqualified-search-registries = ["docker.io"]
+
+      [[registry]]
+      prefix = "docker.io"
+      location = "${HARBOR_PROXY}/docker.io"
+
+      [[registry]]
+      prefix = "gcr.io"
+      location = "${HARBOR_PROXY}/gcr.io"
+
+      [[registry]]
+      prefix = "ghcr.io"
+      location = "${HARBOR_PROXY}/ghcr.io"
+
+      [[registry]]
+      prefix = "quay.io"
+      location = "${HARBOR_PROXY}/quay.io"
+
+      [[registry]]
+      prefix = "registry.k8s.io"
+      location = "${HARBOR_PROXY}/registry.k8s.io"
+
+      [[registry]]
+      prefix = "dhi.io"
+      location = "${HARBOR_PROXY}/dhi.io"
+      REGISTRIES
+    - |
+      if [ -f /etc/ssl/certs/vault-root-ca.pem ]; then
+        cp /etc/ssl/certs/vault-root-ca.pem /etc/pki/ca-trust/source/anchors/ 2>/dev/null || true
+        update-ca-trust 2>/dev/null || true
+      fi
+    - buildah login -u "$(cat $HARBOR_CI_USER)" -p "$(cat $HARBOR_CI_PASSWORD)" "${HARBOR_REGISTRY}"
+
 build-backend:
+  extends: .buildah-setup
   stage: build
-  image:
-    name: ${HARBOR_PROXY}/gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
   secrets:
     HARBOR_CI_USER:
       vault: ci/harbor-push/username@kv
     HARBOR_CI_PASSWORD:
       vault: ci/harbor-push/password@kv
   script:
-    - mkdir -p /kaniko/.docker
     - |
-      echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"username\":\"$(cat $HARBOR_CI_USER)\",\"password\":\"$(cat $HARBOR_CI_PASSWORD)\"}}}" \
-        > /kaniko/.docker/config.json
-    - |
-      /kaniko/executor \
-        --context "${CI_PROJECT_DIR}" \
-        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-        --destination "${BACKEND_IMAGE}:${IMAGE_TAG}" \
-        --destination "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
-        --cache=true \
-        --cache-repo="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/ci-cache/backend" \
-        --snapshot-mode=redo \
-        --registry-certificate "${HARBOR_REGISTRY}=/etc/ssl/certs/vault-root-ca.pem"
+      buildah bud --layers \
+        -f "${CI_PROJECT_DIR}/Dockerfile" \
+        -t "${BACKEND_IMAGE}:${IMAGE_TAG}" \
+        -t "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        "${CI_PROJECT_DIR}"
+    - buildah push "${BACKEND_IMAGE}:${IMAGE_TAG}"
+    - buildah push "${BACKEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
   rules:
     - changes:
         - "**/*.go"
@@ -146,30 +178,22 @@ build-backend:
         - .dockerignore
 
 build-frontend:
+  extends: .buildah-setup
   stage: build
-  image:
-    name: ${HARBOR_PROXY}/gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
   secrets:
     HARBOR_CI_USER:
       vault: ci/harbor-push/username@kv
     HARBOR_CI_PASSWORD:
       vault: ci/harbor-push/password@kv
   script:
-    - mkdir -p /kaniko/.docker
     - |
-      echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"username\":\"$(cat $HARBOR_CI_USER)\",\"password\":\"$(cat $HARBOR_CI_PASSWORD)\"}}}" \
-        > /kaniko/.docker/config.json
-    - |
-      /kaniko/executor \
-        --context "${CI_PROJECT_DIR}/frontend" \
-        --dockerfile "${CI_PROJECT_DIR}/frontend/Dockerfile" \
-        --destination "${FRONTEND_IMAGE}:${IMAGE_TAG}" \
-        --destination "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
-        --cache=true \
-        --cache-repo="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/ci-cache/frontend" \
-        --snapshot-mode=redo \
-        --registry-certificate "${HARBOR_REGISTRY}=/etc/ssl/certs/vault-root-ca.pem"
+      buildah bud --layers \
+        -f "${CI_PROJECT_DIR}/frontend/Dockerfile" \
+        -t "${FRONTEND_IMAGE}:${IMAGE_TAG}" \
+        -t "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        "${CI_PROJECT_DIR}/frontend"
+    - buildah push "${FRONTEND_IMAGE}:${IMAGE_TAG}"
+    - buildah push "${FRONTEND_IMAGE}:${CI_COMMIT_REF_SLUG}"
   rules:
     - changes:
         - "frontend/**"
@@ -181,7 +205,7 @@ build-frontend:
 trivy-backend:
   stage: scan
   image:
-    name: ${HARBOR_PROXY}/docker.io/aquasec/trivy:0.69.3
+    name: docker.io/aquasec/trivy:0.69.3
     entrypoint: [""]
   secrets:
     TRIVY_USERNAME:
@@ -205,7 +229,7 @@ trivy-backend:
 trivy-frontend:
   stage: scan
   image:
-    name: ${HARBOR_PROXY}/docker.io/aquasec/trivy:0.69.3
+    name: docker.io/aquasec/trivy:0.69.3
     entrypoint: [""]
   secrets:
     TRIVY_USERNAME:
@@ -230,7 +254,7 @@ trivy-frontend:
 gitleaks:
   stage: scan
   image:
-    name: ${HARBOR_PROXY}/docker.io/zricethezav/gitleaks:v8.30.0
+    name: docker.io/zricethezav/gitleaks:v8.30.0
     entrypoint: [""]
   script:
     - gitleaks detect --source . --verbose --redact
@@ -240,7 +264,7 @@ gitleaks:
 
 semgrep:
   stage: scan
-  image: ${HARBOR_PROXY}/docker.io/semgrep/semgrep:1.153.1
+  image: docker.io/semgrep/semgrep:1.153.1
   variables:
     SEMGREP_RULES: "auto"
   script:
@@ -257,7 +281,7 @@ semgrep:
 sbom-backend:
   stage: scan
   image:
-    name: ${HARBOR_PROXY}/docker.io/anchore/syft:v1.38.0
+    name: docker.io/anchore/syft:v1.38.0
     entrypoint: [""]
   script:
     - syft "${BACKEND_IMAGE}:${IMAGE_TAG}" -o spdx-json=sbom-backend.spdx.json
@@ -273,7 +297,7 @@ sbom-backend:
 sbom-frontend:
   stage: scan
   image:
-    name: ${HARBOR_PROXY}/docker.io/anchore/syft:v1.38.0
+    name: docker.io/anchore/syft:v1.38.0
     entrypoint: [""]
   script:
     - syft "${FRONTEND_IMAGE}:${IMAGE_TAG}" -o spdx-json=sbom-frontend.spdx.json
@@ -292,7 +316,7 @@ sbom-frontend:
 
 deploy-staging:
   stage: deploy-staging
-  image: ${HARBOR_PROXY}/docker.io/alpine:3.21
+  image: docker.io/alpine:3.21
   before_script:
     - apk add --no-cache git
   needs:
@@ -341,7 +365,7 @@ deploy-staging:
 promote-backend:
   stage: deploy-production
   image:
-    name: ${HARBOR_PROXY}/gcr.io/go-containerregistry/crane:v0.21.1
+    name: gcr.io/go-containerregistry/crane:v0.21.1
     entrypoint: [""]
   secrets:
     HARBOR_CI_USER:
@@ -361,7 +385,7 @@ promote-backend:
 promote-frontend:
   stage: deploy-production
   image:
-    name: ${HARBOR_PROXY}/gcr.io/go-containerregistry/crane:v0.21.1
+    name: gcr.io/go-containerregistry/crane:v0.21.1
     entrypoint: [""]
   secrets:
     HARBOR_CI_USER:
@@ -380,7 +404,7 @@ promote-frontend:
 
 promote-rollout:
   stage: deploy-production
-  image: ${HARBOR_PROXY}/quay.io/argoproj/kubectl-argo-rollouts:v1.7.2
+  image: quay.io/argoproj/kubectl-argo-rollouts:v1.7.2
   script:
     - kubectl-argo-rollouts promote identity-portal-backend -n identity-portal
     - kubectl-argo-rollouts promote identity-portal-frontend -n identity-portal

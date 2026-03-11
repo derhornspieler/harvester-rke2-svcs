@@ -40,7 +40,7 @@ spec:
   affinity:
     nodeSelector:
       workload-type: database
-    podAntiAffinityType: preferred
+    podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
 
   monitoring:
