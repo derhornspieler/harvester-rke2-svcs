@@ -54,6 +54,7 @@ BUNDLES=(
   "20-monitoring/loki:monitoring-loki"
   "20-monitoring/alloy:monitoring-alloy"
   "20-monitoring/ingress-auth:monitoring-ingress-auth"
+  "30-harbor/harbor-credentials:harbor-credentials"
   "30-harbor/minio:minio"
   "30-harbor/cnpg-harbor:harbor-cnpg-harbor"
   "30-harbor/valkey:harbor-valkey"

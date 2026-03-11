@@ -1,0 +1,3 @@
+defaultNamespace: harbor
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}
