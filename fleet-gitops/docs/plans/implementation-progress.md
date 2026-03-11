@@ -6,20 +6,20 @@
 
 ## Current State
 
-**Last checkpoint:** Not started
-**Current phase:** Phase 1
-**Current task:** Not started
-**BUNDLE_VERSION:** 1.0.51 (starting value)
+**Last checkpoint:** Phase 5 complete (pending commit)
+**Current phase:** Phase 6
+**Current task:** Task 6.1 — harbor-init Job
+**BUNDLE_VERSION:** 1.0.51 (not yet bumped — will bump after all code changes)
 
 ## Phase Progress
 
 | Phase | Name | Status | Notes |
 |-------|------|--------|-------|
-| 1 | Vault-Init Minimal | NOT STARTED | |
-| 2 | Shared Init Library | NOT STARTED | |
-| 3 | Keycloak Realm Init | NOT STARTED | |
-| 4 | 11-Infra-Auth Bundle | NOT STARTED | |
-| 5 | Per-Service Init (Identity+Monitoring) | NOT STARTED | |
+| 1 | Vault-Init Minimal | COMPLETE | commit 8d58a03 |
+| 2 | Shared Init Library | COMPLETE | commit a20ea66 |
+| 3 | Keycloak Realm Init | COMPLETE | commit 4a79a1d |
+| 4 | 11-Infra-Auth Bundle | COMPLETE | commit de0d87d |
+| 5 | Per-Service Init (Identity+Monitoring) | COMPLETE | pending commit |
 | 6 | Per-Service Init (Harbor) | NOT STARTED | |
 | 7 | Per-Service Init (GitOps) | NOT STARTED | |
 | 8 | Per-Service Init (GitLab) | NOT STARTED | |
@@ -28,33 +28,33 @@
 ## Task-Level Checkpoints
 
 ### Phase 1
-- [ ] Task 1.1: Pre-created template policies in vault-init-job.yaml
-- [ ] Task 1.2: ClusterSecretStore for bootstrap
-- [ ] Task 1.3: Deploy cycle test
+- [x] Task 1.1: Pre-created template policies in vault-init-job.yaml
+- [x] Task 1.2: ClusterSecretStore for bootstrap
+- [ ] Task 1.3: Deploy cycle test (deferred to end)
 
 ### Phase 2
-- [ ] Task 2.1: Create init-lib.sh (canonical source)
-- [ ] Task 2.1: Create render step for per-bundle ConfigMap embedding
+- [x] Task 2.1: Create init-lib.sh (canonical source)
+- [x] Task 2.1: Create render step for per-bundle ConfigMap embedding
 
 ### Phase 3
-- [ ] Task 3.1: Create keycloak-realm-init Job
-- [ ] Task 3.1: Fix Vault OIDC default role bug
-- [ ] Task 3.1: Replace root token auth with K8s auth
-- [ ] Task 3.1: Update push-bundles.sh + deploy-fleet-helmops.sh
+- [x] Task 3.1: Create keycloak-realm-init Job
+- [x] Task 3.1: Fix Vault OIDC default role bug
+- [x] Task 3.1: Replace root token auth with K8s auth
+- [x] Task 3.1: Update push-bundles.sh + deploy-fleet-helmops.sh
 
 ### Phase 4
-- [ ] Task 4.1: Create 11-infra-auth directory structure
-- [ ] Task 4.1: Move files from ingress-auth + monitoring-secrets
-- [ ] Task 4.1: Update push-bundles.sh + deploy-fleet-helmops.sh
+- [x] Task 4.1: Create 11-infra-auth directory structure
+- [x] Task 4.1: Move files from ingress-auth + monitoring-secrets
+- [x] Task 4.1: Update push-bundles.sh + deploy-fleet-helmops.sh
 
 ### Phase 5
-- [ ] Task 5.1: keycloak-init Job
-- [ ] Task 5.2: grafana-init Job
-- [ ] Task 5.3: prometheus-init Job
-- [ ] Task 5.4: alertmanager-init Job
-- [ ] Task 5.5: loki-init + alloy-init Jobs
-- [ ] Task 5.6: Remove monitoring-secrets + migrate resources
-- [ ] Task 5.7: Deploy cycle test
+- [x] Task 5.1: keycloak-init Job
+- [x] Task 5.2: grafana-init Job
+- [x] Task 5.3: prometheus-init Job
+- [x] Task 5.4: alertmanager-init Job
+- [x] Task 5.5: loki-init + alloy-init Jobs
+- [x] Task 5.6: Remove monitoring-secrets secretstore + push-secret (kept ExternalSecrets)
+- [ ] Task 5.7: Deploy cycle test (deferred to end)
 
 ### Phase 6
 - [ ] Task 6.1: harbor-init Job
