@@ -37,11 +37,11 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# --- Logging ---
-log_info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
-log_ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+# --- Logging (all to stderr so function return values stay clean on stdout) ---
+log_info()  { echo -e "${BLUE}[INFO]${NC}  $*" >&2; }
+log_ok()    { echo -e "${GREEN}[OK]${NC}    $*" >&2; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*" >&2; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()       { log_error "$*"; exit 1; }
 
 # --- Prerequisites ---
@@ -60,14 +60,16 @@ check_prereqs() {
 # Helpers
 ###############################################################################
 
-# Mask a secret value for display: first 15 chars + ... + last 4 chars
+# Mask a secret value for display
 mask_secret() {
   local val="$1"
   local len=${#val}
-  if (( len <= 19 )); then
-    echo "${val}"
+  if (( len <= 4 )); then
+    echo "****"
+  elif (( len <= 12 )); then
+    echo "${val:0:3}...${val: -2}"
   else
-    echo "${val:0:15}...${val: -4}"
+    echo "${val:0:10}...${val: -4}"
   fi
 }
 
@@ -105,18 +107,28 @@ prompt_var() {
 }
 
 # Update a variable in .env — handles both existing and missing keys
+# Uses python3 for safe replacement (avoids sed escaping issues with tokens)
 update_env_var() {
   local varname="$1"
   local value="${!varname}"
 
-  # Escape special characters for sed
-  local escaped_value
-  escaped_value=$(printf '%s' "${value}" | sed 's/[&/\]/\\&/g')
-
   if grep -q "^${varname}=" "${ENV_FILE}" 2>/dev/null; then
-    sed -i "s|^${varname}=.*|${varname}=${escaped_value}|" "${ENV_FILE}"
+    python3 -c "
+import sys, re
+varname, value, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, 'r') as f:
+    content = f.read()
+content = re.sub(
+    r'^' + re.escape(varname) + r'=.*$',
+    varname + '=' + value,
+    content,
+    flags=re.MULTILINE
+)
+with open(path, 'w') as f:
+    f.write(content)
+" "${varname}" "${value}" "${ENV_FILE}"
   else
-    echo "${varname}=${escaped_value}" >> "${ENV_FILE}"
+    printf '%s=%s\n' "${varname}" "${value}" >> "${ENV_FILE}"
   fi
 }
 
