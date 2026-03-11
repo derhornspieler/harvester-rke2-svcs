@@ -10,7 +10,7 @@ deploying all platform services through Fleet GitOps.
 | Component | Purpose |
 |-----------|---------|
 | Rancher management cluster | Provisions downstream RKE2 clusters, runs Fleet controller |
-| Harbor registry (`harbor.<DOMAIN>`) | OCI registry for Helm charts and manifest bundles |
+| Harbor registry (`harbor.aegisgroup.ch`) | OCI registry for Helm charts and manifest bundles |
 | Rancher API token | Bearer token with cluster provisioning and Fleet management permissions |
 | Root CA keypair | Offline Root CA for signing the Vault intermediate CA |
 
@@ -36,27 +36,55 @@ openssl version
 curl --version | head -1
 ```
 
-### Configuration
+### Configuration (prepare.sh)
 
-Create `fleet-gitops/.env` with the required variables:
+The `prepare.sh` script sets up your environment interactively. Run it first:
 
 ```bash
-# Rancher API (required)
-RANCHER_URL="https://rancher.example.com"
-RANCHER_TOKEN="token-xxxxx:yyyyyyyyyyyyyyyyyyyy"
-
-# Harbor OCI registry (required for push-charts.sh / push-bundles.sh)
-HARBOR_USER="admin"
-HARBOR_PASS="<harbor-password>"
-
-# Bundle version for raw manifest bundles (default: 1.0.0)
-BUNDLE_VERSION="1.0.0"
+cd fleet-gitops
+./scripts/prepare.sh
 ```
 
-Log in to Harbor OCI before pushing:
+This script:
+1. **Bootstraps `.env`** from `.env.example` if `.env` doesn't exist
+2. **Prompts for credentials** (shows current value, press Enter to keep, type to override):
+   - `RANCHER_URL` — management cluster API URL
+   - `HARBOR_HOST` — OCI registry hostname (e.g., `harbor.aegisgroup.ch`)
+   - `HARBOR_USER` — registry username
+   - `HARBOR_PASS` — registry password
+   - `DOMAIN` — cluster domain (e.g., `aegisgroup.ch`)
+   - `FLEET_TARGET_CLUSTER` — downstream cluster name in Rancher
+   - `TRAEFIK_LB_IP` — Traefik LoadBalancer IP
+3. **Manages Rancher API token lifecycle** — logs in with username/password, deletes old `fleet-gitops-deploy` tokens, creates a new no-expiry global-scope API token
+4. **Validates** — Rancher API access, Harbor access, Root CA files
+
+**Refresh your Rancher token anytime it expires:**
 
 ```bash
-helm registry login harbor.<DOMAIN>
+./scripts/prepare.sh --token-only
+```
+
+This skips `.env` prompts and only refreshes the Rancher API token.
+
+---
+
+## Step 0: Prepare Environment
+
+Before any deployment, set up your environment configuration:
+
+```bash
+cd fleet-gitops
+./scripts/prepare.sh
+```
+
+This creates `.env` with all required variables and validates your setup. You
+only need to run this once; use `--token-only` to refresh the Rancher token
+later.
+
+After `prepare.sh` completes, source the `.env` file:
+
+```bash
+source .env
 ```
 
 ---
@@ -71,7 +99,7 @@ After provisioning, verify the cluster is active in Rancher:
 
 ```bash
 curl -sk -H "Authorization: Bearer ${RANCHER_TOKEN}" \
-  "${RANCHER_URL}/v1/provisioning.cattle.io.clusters/fleet-default/rke2-prod" | \
+  "${RANCHER_URL}/v1/provisioning.cattle.io.clusters/fleet-default/${FLEET_TARGET_CLUSTER}" | \
   python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status']['ready'])"
 ```
 
@@ -349,6 +377,16 @@ cluster.
 ---
 
 ## Troubleshooting
+
+### Rancher token expired or invalid
+
+If `deploy-fleet-helmops.sh` or `deploy.sh` fails with "invalid token" or "401 Unauthorized":
+
+```bash
+./scripts/prepare.sh --token-only
+```
+
+This refreshes your Rancher API token without re-entering all configuration variables.
 
 ### HelmOp stuck in `NotReady` or `WaitApplied`
 
