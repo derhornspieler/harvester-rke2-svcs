@@ -21,12 +21,14 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 FLEET_JOBS=(
   "vault/vault-init"
+  "vault/vault-init-wait"
   "keycloak/keycloak-config"
   "keycloak/keycloak-ldap-federation"
   "minio/minio-init"
   "harbor/harbor-oidc-setup"
   "argocd/argocd-gitlab-setup"
   "argo-workflows/golden-image-watcher-setup"
+  "gitlab/gitlab-ready"
   "gitlab/vault-jwt-auth-setup"
   "gitlab/gitlab-admin-setup"
   "gitlab-runners/runner-secrets-setup"
