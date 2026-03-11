@@ -467,6 +467,23 @@ for i in d.get('data',[]):
     fi
   done
 
+  # Strip operator CRD finalizers before deleting namespaces.
+  # Operator-managed CRs (RedisReplication, RedisSentinel, etc.) have custom
+  # finalizers that require the operator pod to process. If the operator
+  # namespace is deleted first, these finalizers block namespace deletion.
+  log_info "Stripping operator CR finalizers..."
+  local cr_types=("redisreplications.redis.redis.opstreelabs.in" "redissentinels.redis.redis.opstreelabs.in")
+  for cr_type in "${cr_types[@]}"; do
+    while IFS='/' read -r cr_ns cr_name; do
+      [[ -n "${cr_name}" ]] || continue
+      kubectl --kubeconfig="${ds_kc}" patch "${cr_type}" "${cr_name}" -n "${cr_ns}" \
+        --type=merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null && \
+        log_ok "Stripped finalizer: ${cr_type}/${cr_name} in ${cr_ns}" || true
+    done < <(kubectl --kubeconfig="${ds_kc}" get "${cr_type}" -A --no-headers \
+      -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name' 2>/dev/null | \
+      awk '{print $1"/"$2}')
+  done
+
   # Delete namespaces (this removes all remaining resources inside them)
   log_info "Removing Fleet-managed namespaces..."
   for ns in "${!helmop_namespaces[@]}"; do
