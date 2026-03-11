@@ -233,9 +233,9 @@ d = json.load(sys.stdin)
 d.setdefault('redis', {}).setdefault('external', {})['password'] = sys.argv[1]
 print(json.dumps(d))
 " "${valkey_pw}")
-      log_info "Injected Valkey password into harbor-core values"
+      echo "[INFO] Injected Valkey password into harbor-core values" >&2
     else
-      log_warn "harbor-valkey-credentials not found — harbor-core will use placeholder Redis password (re-run after Valkey is ready)"
+      echo "[WARN] harbor-valkey-credentials not found — harbor-core will use placeholder Redis password (re-run after Valkey is ready)" >&2
     fi
   fi
 
