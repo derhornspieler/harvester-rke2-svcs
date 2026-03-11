@@ -1,0 +1,128 @@
+---
+# gitlab-ready: Sentinel job that blocks Fleet bundle readiness until
+# GitLab webservice is fully operational and serving requests.
+#
+# Fleet marks a bundle "Ready" when resources are applied, NOT when pods
+# are healthy. This job waits for GitLab's API and OIDC discovery endpoint
+# to respond. Downstream bundles (gitlab-manifests, gitops-argocd-manifests,
+# gitops-argo-workflows-manifests) depend on this bundle instead of
+# gitlab-core directly.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-ready
+  namespace: gitlab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-ready
+  namespace: gitlab
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-ready
+  namespace: gitlab
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-ready
+    namespace: gitlab
+roleRef:
+  kind: Role
+  name: gitlab-ready
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitlab-ready
+  namespace: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab-ready
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitlab-ready
+    spec:
+      serviceAccountName: gitlab-ready
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wait
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              log() { echo "[$(date +%H:%M:%S)] $*"; }
+
+              GITLAB_SVC="http://gitlab-webservice-default.gitlab.svc.cluster.local:8181"
+
+              # Phase 1: Wait for webservice deployment to have available replicas
+              log "Waiting for gitlab-webservice-default deployment to be available..."
+              for i in $(seq 1 180); do
+                avail=$(kubectl get deployment gitlab-webservice-default -n gitlab \
+                  -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+                if [[ "${avail:-0}" -ge 1 ]]; then
+                  log "gitlab-webservice-default has ${avail} available replica(s)"
+                  break
+                fi
+                sleep 5
+              done
+              avail=$(kubectl get deployment gitlab-webservice-default -n gitlab \
+                -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+              [[ "${avail:-0}" -ge 1 ]] || { log "FATAL: webservice not available after 15 minutes"; exit 1; }
+
+              # Phase 2: Verify GitLab API responds
+              log "Verifying GitLab API endpoint responds..."
+              for i in $(seq 1 24); do
+                http_code=$(curl -sk -o /dev/null -w '%{http_code}' \
+                  "${GITLAB_SVC}/-/readiness" 2>/dev/null || echo "000")
+                if [[ "$http_code" == "200" ]]; then
+                  log "GitLab readiness endpoint responding (HTTP 200)"
+                  break
+                fi
+                log "GitLab not ready yet (HTTP ${http_code}), retrying..."
+                sleep 5
+              done
+              [[ "$http_code" == "200" ]] || { log "FATAL: GitLab API not responding after 2 minutes"; exit 1; }
+
+              # Phase 3: Verify OIDC discovery endpoint (needed by vault-jwt-auth-setup)
+              log "Verifying GitLab OIDC discovery endpoint..."
+              for i in $(seq 1 12); do
+                http_code=$(curl -sk -o /dev/null -w '%{http_code}' \
+                  "${GITLAB_SVC}/.well-known/openid-configuration" 2>/dev/null || echo "000")
+                if [[ "$http_code" == "200" ]]; then
+                  log "GitLab OIDC discovery endpoint responding (HTTP 200)"
+                  break
+                fi
+                sleep 5
+              done
+              [[ "$http_code" == "200" ]] || log "WARN: OIDC discovery not responding — vault-jwt-auth may need retry"
+
+              log "GitLab readiness verification complete — safe for dependents to deploy"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
