@@ -159,6 +159,7 @@ When a real workload needs resources, pause pods are preempted and become Pendin
 | 24 | CNPG (GitLab DB) | `gitlab` | Data | 3-replica PostgreSQL | 6 | ✓ |
 | 25 | Redis Sentinel | `gitlab` | Data | 3-node Sentinel + replicas | 6 | ✓ |
 | 26 | GitLab Runners | `gitlab-runners` | CI/CD | Horizontal pod autoscaling | 6 | ✓ |
+| 27 | GitLab Credentials | (internal) | Secrets | PushSecret generators | 6.5 (embedded) | ✓ |
 
 ---
 
@@ -206,7 +207,7 @@ Stacks deploy in sequence via Fleet GitOps because each depends on earlier stack
 
 ## What's Next?
 
-- **Full Landscape**: See [landscape.md](landscape.md) for a complete visual map of all 26 services and their interconnections
+- **Full Landscape**: See [landscape.md](landscape.md) for a complete visual map of all 27 services and their interconnections
 - **Getting Started**: Follow [../../getting-started.md](../../getting-started.md) for step-by-step deployment
 - **Deep Dives**: Pick an ecosystem from the index above for technical architecture and configuration
 - **Operations**: See [../operations/day2-operations.md](../operations/day2-operations.md) for runbooks and troubleshooting

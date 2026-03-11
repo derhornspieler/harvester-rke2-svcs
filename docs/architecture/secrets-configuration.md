@@ -256,6 +256,38 @@ The Kubernetes scheduler injects the Secret value as an environment variable at 
 **3. Init Containers**
 For one-time initialization (writing config files, seeding databases), an init container can read the Secret before the main container starts.
 
+### Credential Generation via PushSecrets
+
+When a service needs to generate credentials at deployment time and push them to Vault (rather than pulling pre-existing secrets from Vault), the **External Secrets PushSecret** resource is used:
+
+**Use Case:** GitLab services require several passwords (gitaly-secret, praefect-secret, praefect-dbsecret, minio-storage) that are generated fresh during deployment.
+
+**Process:**
+
+1. **PushSecret CRs** define password generators (using ESO Password Generator or similar)
+2. **Generators create random K8s Secrets** with generated passwords
+3. **PushSecret operator watches** the Secrets and pushes them to Vault KV paths
+4. **ExternalSecret CRs** in the consuming services then pull these credentials back from Vault
+
+**Example Flow:**
+
+```
+gitlab-credentials bundle
+  ├── PushSecret generates gitaly-secret → stores in Vault kv/services/gitlab/gitaly-secret
+  ├── PushSecret generates praefect-secret → stores in Vault kv/services/gitlab/praefect-secret
+  ├── PushSecret generates praefect-dbsecret → stores in Vault kv/services/gitlab/praefect-dbsecret
+  └── PushSecret generates minio-storage → stores in Vault kv/services/gitlab/minio-storage
+
+Later bundles
+  └── ExternalSecrets pull kv/services/gitlab/* paths for their deployments
+```
+
+This pattern ensures:
+- **Automatic credential generation:** No manual password creation
+- **No circular dependencies:** Credentials are generated and stored in Vault before services that consume them deploy
+- **Idempotency:** PushSecret operators check existing values before overwriting
+- **Single source of truth:** All credentials flow through Vault KV v2
+
 ### Manual Rotation Process
 
 Credentials are rotated manually today (automated rotation is planned):
