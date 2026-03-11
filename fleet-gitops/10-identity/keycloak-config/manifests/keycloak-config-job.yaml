@@ -233,7 +233,7 @@ spec:
               log "Platform admin user created"
 
               # =============== Phase 3: Create OIDC clients ===============
-              CLIENTS="grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab vault"
+              CLIENTS="grafana prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc argocd harbor gitlab vault rancher"
               OAUTH2_PROXY_CLIENTS="prometheus-oidc alertmanager-oidc hubble-oidc traefik-oidc rollouts-oidc workflows-oidc"
 
               for client_id in $CLIENTS; do
@@ -249,6 +249,7 @@ spec:
                   harbor)            redirect="https://${HARBOR_FQDN}/c/oidc/callback" ;;
                   gitlab)            redirect="https://gitlab.${DOMAIN}/users/auth/openid_connect/callback" ;;
                   vault)             redirect="https://vault.${DOMAIN}/ui/vault/auth/oidc/oidc/callback" ;;
+                  rancher)           redirect="https://rancher.hvst-vip.${DOMAIN}/verify-auth" ;;
                 esac
 
                 # Derive logout redirect from redirect URI base
@@ -256,7 +257,7 @@ spec:
 
                 # ArgoCD and GitLab don't send PKCE params
                 pkce_method="S256"
-                if [[ "$client_id" == "argocd" || "$client_id" == "gitlab" ]]; then
+                if [[ "$client_id" == "argocd" || "$client_id" == "gitlab" || "$client_id" == "rancher" ]]; then
                   pkce_method=""
                 fi
 
