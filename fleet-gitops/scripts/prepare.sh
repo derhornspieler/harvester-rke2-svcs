@@ -183,24 +183,23 @@ rancher_cleanup_tokens() {
 
   log_info "Checking for existing ${description_prefix} tokens..."
 
-  local tokens_json
-  tokens_json=$(curl -sk \
-    -H "Authorization: Bearer ${session_token}" \
-    "${url}/v3/tokens" 2>/dev/null)
-
-  # Find tokens with our description prefix
+  # Stream the response through python3 to avoid loading the full /v3/tokens
+  # payload into a shell variable (can be tens of MB on busy Rancher instances)
   local token_ids
-  token_ids=$(echo "${tokens_json}" | python3 -c "
+  token_ids=$(curl -sk \
+    -H "Authorization: Bearer ${session_token}" \
+    "${url}/v3/tokens?limit=200" 2>/dev/null | \
+    python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
     for t in d.get('data', []):
-        desc = t.get('description', '')
-        if desc.startswith('${description_prefix}'):
+        desc = t.get('description', '') or ''
+        if desc.startswith('fleet-gitops-deploy'):
             print(t['id'])
-except:
+except Exception:
     pass
-" 2>/dev/null)
+" 2>/dev/null) || true
 
   local count=0
   while IFS= read -r tid; do
