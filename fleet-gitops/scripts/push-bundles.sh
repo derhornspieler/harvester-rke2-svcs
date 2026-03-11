@@ -49,7 +49,7 @@ BUNDLES=(
   "05-pki-secrets/vault-pki-issuer:pki-vault-pki-issuer"
   "10-identity/cnpg-keycloak:identity-cnpg-keycloak"
   "10-identity/keycloak:identity-keycloak"
-  "10-identity/keycloak-config:identity-keycloak-config"
+  "10-identity/keycloak-realm-init:identity-keycloak-realm-init"
   "20-monitoring/cnpg-grafana:monitoring-cnpg-grafana"
   "20-monitoring/monitoring-secrets:monitoring-secrets"
   "20-monitoring/loki:monitoring-loki"
