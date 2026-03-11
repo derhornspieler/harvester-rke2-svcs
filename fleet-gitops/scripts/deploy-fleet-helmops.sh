@@ -120,9 +120,9 @@ HELMOP_DEFS=(
   # 10-identity (depends on pki)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-external-secrets,operators-cnpg|"
   "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
-  "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
+  "identity-keycloak-realm-init|oci://${HARBOR}/fleet/identity-keycloak-realm-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-realm-init|identity-keycloak|"
   # NOT YET: LDAP federation requires FreeIPA to be running
-  #"identity-keycloak-ldap-federation|oci://${HARBOR}/fleet/identity-keycloak-ldap-federation|${BUNDLE_VERSION}|keycloak|identity-keycloak-ldap-federation|identity-keycloak-config|"
+  #"identity-keycloak-ldap-federation|oci://${HARBOR}/fleet/identity-keycloak-ldap-federation|${BUNDLE_VERSION}|keycloak|identity-keycloak-ldap-federation|identity-keycloak-realm-init|"
 
   # 15-dns (depends on pki — FreeIPA must be running externally)
   # NOT YET: external-dns requires FreeIPA to be running
@@ -130,41 +130,41 @@ HELMOP_DEFS=(
   #"dns-external-dns|oci://${HARBOR}/helm/external-dns|1.16.1|external-dns|external-dns|dns-external-dns-secrets|15-dns/external-dns/values.yaml"
 
   # 20-monitoring (depends on pki + identity — waits for full identity stack)
-  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|pki-external-secrets,operators-cnpg,identity-keycloak-config|"
-  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|pki-external-secrets,identity-keycloak-config|"
-  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|identity-keycloak-config|"
-  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|identity-keycloak-config|"
+  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|pki-external-secrets,operators-cnpg,identity-keycloak-realm-init|"
+  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|pki-external-secrets,identity-keycloak-realm-init|"
+  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|identity-keycloak-realm-init|"
+  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|identity-keycloak-realm-init|"
   "monitoring-prometheus-stack|oci://${HARBOR}/helm/kube-prometheus-stack|${CHART_VER_PROMETHEUS_STACK}|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
   "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack|"
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
   # harbor-credentials runs early to generate+push harbor creds to Vault before minio needs them
   "harbor-credentials|oci://${HARBOR}/fleet/harbor-credentials|${BUNDLE_VERSION}|harbor|harbor-credentials|pki-external-secrets|"
-  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-config,harbor-credentials,gitlab-credentials|"
-  "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-config,operators-cnpg|"
+  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-realm-init,harbor-credentials,gitlab-credentials|"
+  "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-realm-init,operators-cnpg|"
   "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-credentials,operators-redis|"
   "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
   "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|harbor-core|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
   "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|pki-external-secrets|"
-  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config,argocd-credentials|40-gitops/argocd/values.yaml"
+  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-realm-init,argocd-credentials|40-gitops/argocd/values.yaml"
   "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|gitops-argocd|"
   "gitops-argocd-gitlab-setup|oci://${HARBOR}/fleet/gitops-argocd-gitlab-setup|${BUNDLE_VERSION}|argocd|gitops-argocd-gitlab-setup|gitops-argocd,gitlab-ready|"
-  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
+  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-realm-init|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
-  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
+  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-realm-init|40-gitops/argo-workflows/values.yaml"
   "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows|"
-  "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|identity-keycloak-config|"
+  "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|identity-keycloak-realm-init|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
   # gitlab-credentials runs early to generate+push gitlab creds to Vault before minio/cnpg need them
   "gitlab-credentials|oci://${HARBOR}/fleet/gitlab-credentials|${BUNDLE_VERSION}|gitlab|gitlab-credentials|gitlab-redis|"
-  "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-config,operators-cnpg,gitlab-credentials|"
-  "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-config,operators-redis|"
+  "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|identity-keycloak-realm-init,operators-cnpg,gitlab-credentials|"
+  "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|identity-keycloak-realm-init,operators-redis|"
   "gitlab-core|oci://${HARBOR}/helm/gitlab|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
   "gitlab-ready|oci://${HARBOR}/fleet/gitlab-ready|${BUNDLE_VERSION}|gitlab|gitlab-ready|gitlab-core|"
-  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,identity-keycloak-config,operators-gateway-api-crds|"
+  "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,identity-keycloak-realm-init,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
   "gitlab-runner-golden-image|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/runners/golden-image-runner-values.yaml"
@@ -525,7 +525,7 @@ purge_harbor_oci() {
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    identity-cnpg-keycloak identity-keycloak identity-keycloak-realm-init
     monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
@@ -904,6 +904,7 @@ for entry in "${HELMOP_DEFS[@]}"; do
       operators-*)  group="00-operators" ;;
       pki-*)        group="05-pki-secrets" ;;
       identity-*)   group="10-identity" ;;
+      infra-auth-*) group="11-infra-auth" ;;
       monitoring-*) group="20-monitoring" ;;
       harbor-*|minio) group="30-harbor" ;;
       gitops-*)     group="40-gitops" ;;
