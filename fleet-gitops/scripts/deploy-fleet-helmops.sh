@@ -150,23 +150,27 @@ HELMOP_DEFS=(
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
   # harbor-credentials runs early to generate+push harbor creds to Vault before minio needs them
-  "harbor-credentials|oci://${HARBOR}/fleet/harbor-credentials|${BUNDLE_VERSION}|harbor|harbor-credentials|pki-external-secrets|"
-  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|identity-keycloak-realm-init,harbor-credentials,gitlab-credentials|"
-  "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-realm-init,operators-cnpg|"
-  "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-credentials,operators-redis|"
+  "harbor-init|oci://${HARBOR}/fleet/harbor-init|${BUNDLE_VERSION}|harbor|harbor-init|minio,identity-keycloak-realm-init,pki-external-secrets|"
+  "harbor-credentials|oci://${HARBOR}/fleet/harbor-credentials|${BUNDLE_VERSION}|harbor|harbor-credentials|harbor-init|"
+  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|pki-external-secrets|"
+  "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|harbor-init,operators-cnpg|"
+  "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-init,operators-redis|"
   "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
   "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|harbor-core|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
-  "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|pki-external-secrets|"
-  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-realm-init,argocd-credentials|40-gitops/argocd/values.yaml"
+  "gitops-argocd-init|oci://${HARBOR}/fleet/gitops-argocd-init|${BUNDLE_VERSION}|argocd|gitops-argocd-init|identity-keycloak-realm-init,pki-external-secrets|"
+  "gitops-rollouts-init|oci://${HARBOR}/fleet/gitops-rollouts-init|${BUNDLE_VERSION}|argo-rollouts|gitops-rollouts-init|pki-external-secrets|"
+  "gitops-workflows-init|oci://${HARBOR}/fleet/gitops-workflows-init|${BUNDLE_VERSION}|argo-workflows|gitops-workflows-init|pki-external-secrets|"
+  "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|gitops-argocd-init|"
+  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|gitops-argocd-init,argocd-credentials|40-gitops/argocd/values.yaml"
   "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|gitops-argocd|"
   "gitops-argocd-gitlab-setup|oci://${HARBOR}/fleet/gitops-argocd-gitlab-setup|${BUNDLE_VERSION}|argocd|gitops-argocd-gitlab-setup|gitops-argocd,gitlab-ready|"
-  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-realm-init|40-gitops/argo-rollouts/values.yaml"
+  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|gitops-rollouts-init|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
-  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-realm-init|40-gitops/argo-workflows/values.yaml"
+  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|gitops-workflows-init|40-gitops/argo-workflows/values.yaml"
   "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows|"
-  "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|identity-keycloak-realm-init|"
+  "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|gitops-rollouts-init|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
   # gitlab-credentials runs early to generate+push gitlab creds to Vault before minio/cnpg need them
@@ -538,8 +542,8 @@ purge_harbor_oci() {
     pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
     identity-cnpg-keycloak identity-keycloak identity-keycloak-realm-init identity-keycloak-init
     monitoring-grafana-init monitoring-prometheus-init monitoring-alertmanager-init monitoring-loki-init monitoring-alloy-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
-    minio harbor-cnpg-harbor harbor-valkey harbor-manifests
-    gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
+    harbor-init minio harbor-cnpg-harbor harbor-valkey harbor-manifests
+    gitops-argocd-init gitops-rollouts-init gitops-workflows-init gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-credentials gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
   )
 

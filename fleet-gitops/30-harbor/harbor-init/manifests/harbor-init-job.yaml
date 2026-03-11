@@ -1,0 +1,151 @@
+---
+# harbor-init: Bootstrap Vault ESO roles, SecretStore, OIDC client, MinIO
+# bucket/user, and seed credentials for the harbor namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-keycloak-harbor role). NO root token.
+# Requires: Vault unsealed, Keycloak running, MinIO running,
+#           keycloak-admin-bootstrap and minio-admin-bootstrap secrets.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harbor-init
+  namespace: harbor
+  labels:
+    app.kubernetes.io/name: harbor-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: harbor-init
+    spec:
+      serviceAccountName: harbor-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: init-lib
+          configMap:
+            name: init-lib
+        - name: bootstrap-secrets
+          secret:
+            secretName: keycloak-admin-bootstrap
+      containers:
+        - name: harbor-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+            - name: MINIO_ENDPOINT
+              value: "${MINIO_INTERNAL_URL}"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-password
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # harbor-init: ESO roles, SecretStore, OIDC client, MinIO bucket/user,
+              # Harbor admin + DB + Valkey credentials.
+              # Idempotent — safe to re-run.
+
+              source /init-lib/init-lib.sh
+
+              DOMAIN="${DOMAIN}"
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-keycloak-harbor"
+
+              # --- Bind ESO reader/writer roles for harbor namespace ---
+              vault_bind_eso_roles "harbor"
+
+              # --- Create namespace SecretStores ---
+              vault_create_secretstore "harbor"
+
+              # --- Create Harbor OIDC client in Keycloak ---
+              log "[INFO] Creating Harbor OIDC client..."
+              keycloak_create_oidc_client "harbor" \
+                "https://harbor.${DOMAIN}/c/oidc/callback" \
+                "disabled"
+              log "[INFO] Harbor OIDC client created"
+
+              # --- MinIO: setup alias, create bucket, create service user ---
+              log "[INFO] Configuring MinIO for Harbor..."
+              minio_setup_alias
+              minio_create_bucket "harbor"
+              minio_create_service_user "harbor-sa" "harbor" "services/harbor"
+
+              # Re-store MinIO credentials with field names expected by Harbor
+              # external-secrets (minio-access-key / minio-secret-key)
+              ACCESS_KEY=$(vault kv get -field=access-key kv/services/harbor 2>/dev/null || true)
+              SECRET_KEY=$(vault kv get -field=secret-key kv/services/harbor 2>/dev/null || true)
+              if [[ -n "${ACCESS_KEY}" && -n "${SECRET_KEY}" ]]; then
+                vault_kv_put "services/harbor" \
+                  access-key="${ACCESS_KEY}" \
+                  secret-key="${SECRET_KEY}" \
+                  minio-access-key="${ACCESS_KEY}" \
+                  minio-secret-key="${SECRET_KEY}"
+              fi
+              log "[INFO] MinIO configuration complete"
+
+              # --- Generate and store Harbor admin password ---
+              log "[INFO] Seeding Harbor admin credentials..."
+              ADMIN_PASSWORD=$(vault_get_or_generate "services/harbor" "admin-password")
+              # Merge admin-password with existing MinIO fields
+              vault_kv_put "services/harbor" \
+                admin-password="${ADMIN_PASSWORD}" \
+                access-key="${ACCESS_KEY}" \
+                secret-key="${SECRET_KEY}" \
+                minio-access-key="${ACCESS_KEY}" \
+                minio-secret-key="${SECRET_KEY}"
+              log "[INFO] Harbor admin credentials stored"
+
+              # --- Generate and store harbor-pg DB password ---
+              log "[INFO] Seeding harbor-pg database credentials..."
+              DB_PASSWORD=$(vault_get_or_generate "services/database/harbor-pg" "password")
+              vault_kv_put "services/database/harbor-pg" \
+                username="harbor" \
+                password="${DB_PASSWORD}"
+              log "[INFO] harbor-pg database credentials stored"
+
+              # --- Generate and store Valkey password ---
+              log "[INFO] Seeding Harbor Valkey credentials..."
+              VALKEY_PASSWORD=$(vault_get_or_generate "services/harbor/valkey" "password")
+              vault_kv_put "services/harbor/valkey" \
+                password="${VALKEY_PASSWORD}"
+              log "[INFO] Harbor Valkey credentials stored"
+
+              log "[INFO] harbor-init complete"
+          volumeMounts:
+            - name: init-lib
+              mountPath: /init-lib
+              readOnly: true
+            - name: bootstrap-secrets
+              mountPath: /secrets
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
