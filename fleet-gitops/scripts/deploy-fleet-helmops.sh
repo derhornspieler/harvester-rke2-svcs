@@ -143,11 +143,12 @@ HELMOP_DEFS=(
   "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|identity-keycloak-config,operators-cnpg|"
   "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-credentials,operators-redis|"
   "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
-  "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|minio,harbor-cnpg,harbor-valkey|"
+  "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|harbor-core|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
-  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config|40-gitops/argocd/values.yaml"
-  "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|identity-keycloak-config,gitops-argocd|"
+  "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|pki-external-secrets|"
+  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|identity-keycloak-config,argocd-credentials|40-gitops/argocd/values.yaml"
+  "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|gitops-argocd|"
   "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|identity-keycloak-config|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
   "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|identity-keycloak-config|40-gitops/argo-workflows/values.yaml"
@@ -200,40 +201,6 @@ print(json.dumps(d if d else {}))
 ")
     else
       log_warn "Values file not found: ${values_path}"
-    fi
-  fi
-
-  # --- Inject secrets from downstream cluster into values at deploy time ---
-  # Harbor chart uses lookup() for existingSecret which is incompatible with
-  # Fleet's remote Helm rendering. Fetch the password from the downstream
-  # cluster's K8s secret and inject it as a literal value.
-  if [[ "${name}" == "harbor-core" ]]; then
-    local valkey_pw=""
-    # Get downstream kubeconfig via Rancher API
-    local cluster_id
-    cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
-      python3 -c "import json,sys; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']" 2>/dev/null || true)
-    if [[ -n "${cluster_id}" ]]; then
-      local ds_kc
-      ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
-      rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
-        python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null || true
-      if [[ -s "${ds_kc}" ]]; then
-        valkey_pw=$(kubectl --kubeconfig="${ds_kc}" get secret harbor-valkey-credentials -n harbor \
-          -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-      fi
-      rm -f "${ds_kc}"
-    fi
-    if [[ -n "${valkey_pw}" ]]; then
-      values_json=$(echo "${values_json}" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-d.setdefault('redis', {}).setdefault('external', {})['password'] = sys.argv[1]
-print(json.dumps(d))
-" "${valkey_pw}")
-      echo "[INFO] Injected Valkey password into harbor-core values" >&2
-    else
-      echo "[WARN] harbor-valkey-credentials not found — harbor-core will use placeholder Redis password (re-run after Valkey is ready)" >&2
     fi
   fi
 
@@ -526,7 +493,7 @@ purge_harbor_oci() {
     identity-cnpg-keycloak identity-keycloak identity-keycloak-config
     monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
     minio harbor-cnpg-harbor harbor-valkey harbor-manifests
-    gitops-argocd-manifests gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
+    gitops-argocd-credentials gitops-argocd-manifests gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-credentials gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
   )
 
@@ -571,12 +538,15 @@ purge_harbor_oci() {
 # Show status
 # ============================================================
 show_status() {
-  echo -e "${BOLD}Fleet HelmOp Status:${NC}"
+  local total=0 ready_count=0
+
+  echo -e "${BOLD}Fleet HelmOp Status:${NC}  $(date '+%H:%M:%S')"
   printf "%-35s %-12s %-8s %s\n" "HELMOP" "STATE" "READY" "MESSAGE"
   printf "%-35s %-12s %-8s %s\n" "------" "-----" "-----" "-------"
 
   for entry in "${HELMOP_DEFS[@]}"; do
     IFS='|' read -r name _ _ _ _ _ _ <<< "${entry}"
+    (( ++total ))
 
     # Check HelmOp status
     local helmop_state
@@ -588,7 +558,7 @@ try:
     state=d.get('metadata',{}).get('state',{}).get('name','unknown')
     msg=d.get('metadata',{}).get('state',{}).get('message','')[:60]
     print(f'{state}|{msg}')
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print('NotFound|')
 " 2>/dev/null || echo "Error|")
 
@@ -605,15 +575,69 @@ try:
     ready=summary.get('ready',0)
     desired=summary.get('desiredReady',0)
     print(f'{ready}/{desired}')
-except:
+except (json.JSONDecodeError, KeyError, TypeError):
     print('-')
 " 2>/dev/null || echo "-")
 
     local color="${RED}"
-    [[ "${state}" == "active" ]] && color="${GREEN}"
+    if [[ "${state}" == "active" ]]; then
+      color="${GREEN}"
+      (( ++ready_count ))
+    fi
     [[ "${state}" == "NotFound" ]] && color="${YELLOW}"
 
     printf "%-35s ${color}%-12s${NC} %-8s %s\n" "${name}" "${state}" "${bundle_info}" "${msg}"
+  done
+
+  echo ""
+  if (( ready_count == total )); then
+    echo -e "${GREEN}${BOLD}All ${total} bundles ready${NC}"
+  else
+    echo -e "${YELLOW}${ready_count}/${total} bundles ready${NC}"
+  fi
+
+  # Return 0 if all ready, 1 if not (used by watch_status loop)
+  (( ready_count == total )) || return 1
+}
+
+watch_status() {
+  local interval="${WATCH_INTERVAL:-10}"
+  local prev_lines=0
+
+  # Restore cursor on exit (Ctrl+C or normal)
+  trap 'tput cnorm 2>/dev/null; exit' INT TERM EXIT
+  tput civis 2>/dev/null  # hide cursor during updates
+
+  while true; do
+    # Move cursor up to overwrite previous output
+    if (( prev_lines > 0 )); then
+      printf '\033[%dA' "${prev_lines}"
+    fi
+
+    # Capture show_status output and exit code
+    local output converged=false
+    output=$(show_status) && converged=true || true
+
+    # Print each line, clearing remainder to avoid leftover chars
+    local line_count=0
+    while IFS= read -r line; do
+      printf '%s\033[K\n' "${line}"
+      (( ++line_count ))
+    done <<< "${output}"
+
+    if [[ "${converged}" == true ]]; then
+      printf '\033[K\n'
+      echo -e "${GREEN}${BOLD}All bundles converged — exiting watch.${NC}"
+      tput cnorm 2>/dev/null
+      exit 0
+    fi
+
+    printf '\033[K'
+    echo -e "${BLUE}Last refresh: $(date '+%H:%M:%S') — next in ${interval}s (Ctrl+C to stop)${NC}"
+    (( ++line_count ))
+
+    prev_lines="${line_count}"
+    sleep "${interval}"
   done
 }
 
@@ -624,6 +648,8 @@ DRY_RUN=false
 DELETE_MODE=false
 PURGE_MODE=false
 STATUS_MODE=false
+WATCH_MODE=false
+WATCH_INTERVAL=10
 SINGLE_GROUP=""
 
 while [[ $# -gt 0 ]]; do
@@ -632,15 +658,19 @@ while [[ $# -gt 0 ]]; do
     --delete)     DELETE_MODE=true; shift ;;
     --purge)      PURGE_MODE=true; shift ;;
     --status)     STATUS_MODE=true; shift ;;
+    --watch)      WATCH_MODE=true; shift ;;
+    --interval)   WATCH_INTERVAL="$2"; shift 2 ;;
     --group)      SINGLE_GROUP="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--delete] [--purge] [--status] [--group <group>]"
+      echo "Usage: $0 [--dry-run] [--delete] [--purge] [--status] [--watch] [--group <group>]"
       echo ""
-      echo "  --delete   Remove all HelmOps from Fleet (keeps Harbor OCI artifacts)"
-      echo "  --purge    Remove HelmOps from Fleet AND delete OCI artifacts from Harbor"
-      echo "  --status   Show deployment status"
-      echo "  --group    Deploy/delete a single group (e.g., 50-gitlab)"
-      echo "  --dry-run  Show CRs without applying"
+      echo "  --delete     Remove all HelmOps from Fleet (keeps Harbor OCI artifacts)"
+      echo "  --purge      Remove HelmOps from Fleet AND delete OCI artifacts from Harbor"
+      echo "  --status     Show deployment status"
+      echo "  --watch      Live-watch status until all bundles converge (implies --status)"
+      echo "  --interval   Refresh interval in seconds for --watch (default: 10)"
+      echo "  --group      Deploy/delete a single group (e.g., 50-gitlab)"
+      echo "  --dry-run    Show CRs without applying"
       exit 0
       ;;
     *) die "Unknown option: $1" ;;
@@ -658,8 +688,12 @@ echo -e "${BOLD}${BLUE}  Fleet GitOps — HelmOp Deployment${NC}"
 echo -e "${BOLD}${BLUE}============================================================${NC}"
 echo ""
 
-if [[ "${STATUS_MODE}" == true ]]; then
-  show_status
+if [[ "${STATUS_MODE}" == true || "${WATCH_MODE}" == true ]]; then
+  if [[ "${WATCH_MODE}" == true ]]; then
+    watch_status
+  else
+    show_status || true
+  fi
   exit 0
 fi
 
