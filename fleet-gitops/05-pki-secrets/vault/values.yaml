@@ -36,7 +36,7 @@ server:
 
   image:
     repository: hashicorp/vault
-    tag: "${IMAGE_VAULT}"
+    tag: "1.21.2"
 
   # Schedule on database pool (stateful workload)
   nodeSelector:
