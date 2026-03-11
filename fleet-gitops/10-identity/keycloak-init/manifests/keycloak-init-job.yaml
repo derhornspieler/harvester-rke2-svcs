@@ -1,0 +1,94 @@
+---
+# keycloak-init: Bootstrap Vault ESO roles, SecretStore, and seed credentials
+# for the keycloak namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-keycloak-keycloak role). NO root token.
+# Requires: Vault unsealed with K8s auth enabled.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-init
+    spec:
+      serviceAccountName: keycloak-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: init-lib
+          configMap:
+            name: init-lib
+      containers:
+        - name: keycloak-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # keycloak-init: ESO roles, SecretStore, admin + DB credentials
+              # Idempotent — safe to re-run.
+
+              source /init-lib/init-lib.sh
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-keycloak-keycloak"
+
+              # --- Bind ESO reader/writer roles for keycloak namespace ---
+              vault_bind_eso_roles "keycloak"
+
+              # --- Create namespace SecretStores ---
+              vault_create_secretstore "keycloak"
+
+              # --- Generate and store Keycloak admin password ---
+              log "[INFO] Seeding Keycloak admin credentials..."
+              ADMIN_PASSWORD=$(vault_get_or_generate "admin/keycloak" "admin-password")
+              vault_kv_put "admin/keycloak" \
+                admin-password="${ADMIN_PASSWORD}"
+
+              # Backward-compat: also store at kv/services/keycloak/admin-secret
+              vault_kv_put "services/keycloak/admin-secret" \
+                KC_BOOTSTRAP_ADMIN_USERNAME="admin" \
+                KC_BOOTSTRAP_ADMIN_PASSWORD="${ADMIN_PASSWORD}"
+              log "[INFO] Keycloak admin credentials stored"
+
+              # --- Generate and store keycloak-pg DB password ---
+              log "[INFO] Seeding keycloak-pg database credentials..."
+              DB_PASSWORD=$(vault_get_or_generate "services/database/keycloak-pg" "password")
+              vault_kv_put "services/database/keycloak-pg" \
+                username="keycloak" \
+                password="${DB_PASSWORD}"
+              log "[INFO] keycloak-pg database credentials stored"
+
+              log "[INFO] keycloak-init complete"
+          volumeMounts:
+            - name: init-lib
+              mountPath: /init-lib
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
