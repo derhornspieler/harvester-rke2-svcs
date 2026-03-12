@@ -1,3 +1,0 @@
-defaultNamespace: monitoring
-targets:
-  - clusterName: ${FLEET_TARGET_CLUSTER}

@@ -1,3 +1,6 @@
 defaultNamespace: argo-workflows
+dependsOn:
+  - name: pki-vault-bootstrap-store
+  - name: identity-keycloak-config
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

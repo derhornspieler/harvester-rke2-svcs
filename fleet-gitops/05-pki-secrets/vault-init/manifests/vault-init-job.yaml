@@ -2,8 +2,11 @@
 # vault-init Job: Initializes Vault, unseals, joins Raft, enables PKI/KV/auth.
 #
 # Generates an intermediate CA CSR and saves it to the vault-intermediate-csr
-# K8s Secret. The CSR must be signed offline (deploy.sh) using the Root CA
-# key, which never enters the cluster.
+# K8s Secret. The CSR must be signed offline (deploy.sh Phase 5) using the
+# Root CA key, which never enters the cluster.
+#
+# Creates COMPLETE per-namespace ESO policies with all cross-namespace read
+# grants baked in. No template loop — each policy is explicit.
 #
 # The vault-init-keys Secret stores unseal keys and root token.
 ---
@@ -52,7 +55,7 @@ metadata:
     app.kubernetes.io/name: vault-init
     app.kubernetes.io/component: bootstrap
 spec:
-  backoffLimit: 6
+  backoffLimit: 30
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
@@ -75,12 +78,9 @@ spec:
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              # vault-init: Init, unseal, Raft join, PKI CSR, K8s auth, KV v2
+              # vault-init: Init, unseal, Raft join, PKI CSR, K8s auth, KV v2,
+              # per-namespace ESO policies, bootstrap roles, admin credentials.
               # Idempotent — safe to re-run.
-              #
-              # The intermediate CA CSR is saved to a K8s Secret for offline
-              # signing by deploy.sh. The root CA private key never enters
-              # the cluster.
 
               DOMAIN="${DOMAIN}"
               DOMAIN_DOT="${DOMAIN//./-dot-}"
@@ -98,6 +98,17 @@ spec:
                   vault "$@"
               }
 
+              # --- Helper: write a Vault policy from heredoc ---
+              # Usage: write_policy <policy-name> <<'EOF' ... EOF
+              write_policy() {
+                local name="$1"
+                local hcl
+                hcl=$(cat)
+                kubectl exec -i -n vault vault-0 -- sh -c \
+                  "cat > /tmp/${name}.hcl" <<< "${hcl}"
+                vexec policy write "${name}" "/tmp/${name}.hcl"
+              }
+
               # --- Wait for vault-0 to be Running ---
               log "Waiting for vault-0 pod to be Running..."
               for i in $(seq 1 60); do
@@ -108,7 +119,9 @@ spec:
               [[ "$phase" == "Running" ]] || die "vault-0 not Running after 5 minutes"
               log "vault-0 is Running"
 
-              # --- Step 1: Initialize Vault (idempotent) ---
+              # ================================================================
+              # Step 1: Initialize Vault (idempotent)
+              # ================================================================
               log "Waiting for vault-0 to report stable initialization status..."
               initialized="false"
               for attempt in $(seq 1 12); do
@@ -156,7 +169,9 @@ spec:
 
               [[ ${#UNSEAL_KEYS[@]} -ge 3 ]] || die "Need at least 3 unseal keys, got ${#UNSEAL_KEYS[@]}"
 
-              # --- Step 2: Unseal all replicas ---
+              # ================================================================
+              # Step 2: Unseal all replicas
+              # ================================================================
               unseal_replica() {
                 local replica="$1"
                 for w in $(seq 1 30); do
@@ -189,7 +204,9 @@ spec:
 
               unseal_replica 0
 
-              # --- Step 3: Wait for vault-0 Raft leader, join replicas ---
+              # ================================================================
+              # Step 3: Wait for vault-0 Raft leader, join replicas
+              # ================================================================
               log "Waiting for vault-0 to become Raft leader..."
               for i in $(seq 1 30); do
                 if vexec operator raft list-peers -format=json &>/dev/null; then
@@ -211,7 +228,9 @@ spec:
               done
               log "All ${REPLICAS} Vault replicas unsealed and in Raft cluster"
 
-              # --- Step 4: Enable PKI engines + generate intermediate CSR ---
+              # ================================================================
+              # Step 4: Enable PKI engines + generate intermediate CSR
+              # ================================================================
               vexec secrets enable -path=pki pki 2>/dev/null || log "pki engine already enabled"
               vexec secrets tune -max-lease-ttl=87600h pki
 
@@ -242,10 +261,20 @@ spec:
                 log "Waiting for the CSR to be signed offline and the signed chain imported..."
               fi
 
-              # --- Step 5: Enable Kubernetes auth ---
+              # ================================================================
+              # Step 5: Enable Kubernetes auth
+              # ================================================================
               vexec auth enable kubernetes 2>/dev/null || log "kubernetes auth already enabled"
-              vexec write auth/kubernetes/config \
-                kubernetes_host="https://kubernetes.default.svc:443"
+              # Configure K8s auth with CA cert and token reviewer JWT from the vault pod
+              kubectl exec -n vault vault-0 -- sh -c "
+                VAULT_ADDR=http://127.0.0.1:8200
+                VAULT_TOKEN='${ROOT_TOKEN}'
+                export VAULT_ADDR VAULT_TOKEN
+                vault write auth/kubernetes/config \
+                  kubernetes_host=https://kubernetes.default.svc:443 \
+                  kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                  token_reviewer_jwt=@/var/run/secrets/kubernetes.io/serviceaccount/token
+              "
 
               # cert-manager issuer role
               vexec write auth/kubernetes/role/cert-manager-issuer \
@@ -255,142 +284,685 @@ spec:
                 ttl=1h
 
               # cert-manager PKI policy
-              kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/cert-manager-pki.hcl <<'ENDPOLICY'
-              path \"pki_int/sign/${DOMAIN_DOT}\" {
-                capabilities = [\"create\", \"update\"]
+              write_policy cert-manager-pki <<ENDPOLICY
+              path "pki_int/sign/${DOMAIN_DOT}" {
+                capabilities = ["create", "update"]
               }
-              path \"pki_int/issue/${DOMAIN_DOT}\" {
-                capabilities = [\"create\"]
+              path "pki_int/issue/${DOMAIN_DOT}" {
+                capabilities = ["create"]
               }
-              ENDPOLICY"
-              vexec policy write cert-manager-pki /tmp/cert-manager-pki.hcl
+              ENDPOLICY
               log "Kubernetes auth configured with cert-manager role"
 
-              # --- Step 6: Enable KV v2 ---
+              # ================================================================
+              # Step 6: Enable KV v2
+              # ================================================================
               vexec secrets enable -version=2 -path=kv kv 2>/dev/null || log "kv engine already enabled"
 
-              # --- Step 7: ESO read policy + K8s auth roles per namespace ---
-              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/eso-reader.hcl <<ENDPOLICY
-              path "kv/data/services/*" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/services/*" {
-                capabilities = ["read", "list"]
-              }
-              path "kv/data/oidc/*" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/oidc/*" {
-                capabilities = ["read", "list"]
-              }
-              ENDPOLICY'
-              vexec policy write eso-reader /tmp/eso-reader.hcl
+              # ================================================================
+              # Step 7: Per-namespace ESO READER policies (complete, explicit)
+              # Each policy contains ALL paths that namespace needs, including
+              # cross-namespace reads. No template loop.
+              # ================================================================
+              log "Creating per-namespace ESO reader policies..."
 
+              write_policy eso-reader-keycloak <<'ENDPOLICY'
+              path "kv/data/services/keycloak" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/keycloak/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/keycloak" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/keycloak/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/database/keycloak-pg" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/keycloak-pg" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-monitoring <<'ENDPOLICY'
+              path "kv/data/services/monitoring" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/monitoring/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/monitoring" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/monitoring/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/grafana" {
+                capabilities = ["read"]
+              }
+              path "kv/data/oidc/prometheus-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/data/oidc/alertmanager-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/data/oidc/hubble-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/database/grafana-pg" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/grafana-pg" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-harbor <<'ENDPOLICY'
+              path "kv/data/services/harbor" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/harbor/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/harbor" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/harbor/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/harbor" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/database/harbor-pg" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/harbor-pg" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-minio <<'ENDPOLICY'
+              path "kv/data/services/minio" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/minio/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/minio" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/minio/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/admin/minio" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/admin/minio" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-argocd <<'ENDPOLICY'
+              path "kv/data/services/argocd" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/argocd/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argocd" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argocd/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/argocd" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/argocd" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-argo-rollouts <<'ENDPOLICY'
+              path "kv/data/services/argo-rollouts" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/argo-rollouts/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argo-rollouts" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argo-rollouts/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/rollouts-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/rollouts-oidc" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-argo-workflows <<'ENDPOLICY'
+              path "kv/data/services/argo-workflows" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/argo-workflows/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argo-workflows" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/argo-workflows/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/workflows-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/workflows-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/ci/*" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/ci/*" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-gitlab <<'ENDPOLICY'
+              path "kv/data/services/gitlab" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/gitlab/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/gitlab" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/gitlab/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-gitlab-runners <<'ENDPOLICY'
+              path "kv/data/ci/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/ci/*" {
+                capabilities = ["read", "list"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-database <<'ENDPOLICY'
+              path "kv/data/services/database" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/database/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/database" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/database/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/gitlab/praefect-dbsecret" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/gitlab/praefect-dbsecret" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              # Utility namespaces — only need own-path access
+              write_policy eso-reader-kube-system <<'ENDPOLICY'
+              path "kv/data/services/kube-system" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/kube-system/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/kube-system" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/kube-system/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/traefik-oidc" {
+                capabilities = ["read"]
+              }
+              path "kv/data/oidc/hubble-oidc" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy eso-reader-external-dns <<'ENDPOLICY'
+              path "kv/data/services/external-dns" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/external-dns/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/external-dns" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/external-dns/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/dns/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/dns/*" {
+                capabilities = ["read", "list"]
+              }
+              ENDPOLICY
+
+              log "Per-namespace ESO reader policies created"
+
+              # ================================================================
+              # Step 8: Per-namespace ESO WRITER policies (complete, explicit)
+              # Mirror reader paths but add create/update; add delete on metadata.
+              # ================================================================
+              log "Creating per-namespace ESO writer policies..."
+
+              write_policy eso-writer-keycloak <<'ENDPOLICY'
+              path "kv/data/services/keycloak" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/keycloak/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/keycloak" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/keycloak/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/services/database/keycloak-pg" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/database/keycloak-pg" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-monitoring <<'ENDPOLICY'
+              path "kv/data/services/monitoring" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/monitoring/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/monitoring" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/monitoring/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/grafana" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/data/oidc/prometheus-oidc" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/data/oidc/alertmanager-oidc" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/data/oidc/hubble-oidc" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/data/services/database/grafana-pg" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/database/grafana-pg" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-harbor <<'ENDPOLICY'
+              path "kv/data/services/harbor" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/harbor/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/harbor" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/harbor/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/harbor" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/data/services/database/harbor-pg" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/database/harbor-pg" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-minio <<'ENDPOLICY'
+              path "kv/data/services/minio" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/minio/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/minio" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/minio/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/admin/minio" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/admin/minio" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-argocd <<'ENDPOLICY'
+              path "kv/data/services/argocd" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/argocd/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/argocd" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/argocd/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/argocd" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/argocd" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-argo-rollouts <<'ENDPOLICY'
+              path "kv/data/services/argo-rollouts" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/argo-rollouts/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/argo-rollouts" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/argo-rollouts/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/rollouts-oidc" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/rollouts-oidc" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-argo-workflows <<'ENDPOLICY'
+              path "kv/data/services/argo-workflows" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/argo-workflows/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/argo-workflows" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/argo-workflows/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/workflows-oidc" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/workflows-oidc" {
+                capabilities = ["read", "delete"]
+              }
+              path "kv/data/services/ci/*" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/ci/*" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-gitlab <<'ENDPOLICY'
+              path "kv/data/services/gitlab" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/gitlab/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/gitlab" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/gitlab/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/gitlab" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/gitlab" {
+                capabilities = ["read", "delete"]
+              }
+              path "kv/data/services/database/gitlab-postgresql" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/database/gitlab-postgresql" {
+                capabilities = ["read", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-gitlab-runners <<'ENDPOLICY'
+              path "kv/data/ci/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/ci/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-database <<'ENDPOLICY'
+              path "kv/data/services/database" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/database/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/database" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/database/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-kube-system <<'ENDPOLICY'
+              path "kv/data/services/kube-system" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/kube-system/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/kube-system" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/kube-system/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              ENDPOLICY
+
+              write_policy eso-writer-external-dns <<'ENDPOLICY'
+              path "kv/data/services/external-dns" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/external-dns/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/external-dns" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/external-dns/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/services/dns/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/dns/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              ENDPOLICY
+
+              log "Per-namespace ESO writer policies created"
+
+              # ================================================================
+              # Step 9: ESO K8s auth roles per namespace
+              # Bind both SAs: eso-secrets (init Jobs) + external-secrets (Helm)
+              # ================================================================
               ESO_NAMESPACES="database keycloak minio harbor gitlab monitoring gitlab-runners argo-workflows argo-rollouts kube-system external-dns argocd"
               for ns in $ESO_NAMESPACES; do
-                local_sa="external-secrets"
-                [[ "$ns" == "external-dns" || "$ns" == "monitoring" || "$ns" == "kube-system" ]] && local_sa="eso-secrets"
-                log "Creating Vault K8s auth role: eso-${ns} (SA: ${local_sa})"
-                vexec write "auth/kubernetes/role/eso-${ns}" \
-                  bound_service_account_names="${local_sa}" \
+                log "Creating Vault K8s auth roles: eso-reader-${ns}, eso-writer-${ns}"
+                vexec write "auth/kubernetes/role/eso-reader-${ns}" \
+                  bound_service_account_names="eso-secrets,external-secrets" \
                   bound_service_account_namespaces="${ns}" \
-                  policies=eso-reader \
+                  policies="eso-reader-${ns}" \
+                  ttl=1h
+                vexec write "auth/kubernetes/role/eso-writer-${ns}" \
+                  bound_service_account_names="eso-secrets,external-secrets" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-writer-${ns}" \
                   ttl=1h
               done
               log "ESO auth roles created for all namespaces"
 
-              # --- Step 8: ESO write policy for PushSecret support ---
-              # Services use ESO PushSecret + Generator to create their own
-              # secrets in Vault KV. This policy grants write access.
-              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/eso-writer.hcl <<ENDPOLICY
-              path "kv/data/services/*" {
+              # ================================================================
+              # Step 10: Admin credential reader policies (scoped)
+              # ================================================================
+              write_policy admin-keycloak-reader <<'ENDPOLICY'
+              path "kv/data/admin/keycloak" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+
+              write_policy admin-minio-reader <<'ENDPOLICY'
+              path "kv/data/admin/minio" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/minio/root-credentials" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
+              log "Admin credential reader policies created"
+
+              # ================================================================
+              # Step 10b: Auth-binder policy for init Jobs
+              # Init Jobs update auth/kubernetes/role/* to bind ESO roles.
+              # ================================================================
+              write_policy auth-binder <<'ENDPOLICY'
+              path "auth/kubernetes/role/eso-reader-*" {
+                capabilities = ["create", "update", "read"]
+              }
+              path "auth/kubernetes/role/eso-writer-*" {
+                capabilities = ["create", "update", "read"]
+              }
+              ENDPOLICY
+              log "Auth-binder policy created"
+
+              # ================================================================
+              # Step 10c: Bootstrap-seeder policy for init Jobs
+              # Grants cross-namespace write access init Jobs need to seed
+              # credentials to services/database/*, admin/*, oidc/* paths.
+              # ================================================================
+              write_policy bootstrap-seeder <<'ENDPOLICY'
+              path "kv/data/services/database/*" {
                 capabilities = ["create", "read", "update"]
               }
-              path "kv/metadata/services/*" {
-                capabilities = ["create", "read", "update", "list"]
+              path "kv/metadata/services/database/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/admin/*" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/admin/*" {
+                capabilities = ["read", "list"]
               }
               path "kv/data/oidc/*" {
                 capabilities = ["create", "read", "update"]
               }
               path "kv/metadata/oidc/*" {
-                capabilities = ["create", "read", "update", "list"]
+                capabilities = ["read", "list"]
               }
-              ENDPOLICY'
-              vexec policy write eso-writer /tmp/eso-writer.hcl
-
-              # Create writer roles for namespaces that push secrets
-              for ns in $ESO_NAMESPACES; do
-                local_sa="external-secrets"
-                [[ "$ns" == "external-dns" || "$ns" == "monitoring" || "$ns" == "kube-system" ]] && local_sa="eso-secrets"
-                log "Creating Vault K8s auth role: eso-writer-${ns} (SA: ${local_sa})"
-                vexec write "auth/kubernetes/role/eso-writer-${ns}" \
-                  bound_service_account_names="${local_sa}" \
-                  bound_service_account_namespaces="${ns}" \
-                  policies=eso-writer \
-                  ttl=1h
-              done
-              log "ESO writer roles created for PushSecret support"
-
-              # --- Step 9: Pre-create per-namespace template policies ---
-              # Per-service init Jobs bind these policies to ESO auth roles.
-              # Scoped to each namespace's own KV path only.
-              for ns in $ESO_NAMESPACES; do
-                kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/eso-reader-${ns}.hcl <<ENDPOLICY
-              path \"kv/data/services/${ns}/*\" {
-                capabilities = [\"read\", \"list\"]
+              path "auth/oidc" {
+                capabilities = ["sudo", "create", "read", "update"]
               }
-              path \"kv/metadata/services/${ns}/*\" {
-                capabilities = [\"read\", \"list\"]
+              path "auth/oidc/*" {
+                capabilities = ["create", "read", "update"]
               }
-              ENDPOLICY"
-                vexec policy write "eso-reader-${ns}" "/tmp/eso-reader-${ns}.hcl"
-
-                kubectl exec -n vault vault-0 -- sh -c "cat > /tmp/eso-writer-${ns}.hcl <<ENDPOLICY
-              path \"kv/data/services/${ns}/*\" {
-                capabilities = [\"create\", \"update\", \"read\", \"list\"]
+              path "sys/auth/oidc" {
+                capabilities = ["sudo", "create", "read", "update"]
               }
-              path \"kv/metadata/services/${ns}/*\" {
-                capabilities = [\"read\", \"list\", \"delete\"]
-              }
-              ENDPOLICY"
-                vexec policy write "eso-writer-${ns}" "/tmp/eso-writer-${ns}.hcl"
-              done
-              log "Per-namespace template policies created"
-
-              # --- Step 10: Admin credential reader policies (scoped) ---
-              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/admin-keycloak-reader.hcl <<ENDPOLICY
-              path "kv/data/admin/keycloak" {
+              path "sys/internal/ui/mounts/*" {
                 capabilities = ["read"]
               }
-              ENDPOLICY'
-              vexec policy write admin-keycloak-reader /tmp/admin-keycloak-reader.hcl
-
-              kubectl exec -n vault vault-0 -- sh -c 'cat > /tmp/admin-minio-reader.hcl <<ENDPOLICY
-              path "kv/data/admin/minio" {
-                capabilities = ["read"]
+              path "sys/policies/acl/*" {
+                capabilities = ["create", "read", "update", "delete"]
               }
-              ENDPOLICY'
-              vexec policy write admin-minio-reader /tmp/admin-minio-reader.hcl
-              log "Admin credential reader policies created"
+              ENDPOLICY
+              log "Bootstrap-seeder policy created"
 
-              # --- Step 11: Scoped bootstrap auth roles ---
-              # Base bootstrap (Vault + ESO only):
-              BOOTSTRAP_BASE="keycloak monitoring kube-system external-dns argocd argo-workflows argo-rollouts"
+              # ================================================================
+              # Step 11: Scoped bootstrap auth roles
+              # SA name helper — most namespaces use ${ns}-init, but some differ
+              # ================================================================
+              sa_for_ns() {
+                case "$1" in
+                  argo-rollouts)  echo "rollouts-init" ;;
+                  argo-workflows) echo "workflows-init" ;;
+                  *)              echo "${1}-init" ;;
+                esac
+              }
+
+              # Base bootstrap (Vault + ESO only — no Keycloak or MinIO admin):
+              BOOTSTRAP_BASE="keycloak monitoring kube-system external-dns argocd argo-workflows argo-rollouts minio"
               for ns in $BOOTSTRAP_BASE; do
                 vexec write "auth/kubernetes/role/bootstrap-base-${ns}" \
-                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_names="$(sa_for_ns "${ns}")" \
                   bound_service_account_namespaces="${ns}" \
-                  policies="eso-reader-${ns},eso-writer-${ns}" \
+                  policies="eso-reader-${ns},eso-writer-${ns},auth-binder,bootstrap-seeder" \
                   ttl=1h
               done
 
               # Bootstrap + Keycloak admin access (create OIDC clients):
-              BOOTSTRAP_KEYCLOAK="keycloak monitoring harbor gitlab argocd"
+              BOOTSTRAP_KEYCLOAK="keycloak monitoring harbor gitlab argocd argo-rollouts argo-workflows"
               for ns in $BOOTSTRAP_KEYCLOAK; do
                 vexec write "auth/kubernetes/role/bootstrap-keycloak-${ns}" \
-                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_names="$(sa_for_ns "${ns}")" \
                   bound_service_account_namespaces="${ns}" \
-                  policies="eso-reader-${ns},eso-writer-${ns},admin-keycloak-reader" \
+                  policies="eso-reader-${ns},eso-writer-${ns},auth-binder,bootstrap-seeder,admin-keycloak-reader" \
                   ttl=1h
               done
 
@@ -398,41 +970,100 @@ spec:
               BOOTSTRAP_MINIO="harbor gitlab"
               for ns in $BOOTSTRAP_MINIO; do
                 vexec write "auth/kubernetes/role/bootstrap-minio-${ns}" \
-                  bound_service_account_names="${ns}-init" \
+                  bound_service_account_names="$(sa_for_ns "${ns}")" \
                   bound_service_account_namespaces="${ns}" \
-                  policies="eso-reader-${ns},eso-writer-${ns},admin-minio-reader" \
+                  policies="eso-reader-${ns},eso-writer-${ns},admin-minio-reader,auth-binder,bootstrap-seeder" \
                   ttl=1h
               done
 
               # ClusterSecretStore reader for bootstrap ExternalSecrets
               vexec write "auth/kubernetes/role/bootstrap-cluster-reader" \
-                bound_service_account_names="eso-secrets" \
+                bound_service_account_names="external-secrets" \
                 bound_service_account_namespaces="external-secrets" \
                 policies="admin-keycloak-reader,admin-minio-reader" \
                 ttl=1h
               log "Bootstrap auth roles created"
 
-              # --- Step 12: Seed admin credentials (idempotent) ---
+              # ================================================================
+              # Step 11b: Scoped policies and roles for bootstrap Jobs that
+              # previously used the Vault root token (security violation fix)
+              # ================================================================
+              log "Creating scoped policies for jwt-auth-admin and argocd-gitlab-setup..."
+
+              # Policy: jwt-auth-admin — enables and configures JWT auth method
+              write_policy jwt-auth-admin <<'ENDPOLICY'
+              path "sys/auth" {
+                capabilities = ["read"]
+              }
+              path "sys/auth/jwt" {
+                capabilities = ["sudo", "create", "read", "update", "delete"]
+              }
+              path "auth/jwt/*" {
+                capabilities = ["create", "read", "update", "delete"]
+              }
+              path "sys/mounts/auth/jwt" {
+                capabilities = ["create", "read", "update", "delete"]
+              }
+              path "sys/policies/acl/gitlab-ci-read" {
+                capabilities = ["create", "read", "update"]
+              }
+              ENDPOLICY
+
+              # Policy: argocd-gitlab-setup — stores GitLab PAT in Vault
+              write_policy argocd-gitlab-setup <<'ENDPOLICY'
+              path "kv/data/services/argocd" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/argocd" {
+                capabilities = ["create", "read", "list"]
+              }
+              path "kv/data/services/ci/*" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/ci/*" {
+                capabilities = ["create", "read", "list"]
+              }
+              ENDPOLICY
+
+              # K8s auth role: jwt-auth-admin (bound to SA in gitlab namespace)
+              vexec write "auth/kubernetes/role/jwt-auth-admin" \
+                bound_service_account_names="vault-jwt-auth-setup" \
+                bound_service_account_namespaces="gitlab" \
+                policies="jwt-auth-admin" \
+                ttl=1h
+
+              # K8s auth role: argocd-gitlab-setup (bound to SA in argocd namespace)
+              vexec write "auth/kubernetes/role/argocd-gitlab-setup" \
+                bound_service_account_names="argocd-gitlab-setup" \
+                bound_service_account_namespaces="argocd" \
+                policies="argocd-gitlab-setup" \
+                ttl=1h
+
+              # K8s auth role: golden-image-watcher-setup (bound to SA in argo-workflows namespace)
+              # Reuses argocd-gitlab-setup policy (same kv/services/ci/* paths)
+              vexec write "auth/kubernetes/role/golden-image-watcher-setup" \
+                bound_service_account_names="golden-image-watcher-setup" \
+                bound_service_account_namespaces="argo-workflows" \
+                policies="argocd-gitlab-setup" \
+                ttl=1h
+
+              log "Scoped policies and K8s auth roles created for jwt-auth-admin, argocd-gitlab-setup, and golden-image-watcher-setup"
+
+              # ================================================================
+              # Step 12: Seed admin credentials (idempotent)
+              # ================================================================
               EXISTING_KC_PASS=$(vexec kv get -field=admin-password kv/admin/keycloak 2>/dev/null || true)
               if [[ -z "${EXISTING_KC_PASS}" ]]; then
-                KEYCLOAK_ADMIN_PASS=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32)
+                KEYCLOAK_ADMIN_PASS=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32 || true)
                 vexec kv put kv/admin/keycloak admin-password="${KEYCLOAK_ADMIN_PASS}"
                 log "Seeded Keycloak admin password"
               else
                 log "Keycloak admin password already exists, skipping"
               fi
 
-              EXISTING_MINIO_PASS=$(vexec kv get -field=root-password kv/admin/minio 2>/dev/null || true)
-              if [[ -z "${EXISTING_MINIO_PASS}" ]]; then
-                MINIO_ROOT_USER="minio-admin"
-                MINIO_ROOT_PASS=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32)
-                vexec kv put kv/admin/minio \
-                  root-user="${MINIO_ROOT_USER}" \
-                  root-password="${MINIO_ROOT_PASS}"
-                log "Seeded MinIO root credentials"
-              else
-                log "MinIO root credentials already exist, skipping"
-              fi
+              # MinIO root credentials are generated by MinIO PushSecret and
+              # pushed to services/minio/root-credentials. The minio-init Job
+              # creates a bootstrap admin user and stores it at admin/minio.
 
               log "Vault init Job complete — all phases successful"
           securityContext:

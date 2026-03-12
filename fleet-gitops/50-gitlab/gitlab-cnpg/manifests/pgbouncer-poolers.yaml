@@ -1,0 +1,72 @@
+## PgBouncer connection poolers for GitLab PostgreSQL
+## Transaction-mode pooling prevents connection exhaustion
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: gitlab-pg-pooler-rw
+  namespace: database
+  labels:
+    app: pgbouncer
+    cnpg.io/cluster: gitlab-postgresql
+spec:
+  cluster:
+    name: gitlab-postgresql
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "25"
+      max_client_conn: "400"
+      max_db_connections: "50"
+      reserve_pool_size: "5"
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+        cnpg.io/cluster: gitlab-postgresql
+    spec:
+      nodeSelector:
+        workload-type: database
+      containers:
+        - name: pgbouncer
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: gitlab-pg-pooler-ro
+  namespace: database
+  labels:
+    app: pgbouncer
+    cnpg.io/cluster: gitlab-postgresql
+spec:
+  cluster:
+    name: gitlab-postgresql
+  instances: 2
+  type: ro
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      default_pool_size: "25"
+      max_client_conn: "400"
+      max_db_connections: "50"
+      reserve_pool_size: "5"
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+        cnpg.io/cluster: gitlab-postgresql
+    spec:
+      nodeSelector:
+        workload-type: database
+      containers:
+        - name: pgbouncer
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi

@@ -183,7 +183,7 @@ data:
 
     # Configure git
     git config user.name "Golden Image Watcher"
-    git config user.email "golden-image-watcher@example.com"
+    git config user.email "golden-image-watcher@${DOMAIN}"
 
     VERSIONS_FILE="${WORK_DIR}/repo/upstream-versions.json"
 

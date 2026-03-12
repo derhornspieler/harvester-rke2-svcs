@@ -130,7 +130,7 @@ grafana:
     sessionAffinity: ClientIP
     sessionAffinityConfig:
       clientIP:
-        # 10800s = 3 hours. Do not override via kubectl patch — let Helm manage this value.
+        # 10800s = 3 hours. Do not override via kubectl patch -let Helm manage this value.
         timeoutSeconds: 10800
   adminUser: admin
   admin:
@@ -287,7 +287,7 @@ kubeProxy:
 defaultDashboardsEnabled: true
 
 ## ---- Default alerting rules ----
-# Disable most built-in alert groups — our 18 custom PrometheusRules replace them
+# Disable most built-in alert groups -our 18 custom PrometheusRules replace them
 # Keep only recording rules and operator health
 defaultRules:
   create: true

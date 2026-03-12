@@ -1,3 +1,5 @@
-# ClusterAnalysisTemplates are cluster-scoped
+# ClusterAnalysisTemplates are cluster-scoped — no defaultNamespace
+dependsOn:
+  - name: gitops-rollouts-init
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

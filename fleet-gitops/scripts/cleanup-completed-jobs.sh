@@ -25,6 +25,7 @@ FLEET_JOBS=(
   "keycloak/keycloak-config"
   "keycloak/keycloak-ldap-federation"
   "minio/minio-init"
+  "harbor/harbor-init"
   "harbor/harbor-oidc-setup"
   "argocd/argocd-gitlab-setup"
   "argo-workflows/golden-image-watcher-setup"

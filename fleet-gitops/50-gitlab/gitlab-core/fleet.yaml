@@ -1,0 +1,19 @@
+defaultNamespace: gitlab
+helm:
+  releaseName: gitlab
+  chart: ${OCI_HELM_PREFIX}/gitlab
+  version: "${CHART_VER_GITLAB}"
+  valuesFiles:
+    - values.yaml
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: gitlab-cnpg
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: gitlab-redis
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: harbor-core
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}
