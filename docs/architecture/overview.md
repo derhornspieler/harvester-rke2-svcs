@@ -8,7 +8,7 @@ This platform delivers a production-grade GitOps foundation on a 13-node Harvest
 
 ## Platform at a Glance
 
-The platform is organized into six stacks. Each stack is self-contained and deployed as a bundle.
+The platform is organized into 7 ecosystem groups deployed as 58 bundles with strict dependency ordering. Every service is production-ready with HA, autoscaling, observability, and zero-trust security.
 
 ```mermaid
 block-beta
@@ -129,79 +129,97 @@ When a real workload needs resources, pause pods are preempted and become Pendin
 
 ---
 
-## Service Catalog
+## Service Catalog (27 Services across 58 Bundles)
 
-| # | Service | Namespace | Ecosystem | HA Mode | Bundle | Deployed |
-|---|---------|-----------|-----------|---------|--------|----------|
-| 1 | Vault | `vault` | Secrets | 3-replica Raft | 1 | ✓ |
-| 2 | cert-manager | `cert-manager` | PKI | 2-replica (controller, webhook, cainjector) + topology spread | 1 | ✓ |
-| 3 | ESO Controller | `external-secrets` | Secrets | 2-replica (operator, webhook, cert-controller) + topology spread | 1 | ✓ |
-| 4 | CNPG Operator | `cnpg-system` | Data | 2-replica leader/follower + topology spread | 1 | ✓ |
-| 5 | Redis Operator | `redis-operator` | Data | 2-replica + topology spread | 1 | ✓ |
-| 6 | Keycloak | `keycloak` | Identity | 3-replica + HPA | 2 | ✓ |
-| 7 | CNPG (Keycloak DB) | `keycloak` | Data | 3-replica PostgreSQL | 2 | ✓ |
-| 8 | OAuth2-proxy | `keycloak` | Identity | 2-replica | 2 | ✓ |
-| 9 | Prometheus | `monitoring` | Observability | 2-replica with `__replica__` external label for dedup + topology spread | 3 | ✓ |
-| 10 | Grafana | `monitoring` | Observability | 2-replica + HPA | 3 | ✓ |
-| 11 | Alertmanager | `monitoring` | Observability | 2-replica with mesh clustering + topology spread | 3 | ✓ |
-| 12 | Loki | `monitoring` | Observability | 2-replica distributed (safe-to-evict=false for RWO PVC) | 3 | ✓ |
-| 13 | Alloy | `monitoring` | Observability | DaemonSet (all nodes) | 3 | ✓ |
-| 14 | Hubble | `cilium` | Observability | DaemonSet (all nodes) | 3 | ✓ |
-| 15 | Harbor | `harbor` | CI/CD | 2-replica + HPA | 4 | ✓ |
-| 16 | CNPG (Harbor DB) | `harbor` | Data | 3-replica PostgreSQL | 4 | ✓ |
-| 17 | MinIO | `minio` | Data | 1-replica distributed (safe-to-evict=false for RWO PVC) | 4 | ✓ |
-| 18 | Valkey Sentinel | `harbor` | Data | 3-node Sentinel + replicas | 4 | ✓ |
-| 19 | ArgoCD | `argocd` | CI/CD | 3-replica + HPA | 5 | ✓ |
-| 20 | Argo Rollouts | `argo-rollouts` | CI/CD | 2-replica | 5 | ✓ |
-| 21 | Argo Workflows | `argo-workflows` | CI/CD | 2-replica | 5 | ✓ |
-| 22 | GitLab EE | `gitlab` | CI/CD | 3-replica + HPA | 6 | ✓ |
-| 23 | Praefect/Gitaly | `gitlab` | CI/CD | 3-replica Praefect + 3 Gitaly | 6 | ✓ |
-| 24 | CNPG (GitLab DB) | `gitlab` | Data | 3-replica PostgreSQL | 6 | ✓ |
-| 25 | Redis Sentinel | `gitlab` | Data | 3-node Sentinel + replicas | 6 | ✓ |
-| 26 | GitLab Runners | `gitlab-runners` | CI/CD | Horizontal pod autoscaling | 6 | ✓ |
-| 27 | GitLab Credentials | (internal) | Secrets | PushSecret generators | 6.5 (embedded) | ✓ |
+| # | Service | Namespace | Ecosystem | HA Mode | Deployed |
+|---|---------|-----------|-----------|---------|----------|
+| 1 | Vault | `vault` | Secrets | 3-replica Raft | ✓ |
+| 2 | cert-manager | `cert-manager` | PKI | 2-replica (controller, webhook, cainjector) + topology spread | ✓ |
+| 3 | ESO Controller | `external-secrets` | Secrets | 2-replica (operator, webhook, cert-controller) + topology spread | ✓ |
+| 4 | CNPG Operator | `cnpg-system` | Data | 2-replica leader/follower + topology spread | ✓ |
+| 5 | Redis Operator | `redis-operator` | Data | 2-replica + topology spread | ✓ |
+| 6 | Keycloak | `keycloak` | Identity | 3-replica + HPA | ✓ |
+| 7 | CNPG (Keycloak DB) | `database` | Data | 3-replica PostgreSQL | ✓ |
+| 8 | OAuth2-proxy | `keycloak` | Identity | 2-replica | ✓ |
+| 9 | Prometheus | `monitoring` | Observability | 2-replica with `__replica__` external label for dedup + topology spread | ✓ |
+| 10 | Grafana | `monitoring` | Observability | 2-replica + HPA | ✓ |
+| 11 | Alertmanager | `monitoring` | Observability | 2-replica with mesh clustering + topology spread | ✓ |
+| 12 | Loki | `monitoring` | Observability | 2-replica distributed (safe-to-evict=false for RWO PVC) | ✓ |
+| 13 | Alloy | `monitoring` | Observability | DaemonSet (all nodes) | ✓ |
+| 14 | Hubble | `cilium` | Observability | DaemonSet (all nodes) | ✓ |
+| 15 | Harbor | `harbor` | CI/CD | 2-replica + HPA | ✓ |
+| 16 | CNPG (Harbor DB) | `database` | Data | 3-replica PostgreSQL | ✓ |
+| 17 | MinIO | `minio` | Data | Distributed object storage | ✓ |
+| 18 | Valkey Cache | `harbor` | Data | 3-node Sentinel + replicas | ✓ |
+| 19 | ArgoCD | `argocd` | CD | 3-replica + HPA | ✓ |
+| 20 | Argo Rollouts Controller | `argo-rollouts` | CD | 2-replica | ✓ |
+| 21 | Argo Workflows Controller | `argo-workflows` | CD | 2-replica | ✓ |
+| 22 | GitLab EE | `gitlab` | CI/CD | 3-replica + HPA | ✓ |
+| 23 | Praefect/Gitaly | `gitlab` | CI/CD | 3-replica Praefect + 3 Gitaly | ✓ |
+| 24 | CNPG (GitLab DB) | `database` | Data | 3-replica PostgreSQL | ✓ |
+| 25 | Redis Cache (GitLab) | `gitlab` | Data | 3-node Sentinel + replicas | ✓ |
+| 26 | GitLab Runners | `gitlab-runners` | CI/CD | Horizontal pod autoscaling | ✓ |
+| 27 | GitLab Credentials | (injected) | Secrets | PushSecret generators | ✓ |
 
 ---
 
 ## Deployment Method
 
-All platform services are deployed **via Fleet GitOps** from the `fleet-gitops/` subdirectory. Clusters are provisioned via **Rancher API script** (not Terraform). The deployment workflow is:
+All platform services are deployed **via Fleet GitOps** as **58 HelmOp CRs** from a single unified script. The deployment workflow is:
 
-1. Push Helm charts to Harbor: `fleet-gitops/scripts/push-charts.sh`
-2. Push OCI bundle artifacts to Harbor: `fleet-gitops/scripts/push-bundles.sh`
-3. Create HelmOps on Rancher management cluster: `fleet-gitops/scripts/deploy-fleet-helmops.sh`
-
-Fleet reconciles bundles in dependency order on the target cluster.
-
-## Deployment Order
-
-```mermaid
-graph LR
-    S1["PKI &amp; Secrets"]
-    S2["Identity"]
-    S3["Monitoring"]
-    S4["Harbor"]
-    S5["GitOps"]
-    S6["Git &amp; CI"]
-
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6
-
-    style S1 fill:#dc3545,color:#fff,stroke:#a02030,stroke-width:3px
-    style S2 fill:#6f42c1,color:#fff,stroke:#4a2a7f,stroke-width:3px
-    style S3 fill:#fd7e14,color:#fff,stroke:#b15810,stroke-width:3px
-    style S4 fill:#0dcaf0,color:#000,stroke:#0a9db5,stroke-width:3px
-    style S5 fill:#198754,color:#fff,stroke:#0d5a32,stroke-width:3px
-    style S6 fill:#0d6efd,color:#fff,stroke:#0a58ca,stroke-width:3px
+```
+./deploy.sh
+├─ Phase 1: Push Helm charts to Harbor (upstream charts)
+├─ Phase 2: Seed Root CA on downstream cluster
+├─ Phase 3: Push OCI bundles to Harbor (raw manifests)
+├─ Phase 4: Create 58 Fleet HelmOps on Rancher management cluster
+├─ Phase 5: Sign Vault intermediate CSR with offline Root CA
+└─ Phase 6: Seed manual secrets (GitLab license, watcher credentials, kubeconfigs)
 ```
 
-Stacks deploy in sequence via Fleet GitOps because each depends on earlier stacks for TLS, secrets, or OIDC:
+Total deployment time: ~30-40 minutes (including 15-min wait for Vault initialization)
 
-1. **PKI &amp; Secrets** — foundation; everything depends on this
-2. **Identity** — enables OIDC for downstream services
-3. **Monitoring** — recommended before application stacks
-4. **Harbor** — container registry; required before CI/CD
-5. **GitOps** — ArgoCD + Rollouts; requires Git source from step 6
-6. **Git &amp; CI** — GitLab + Runners complete the loop
+## Bundle Groups (58 Total)
+
+```mermaid
+graph TD
+    A["00-operators (8)"]
+    B["05-pki-secrets (8)"]
+    C["10-identity (3)"]
+    D["11-infra-auth (3)"]
+    E["20-monitoring (7)"]
+    F["30-harbor (7)"]
+    G["40-gitops (9)"]
+    H["50-gitlab (13)"]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    D --> F
+    D --> G
+    F --> H
+    E --> G
+
+    style A fill:#198754,color:#fff
+    style B fill:#dc3545,color:#fff
+    style C fill:#6f42c1,color:#fff
+    style D fill:#6f42c1,color:#fff
+    style E fill:#fd7e14,color:#fff
+    style F fill:#0dcaf0,color:#000
+    style G fill:#198754,color:#fff
+    style H fill:#0d6efd,color:#fff
+```
+
+**Key dependency insights:**
+- 00-operators: Foundation operators (CNPG, Redis)
+- 05-pki-secrets: PKI + Vault (foundation for all others)
+- 10-identity: Keycloak OIDC + database
+- 11-infra-auth: Auth gateways for infrastructure services
+- 20-monitoring: Observability stack (Prometheus, Grafana, Loki, Alloy)
+- 30-harbor: Container registry (uses shared MinIO)
+- 40-gitops: ArgoCD + Rollouts + Workflows
+- 50-gitlab: Source control + CI/CD (13 bundles, includes runners and golden images)
 
 ---
 

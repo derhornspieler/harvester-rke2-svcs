@@ -10,11 +10,11 @@ Complete platform infrastructure for RKE2 clusters using Fleet GitOps, ArgoCD, a
 
 Deploy and maintain the platform infrastructure.
 
-> **[Operator's Guide](docs/operator-guide/index.md)**
+> **[Getting Started Guide](docs/getting-started.md)**
 
-- Fleet bundle deployment (7 bundles, 50 minutes)
-- Day-2 operations and maintenance
-- Monitoring, troubleshooting, scaling
+- Unified Fleet deployment (58 bundles, ~40 minutes)
+- Automated Vault PKI signing and CI secret seeding
+- Day-2 operations, troubleshooting, scaling
 
 ### Are You a Developer?
 
