@@ -39,7 +39,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["vault-init-keys", "gitlab-gitlab-initial-root-password"]
+    resourceNames: ["gitlab-gitlab-initial-root-password"]
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["pods", "pods/exec"]
@@ -95,19 +95,26 @@ spec:
             - |
               DOMAIN="${DOMAIN}"
               GITLAB_URL="https://gitlab.${DOMAIN}"
+              VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }
               die()  { log "FATAL: $*"; exit 1; }
 
-              # --- Load Vault root token ---
-              init_json=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init\.json}' | base64 -d)
-              ROOT_TOKEN=$(echo "$init_json" | grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
-              [[ -n "$ROOT_TOKEN" ]] || die "Failed to extract root_token"
+              # --- Authenticate to Vault via K8s auth (scoped argocd-gitlab-setup role) ---
+              log "Authenticating to Vault via K8s ServiceAccount JWT..."
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              VAULT_TOKEN=$(curl -sfk --request POST \
+                --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"argocd-gitlab-setup\"}" \
+                "${VAULT_ADDR}/v1/auth/kubernetes/login" | \
+                python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])")
+              [[ -n "$VAULT_TOKEN" ]] || die "Failed to authenticate to Vault via K8s auth"
+              export VAULT_TOKEN
+              log "Vault K8s auth successful"
 
               vexec() {
                 kubectl exec -n vault vault-0 -- env \
                   VAULT_ADDR=http://127.0.0.1:8200 \
-                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  VAULT_TOKEN="${VAULT_TOKEN}" \
                   vault "$@"
               }
 

@@ -16,7 +16,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Helm charts pushed to oci://<HARBOR_HOST>/helm/ (push-charts.sh)
 #   - Raw manifest bundles pushed to oci://<HARBOR_HOST>/fleet/ (push-bundles.sh)
-#   - Root CA secret pre-seeded on downstream cluster (deploy.sh handles this)
+#   - Root CA PEM at ./root-ca.pem (for cluster-autoscaler CA bundle)
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -99,9 +99,9 @@ HELMOP_DEFS=(
   # For OCI: repo = oci://harbor/project/chart-name, chart field MUST be empty
 
   # 00-operators (prometheus-operator-crds first so ServiceMonitor/PrometheusRule CRDs are available)
-  "operators-prometheus-crds|oci://${HARBOR}/helm/prometheus-operator-crds|${CHART_VER_PROMETHEUS_CRDS}|monitoring|prometheus-operator-crds||"
-  "operators-cnpg|oci://${HARBOR}/helm/cloudnative-pg|${CHART_VER_CNPG}|cnpg-system|cnpg||00-operators/cnpg-operator/values.yaml"
-  "operators-redis|oci://${HARBOR}/helm/redis-operator|${CHART_VER_REDIS_OPERATOR}|redis-operator|redis-operator||00-operators/redis-operator/values.yaml"
+  "operators-prometheus-crds|${OCI_CHART_PROMETHEUS_CRDS}|${CHART_VER_PROMETHEUS_CRDS}|monitoring|prometheus-operator-crds||"
+  "operators-cnpg|${OCI_CHART_CNPG}|${CHART_VER_CNPG}|cnpg-system|cnpg||00-operators/cnpg-operator/values.yaml"
+  "operators-redis|${OCI_CHART_REDIS_OPERATOR}|${CHART_VER_REDIS_OPERATOR}|redis-operator|redis-operator||00-operators/redis-operator/values.yaml"
   "operators-node-labeler|oci://${HARBOR}/fleet/operators-node-labeler|${BUNDLE_VERSION}|node-labeler|operators-node-labeler|operators-prometheus-crds|"
   "operators-storage-autoscaler|oci://${HARBOR}/fleet/operators-storage-autoscaler|${BUNDLE_VERSION}|storage-autoscaler|operators-storage-autoscaler|operators-prometheus-crds|"
   "operators-cluster-autoscaler|oci://${HARBOR}/fleet/operators-cluster-autoscaler|${BUNDLE_VERSION}|cluster-autoscaler|operators-cluster-autoscaler|operators-prometheus-crds|"
@@ -109,21 +109,19 @@ HELMOP_DEFS=(
   "operators-gateway-api-crds|oci://${HARBOR}/fleet/operators-gateway-api-crds|${BUNDLE_VERSION}|kube-system|operators-gateway-api-crds||"
 
   # 05-pki-secrets (depends on operators)
-  "pki-cert-manager|oci://${HARBOR}/helm/cert-manager|${CHART_VER_CERT_MANAGER}|cert-manager|cert-manager|operators-cnpg|05-pki-secrets/cert-manager/values.yaml"
-  "pki-vault|oci://${HARBOR}/helm/vault|${CHART_VER_VAULT}|vault|vault|operators-cnpg|05-pki-secrets/vault/values.yaml"
+  "pki-cert-manager|${OCI_CHART_CERT_MANAGER}|${CHART_VER_CERT_MANAGER}|cert-manager|cert-manager|operators-cnpg|05-pki-secrets/cert-manager/values.yaml"
+  "pki-vault|${OCI_CHART_VAULT}|${CHART_VER_VAULT}|vault|vault|operators-cnpg|05-pki-secrets/vault/values.yaml"
   "pki-vault-init|oci://${HARBOR}/fleet/pki-vault-init|${BUNDLE_VERSION}|vault|pki-vault-init|pki-vault|"
   "pki-vault-unsealer|oci://${HARBOR}/fleet/pki-vault-unsealer|${BUNDLE_VERSION}|vault|pki-vault-unsealer|pki-vault-init|"
   "pki-vault-init-wait|oci://${HARBOR}/fleet/pki-vault-init-wait|${BUNDLE_VERSION}|vault|pki-vault-init-wait|pki-vault-init|"
   "pki-vault-pki-issuer|oci://${HARBOR}/fleet/pki-vault-pki-issuer|${BUNDLE_VERSION}|cert-manager|pki-vault-pki-issuer|pki-vault-init,pki-cert-manager|"
-  "pki-external-secrets|oci://${HARBOR}/helm/external-secrets|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait|05-pki-secrets/external-secrets/values.yaml"
+  "pki-external-secrets|${OCI_CHART_EXTERNAL_SECRETS}|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait,operators-prometheus-crds|05-pki-secrets/external-secrets/values.yaml"
+  "pki-vault-bootstrap-store|oci://${HARBOR}/fleet/pki-vault-bootstrap-store|${BUNDLE_VERSION}|external-secrets|pki-vault-bootstrap-store|pki-external-secrets|"
 
-  # 10-identity (depends on pki)
-  "identity-keycloak-init|oci://${HARBOR}/fleet/identity-keycloak-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-init|pki-external-secrets|"
-  "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|identity-keycloak-init,operators-cnpg|"
+  # 10-identity (3 self-contained bundles, no shared init-lib.sh)
+  "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-vault-bootstrap-store,operators-cnpg|"
   "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
-  "identity-keycloak-realm-init|oci://${HARBOR}/fleet/identity-keycloak-realm-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-realm-init|identity-keycloak|"
-  # NOT YET: LDAP federation requires FreeIPA to be running
-  #"identity-keycloak-ldap-federation|oci://${HARBOR}/fleet/identity-keycloak-ldap-federation|${BUNDLE_VERSION}|keycloak|identity-keycloak-ldap-federation|identity-keycloak-realm-init|"
+  "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
 
   # 15-dns (depends on pki — FreeIPA must be running externally)
   # NOT YET: external-dns requires FreeIPA to be running
@@ -131,57 +129,54 @@ HELMOP_DEFS=(
   #"dns-external-dns|oci://${HARBOR}/helm/external-dns|1.16.1|external-dns|external-dns|dns-external-dns-secrets|15-dns/external-dns/values.yaml"
 
   # 11-infra-auth (depends on identity — Traefik/Vault/Hubble oauth2-proxy)
-  "infra-auth-traefik|oci://${HARBOR}/fleet/infra-auth-traefik|${BUNDLE_VERSION}|kube-system|infra-auth-traefik|identity-keycloak-realm-init|"
-  "infra-auth-vault|oci://${HARBOR}/fleet/infra-auth-vault|${BUNDLE_VERSION}|vault|infra-auth-vault|identity-keycloak-realm-init|"
-  "infra-auth-hubble|oci://${HARBOR}/fleet/infra-auth-hubble|${BUNDLE_VERSION}|monitoring|infra-auth-hubble|identity-keycloak-realm-init|"
+  "infra-auth-traefik|oci://${HARBOR}/fleet/infra-auth-traefik|${BUNDLE_VERSION}|kube-system|infra-auth-traefik|identity-keycloak-config|"
+  "infra-auth-vault|oci://${HARBOR}/fleet/infra-auth-vault|${BUNDLE_VERSION}|vault|infra-auth-vault|identity-keycloak-config|"
+  "infra-auth-hubble|oci://${HARBOR}/fleet/infra-auth-hubble|${BUNDLE_VERSION}|monitoring|infra-auth-hubble|identity-keycloak-config|"
 
-  # 20-monitoring (depends on pki + identity — waits for full identity stack)
-  "monitoring-grafana-init|oci://${HARBOR}/fleet/monitoring-grafana-init|${BUNDLE_VERSION}|monitoring|monitoring-grafana-init|identity-keycloak-realm-init,pki-external-secrets|"
-  "monitoring-prometheus-init|oci://${HARBOR}/fleet/monitoring-prometheus-init|${BUNDLE_VERSION}|monitoring|monitoring-prometheus-init|identity-keycloak-realm-init,pki-external-secrets|"
-  "monitoring-alertmanager-init|oci://${HARBOR}/fleet/monitoring-alertmanager-init|${BUNDLE_VERSION}|monitoring|monitoring-alertmanager-init|identity-keycloak-realm-init,pki-external-secrets|"
-  "monitoring-loki-init|oci://${HARBOR}/fleet/monitoring-loki-init|${BUNDLE_VERSION}|monitoring|monitoring-loki-init|pki-external-secrets|"
-  "monitoring-alloy-init|oci://${HARBOR}/fleet/monitoring-alloy-init|${BUNDLE_VERSION}|monitoring|monitoring-alloy-init|pki-external-secrets|"
-  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|monitoring-grafana-init,operators-cnpg|"
-  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|monitoring-grafana-init|"
-  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|monitoring-loki-init|"
-  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|monitoring-alloy-init|"
-  "monitoring-prometheus-stack|oci://${HARBOR}/helm/kube-prometheus-stack|${CHART_VER_PROMETHEUS_STACK}|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
-  "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack,monitoring-prometheus-init,monitoring-alertmanager-init|"
+  # 20-monitoring (depends on pki + identity — single consolidated init Job)
+  "monitoring-init|oci://${HARBOR}/fleet/monitoring-init|${BUNDLE_VERSION}|monitoring|monitoring-init|identity-keycloak-config,pki-vault-bootstrap-store|"
+  "monitoring-cnpg-grafana|oci://${HARBOR}/fleet/monitoring-cnpg-grafana|${BUNDLE_VERSION}|database|monitoring-cnpg-grafana|monitoring-init,operators-cnpg|"
+  "monitoring-secrets|oci://${HARBOR}/fleet/monitoring-secrets|${BUNDLE_VERSION}|monitoring|monitoring-secrets|monitoring-init|"
+  "monitoring-loki|oci://${HARBOR}/fleet/monitoring-loki|${BUNDLE_VERSION}|monitoring|monitoring-loki|monitoring-init|"
+  "monitoring-alloy|oci://${HARBOR}/fleet/monitoring-alloy|${BUNDLE_VERSION}|monitoring|monitoring-alloy|monitoring-init|"
+  "monitoring-prometheus-stack|${OCI_CHART_PROMETHEUS_STACK}|${CHART_VER_PROMETHEUS_STACK}|monitoring|kube-prometheus-stack|monitoring-secrets,monitoring-cnpg-grafana|20-monitoring/kube-prometheus-stack/values.yaml"
+  "monitoring-ingress-auth|oci://${HARBOR}/fleet/monitoring-ingress-auth|${BUNDLE_VERSION}|monitoring|monitoring-ingress-auth|monitoring-prometheus-stack|"
 
   # 30-harbor (depends on pki + identity — waits for full identity stack)
-  # harbor-credentials runs early to generate+push harbor creds to Vault before minio needs them
-  "harbor-init|oci://${HARBOR}/fleet/harbor-init|${BUNDLE_VERSION}|harbor|harbor-init|minio,identity-keycloak-realm-init,pki-external-secrets|"
-  "harbor-credentials|oci://${HARBOR}/fleet/harbor-credentials|${BUNDLE_VERSION}|harbor|harbor-credentials|harbor-init|"
-  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|pki-external-secrets|"
+  # minio bundle includes init Job that creates bootstrap admin, stores creds at admin/minio
+  "minio|oci://${HARBOR}/fleet/minio|${BUNDLE_VERSION}|minio|minio|pki-vault-bootstrap-store|"
+  "harbor-init|oci://${HARBOR}/fleet/harbor-init|${BUNDLE_VERSION}|harbor|harbor-init|minio,identity-keycloak-config,pki-vault-bootstrap-store|"
+  "harbor-secrets|oci://${HARBOR}/fleet/harbor-secrets|${BUNDLE_VERSION}|harbor|harbor-secrets|harbor-init|"
   "harbor-cnpg|oci://${HARBOR}/fleet/harbor-cnpg-harbor|${BUNDLE_VERSION}|database|harbor-cnpg|harbor-init,operators-cnpg|"
   "harbor-valkey|oci://${HARBOR}/fleet/harbor-valkey|${BUNDLE_VERSION}|harbor|harbor-valkey|harbor-init,operators-redis|"
-  "harbor-core|oci://${HARBOR}/helm/harbor|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey|30-harbor/harbor/values.yaml"
+  "harbor-core|${OCI_CHART_HARBOR}|${CHART_VER_HARBOR}|harbor|harbor|minio,harbor-cnpg,harbor-valkey,harbor-secrets|30-harbor/harbor/values.yaml"
   "harbor-manifests|oci://${HARBOR}/fleet/harbor-manifests|${BUNDLE_VERSION}|harbor|harbor-manifests|harbor-core|"
 
   # 40-gitops (depends on pki + identity — waits for full identity stack)
-  "gitops-argocd-init|oci://${HARBOR}/fleet/gitops-argocd-init|${BUNDLE_VERSION}|argocd|gitops-argocd-init|identity-keycloak-realm-init,pki-external-secrets|"
-  "gitops-rollouts-init|oci://${HARBOR}/fleet/gitops-rollouts-init|${BUNDLE_VERSION}|argo-rollouts|gitops-rollouts-init|pki-external-secrets|"
-  "gitops-workflows-init|oci://${HARBOR}/fleet/gitops-workflows-init|${BUNDLE_VERSION}|argo-workflows|gitops-workflows-init|pki-external-secrets|"
+  "gitops-argocd-init|oci://${HARBOR}/fleet/gitops-argocd-init|${BUNDLE_VERSION}|argocd|gitops-argocd-init|identity-keycloak-config,pki-vault-bootstrap-store|"
+  "gitops-rollouts-init|oci://${HARBOR}/fleet/gitops-rollouts-init|${BUNDLE_VERSION}|argo-rollouts|gitops-rollouts-init|identity-keycloak-config,pki-vault-bootstrap-store|"
+  "gitops-workflows-init|oci://${HARBOR}/fleet/gitops-workflows-init|${BUNDLE_VERSION}|argo-workflows|gitops-workflows-init|identity-keycloak-config,pki-vault-bootstrap-store|"
   "argocd-credentials|oci://${HARBOR}/fleet/gitops-argocd-credentials|${BUNDLE_VERSION}|argocd|gitops-argocd-credentials|gitops-argocd-init|"
-  "gitops-argocd|oci://${HARBOR}/helm/argo-cd|${CHART_VER_ARGOCD}|argocd|argocd|gitops-argocd-init,argocd-credentials|40-gitops/argocd/values.yaml"
+  "gitops-argocd|${OCI_CHART_ARGOCD}|${CHART_VER_ARGOCD}|argocd|argocd|gitops-argocd-init,argocd-credentials|40-gitops/argocd/values.yaml"
   "gitops-argocd-manifests|oci://${HARBOR}/fleet/gitops-argocd-manifests|${BUNDLE_VERSION}|argocd|gitops-argocd-manifests|gitops-argocd|"
   "gitops-argocd-gitlab-setup|oci://${HARBOR}/fleet/gitops-argocd-gitlab-setup|${BUNDLE_VERSION}|argocd|gitops-argocd-gitlab-setup|gitops-argocd,gitlab-ready|"
-  "gitops-argo-rollouts|oci://${HARBOR}/helm/argo-rollouts|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|gitops-rollouts-init|40-gitops/argo-rollouts/values.yaml"
+  "gitops-argo-rollouts|${OCI_CHART_ARGO_ROLLOUTS}|${CHART_VER_ARGO_ROLLOUTS}|argo-rollouts|argo-rollouts|gitops-rollouts-init|40-gitops/argo-rollouts/values.yaml"
   "gitops-argo-rollouts-manifests|oci://${HARBOR}/fleet/gitops-argo-rollouts-manifests|${BUNDLE_VERSION}|argo-rollouts|gitops-argo-rollouts-manifests|gitops-argo-rollouts|"
-  "gitops-argo-workflows|oci://${HARBOR}/helm/argo-workflows|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|gitops-workflows-init|40-gitops/argo-workflows/values.yaml"
+  "gitops-argo-workflows|${OCI_CHART_ARGO_WORKFLOWS}|${CHART_VER_ARGO_WORKFLOWS}|argo-workflows|argo-workflows|gitops-workflows-init|40-gitops/argo-workflows/values.yaml"
   "gitops-argo-workflows-manifests|oci://${HARBOR}/fleet/gitops-argo-workflows-manifests|${BUNDLE_VERSION}|argo-workflows|gitops-argo-workflows-manifests|gitops-argo-workflows|"
   "gitops-analysis-templates|oci://${HARBOR}/fleet/gitops-analysis-templates|${BUNDLE_VERSION}|argo-rollouts|gitops-analysis-templates|gitops-rollouts-init|"
 
   # 50-gitlab (depends on pki + identity + harbor — waits for harbor-core)
-  "gitlab-init|oci://${HARBOR}/fleet/gitlab-init|${BUNDLE_VERSION}|gitlab|gitlab-init|minio,identity-keycloak-realm-init,pki-external-secrets|"
+  "gitlab-init|oci://${HARBOR}/fleet/gitlab-init|${BUNDLE_VERSION}|gitlab|gitlab-init|minio,identity-keycloak-config,pki-vault-bootstrap-store|"
   "gitlab-cnpg|oci://${HARBOR}/fleet/gitlab-cnpg-gitlab|${BUNDLE_VERSION}|database|gitlab-cnpg|gitlab-init,operators-cnpg|"
   "gitlab-redis|oci://${HARBOR}/fleet/gitlab-redis|${BUNDLE_VERSION}|gitlab|gitlab-redis|gitlab-init,operators-redis|"
-  "gitlab-core|oci://${HARBOR}/helm/gitlab|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,harbor-core|50-gitlab/gitlab/values.yaml"
+  "gitlab-credentials|oci://${HARBOR}/fleet/gitlab-credentials|${BUNDLE_VERSION}|gitlab|gitlab-credentials|gitlab-init|"
+  "gitlab-core|${OCI_CHART_GITLAB}|${CHART_VER_GITLAB}|gitlab|gitlab|gitlab-cnpg,gitlab-redis,gitlab-credentials,harbor-core|50-gitlab/gitlab-core/values.yaml"
   "gitlab-ready|oci://${HARBOR}/fleet/gitlab-ready|${BUNDLE_VERSION}|gitlab|gitlab-ready|gitlab-core|"
   "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,gitlab-init,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
-  "gitlab-runner-shared|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/runners/shared-runner-values.yaml"
-  "gitlab-runner-golden-image|oci://${HARBOR}/helm/gitlab-runner|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/runners/golden-image-runner-values.yaml"
+  "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
+  "gitlab-runner-golden-image|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/gitlab-runner-golden-image/values.yaml"
 )
 
 # ============================================================
@@ -325,7 +320,7 @@ create_helmop() {
 
   local tmpfile
   tmpfile=$(mktemp /tmp/fleet-helmop-XXXXXX.json)
-  trap 'rm -f "${tmpfile}"' RETURN
+  trap 'rm -f "${tmpfile:-}"' RETURN
 
   build_helmop_cr "${name}" "${oci_repo}" "${version}" \
     "${namespace}" "${release}" "${depends}" "${values_file}" > "${tmpfile}"
@@ -453,45 +448,28 @@ for i in d.get('data',[]):
     done <<< "${releases}"
   done
 
-  # Delete CRDs that were installed by Fleet bundles
+  # Delete CRDs that were installed by Fleet bundles.
+  # Use dynamic discovery by API group to catch all CRDs (including generators,
+  # ArgoCD, etc.) rather than maintaining a static list.
   log_info "Removing Fleet-deployed CRDs..."
-  local fleet_crds=(
-    "clusters.postgresql.cnpg.io"
-    "backups.postgresql.cnpg.io"
-    "scheduledbackups.postgresql.cnpg.io"
-    "poolers.postgresql.cnpg.io"
-    "imagecatalogs.postgresql.cnpg.io"
-    "clusterimages.postgresql.cnpg.io"
+  local fleet_crd_groups=(
+    "cnpg.io"
+    "external-secrets.io"
+    "generators.external-secrets.io"
+    "cert-manager.io"
+    "acme.cert-manager.io"
+    "monitoring.coreos.com"
+    "argoproj.io"
+    "redis.opstreelabs.in"
     "redis.redis.opstreelabs.in"
-    "redisclusters.redis.opstreelabs.in"
-    "redisreplications.redis.opstreelabs.in"
-    "redissentinels.redis.opstreelabs.in"
-    "externalsecrets.external-secrets.io"
-    "secretstores.external-secrets.io"
-    "clustersecretstores.external-secrets.io"
-    "certificates.cert-manager.io"
-    "certificaterequests.cert-manager.io"
-    "clusterissuers.cert-manager.io"
-    "issuers.cert-manager.io"
-    "orders.acme.cert-manager.io"
-    "challenges.acme.cert-manager.io"
-    "prometheuses.monitoring.coreos.com"
-    "prometheusrules.monitoring.coreos.com"
-    "servicemonitors.monitoring.coreos.com"
-    "podmonitors.monitoring.coreos.com"
-    "alertmanagers.monitoring.coreos.com"
-    "alertmanagerconfigs.monitoring.coreos.com"
-    "thanosrulers.monitoring.coreos.com"
-    "probes.monitoring.coreos.com"
-    "scrapeconfigs.monitoring.coreos.com"
-    "prometheusagents.monitoring.coreos.com"
   )
-  for crd in "${fleet_crds[@]}"; do
-    if kubectl --kubeconfig="${ds_kc}" get crd "${crd}" &>/dev/null; then
-      kubectl --kubeconfig="${ds_kc}" delete crd "${crd}" --timeout=30s 2>/dev/null || \
+  for group in "${fleet_crd_groups[@]}"; do
+    while IFS= read -r crd; do
+      [[ -n "${crd}" ]] || continue
+      kubectl --kubeconfig="${ds_kc}" delete crd "${crd}" --timeout=30s 2>/dev/null && \
+        log_ok "Deleted CRD: ${crd}" || \
         log_warn "Failed to delete CRD ${crd}"
-      log_ok "Deleted CRD: ${crd}"
-    fi
+    done < <(kubectl --kubeconfig="${ds_kc}" get crd 2>/dev/null | grep "${group}" | awk '{print $1}')
   done
 
   # Strip operator CRD finalizers before deleting namespaces.
@@ -509,6 +487,32 @@ for i in d.get('data',[]):
     done < <(kubectl --kubeconfig="${ds_kc}" get "${cr_type}" -A --no-headers \
       -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name' 2>/dev/null | \
       awk '{print $1"/"$2}')
+  done
+
+  # Strip ExternalSecret finalizers — ESO controller is already removed,
+  # so these finalizers will never be processed and block namespace deletion.
+  log_info "Stripping ExternalSecret finalizers..."
+  while IFS='/' read -r es_ns es_name; do
+    [[ -n "${es_name}" ]] || continue
+    kubectl --kubeconfig="${ds_kc}" patch externalsecret "${es_name}" -n "${es_ns}" \
+      --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]' 2>/dev/null && \
+      log_ok "Stripped ExternalSecret finalizer: ${es_name} in ${es_ns}" || true
+  done < <(kubectl --kubeconfig="${ds_kc}" get externalsecrets.external-secrets.io -A --no-headers \
+    -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name' 2>/dev/null | \
+    awk '{print $1"/"$2}')
+
+  # Force-delete completed/failed pods that block namespace deletion.
+  # StatefulSet pods in Completed state (e.g., from node scale-downs) prevent
+  # the namespace finalizer from completing.
+  log_info "Force-deleting stuck pods..."
+  for ns in "${!helmop_namespaces[@]}"; do
+    while IFS= read -r pod_name; do
+      [[ -n "${pod_name}" ]] || continue
+      kubectl --kubeconfig="${ds_kc}" delete pod "${pod_name}" -n "${ns}" \
+        --force --grace-period=0 2>/dev/null && \
+        log_ok "Force-deleted pod: ${pod_name} in ${ns}" || true
+    done < <(kubectl --kubeconfig="${ds_kc}" get pods -n "${ns}" --no-headers \
+      --field-selector='status.phase!=Running' -o custom-columns='NAME:.metadata.name' 2>/dev/null)
   done
 
   # Delete namespaces (this removes all remaining resources inside them)
@@ -538,12 +542,14 @@ purge_harbor_oci() {
   # Delete raw-manifest bundle repos from fleet/ project
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
-    pki-vault-init pki-vault-unsealer pki-vault-pki-issuer
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-realm-init identity-keycloak-init
-    monitoring-grafana-init monitoring-prometheus-init monitoring-alertmanager-init monitoring-loki-init monitoring-alloy-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
-    harbor-init minio harbor-cnpg-harbor harbor-valkey harbor-manifests
+    pki-vault-init pki-vault-init-wait pki-vault-unsealer pki-vault-pki-issuer pki-vault-bootstrap-store
+    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    infra-auth-traefik infra-auth-vault infra-auth-hubble
+    dns-external-dns-secrets
+    monitoring-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
+    harbor-init harbor-secrets minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-init gitops-rollouts-init gitops-workflows-init gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
-    gitlab-init gitlab-cnpg-gitlab gitlab-redis gitlab-ready gitlab-manifests gitlab-runners
+    gitlab-init gitlab-cnpg-gitlab gitlab-redis gitlab-credentials gitlab-ready gitlab-manifests gitlab-runners
   )
 
   for repo in "${bundle_names[@]}"; do
@@ -900,9 +906,355 @@ for c in json.load(sys.stdin).get('data',[]):
       log_warn "Could not obtain Harvester kubeconfig (not in Rancher API or HARVESTER_KUBECONFIG_PATH) — gitlab-runners will not sync"
     fi
   fi
+
+  # Seed GitLab Enterprise license activation code
+  if [[ -n "${GITLAB_LICENSE:-}" ]]; then
+    local license_check
+    license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
+    if [[ -n "${license_check}" ]]; then
+      log_ok "GitLab license already in Vault"
+    else
+      _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
+      log_ok "Seeded GitLab license into Vault (services/gitlab)"
+    fi
+  fi
 }
 
-seed_ci_secrets
+# NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
+
+# --- Seed cluster-autoscaler secrets on downstream cluster ---
+# The autoscaler Deployment references two Secrets that cannot be managed by
+# Fleet (they contain Rancher API tokens and the full CA chain). We seed them
+# once; they persist across re-deploys because the namespace survives.
+seed_cluster_autoscaler_secrets() {
+  log_info "Checking cluster-autoscaler secrets..."
+
+  local cluster_id ds_kc
+  cluster_id=$(rancher_api GET "/v3/clusters" | python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+  [[ -n "${cluster_id}" ]] || { log_warn "Cannot find cluster ${FLEET_TARGET_CLUSTER} — skipping autoscaler secrets"; return 0; }
+
+  ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+  # shellcheck disable=SC2064
+  trap "rm -f '${ds_kc}'" RETURN
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null
+  [[ -s "${ds_kc}" ]] || { log_warn "Could not get downstream kubeconfig — skipping autoscaler secrets"; return 0; }
+
+  # Ensure namespace exists
+  kubectl --kubeconfig="${ds_kc}" create namespace cluster-autoscaler --dry-run=client -o yaml | \
+    kubectl --kubeconfig="${ds_kc}" apply -f - 2>/dev/null
+
+  # cloud-config: Rancher API connection for autoscaler
+  if kubectl --kubeconfig="${ds_kc}" get secret cluster-autoscaler-cloud-config -n cluster-autoscaler &>/dev/null; then
+    log_ok "cluster-autoscaler-cloud-config already exists"
+  else
+    local cloud_config_tmp
+    cloud_config_tmp=$(mktemp)
+    cat > "${cloud_config_tmp}" <<CLOUDCFG
+url: ${RANCHER_URL}
+token: ${RANCHER_TOKEN}
+clusterName: ${FLEET_TARGET_CLUSTER}
+clusterNamespace: ${FLEET_NAMESPACE}
+CLOUDCFG
+    kubectl --kubeconfig="${ds_kc}" -n cluster-autoscaler \
+      create secret generic cluster-autoscaler-cloud-config \
+      --from-file=cloud-config="${cloud_config_tmp}" \
+      --dry-run=client -o yaml | \
+      kubectl --kubeconfig="${ds_kc}" apply -f -
+    rm -f "${cloud_config_tmp}"
+    log_ok "cluster-autoscaler-cloud-config seeded"
+  fi
+
+  # ca-cert: Combined CA bundle for trusting Rancher TLS
+  if kubectl --kubeconfig="${ds_kc}" get secret cluster-autoscaler-ca-cert -n cluster-autoscaler &>/dev/null; then
+    log_ok "cluster-autoscaler-ca-cert already exists"
+  else
+    local ca_bundle_tmp
+    ca_bundle_tmp=$(mktemp)
+    local rancher_host
+    rancher_host=$(echo "${RANCHER_URL}" | sed 's|https://||; s|/.*||')
+    openssl s_client -connect "${rancher_host}:443" -servername "${rancher_host}" \
+      -showcerts </dev/null 2>/dev/null | \
+      sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > "${ca_bundle_tmp}"
+    # Append root CA
+    local root_ca_pem="${ROOT_CA_PEM_FILE:-./root-ca.pem}"
+    if [[ "${root_ca_pem}" != /* ]]; then
+      root_ca_pem="${FLEET_DIR}/${root_ca_pem#./}"
+    fi
+    if [[ -f "${root_ca_pem}" ]]; then
+      cat "${root_ca_pem}" >> "${ca_bundle_tmp}"
+    fi
+    # Append system CAs if available
+    for sys_ca in /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
+      if [[ -f "${sys_ca}" ]]; then
+        cat "${sys_ca}" >> "${ca_bundle_tmp}"
+        break
+      fi
+    done
+    kubectl --kubeconfig="${ds_kc}" -n cluster-autoscaler \
+      create secret generic cluster-autoscaler-ca-cert \
+      --from-file=ca.crt="${ca_bundle_tmp}" \
+      --dry-run=client -o yaml | \
+      kubectl --kubeconfig="${ds_kc}" apply --server-side --force-conflicts -f -
+    rm -f "${ca_bundle_tmp}"
+    log_ok "cluster-autoscaler-ca-cert seeded"
+  fi
+
+  rm -f "${ds_kc}"
+}
+
+seed_cluster_autoscaler_secrets
+
+# --- Apply Traefik HelmChartConfig on downstream cluster ---
+# RKE2 manages Traefik as a system add-on; HelmChartConfig patches it for
+# dashboard access, Gateway API, CA trust, and SSH port exposure.
+# This resource is owned by RKE2's addon manager and cannot be Fleet-managed.
+apply_traefik_helmchartconfig() {
+  log_info "Checking Traefik HelmChartConfig..."
+  local svcs_dir
+  svcs_dir="$(dirname "${FLEET_DIR}")"
+  local traefik_hcc="${svcs_dir}/services/traefik-dashboard/helmchartconfig.yaml"
+  if [[ ! -f "${traefik_hcc}" ]]; then
+    log_warn "Traefik HelmChartConfig not found at ${traefik_hcc} — skipping"
+    return 0
+  fi
+
+  local cluster_id ds_kc
+  cluster_id=$(rancher_api GET "/v3/clusters" | python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+  [[ -n "${cluster_id}" ]] || { log_warn "Cannot find cluster — skipping Traefik HelmChartConfig"; return 0; }
+
+  ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+  # shellcheck disable=SC2064
+  trap "rm -f '${ds_kc}'" RETURN
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null
+  [[ -s "${ds_kc}" ]] || { log_warn "Could not get downstream kubeconfig — skipping Traefik HelmChartConfig"; return 0; }
+
+  sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/" "${traefik_hcc}" | \
+    kubectl --kubeconfig="${ds_kc}" apply --server-side --force-conflicts -f -
+  log_ok "Traefik HelmChartConfig applied (dashboard + Gateway API + CA trust)"
+
+  rm -f "${ds_kc}"
+}
+
+apply_traefik_helmchartconfig
+
+# --- Sign Vault intermediate CA CSR ---
+# vault-init generates a CSR and saves it to vault/vault-intermediate-csr Secret.
+# This function signs it with the offline Root CA key, imports the chain into Vault,
+# and creates the PKI signing role. Idempotent: skips if already signed.
+sign_vault_intermediate_csr() {
+  log_info "Checking Vault intermediate CA..."
+
+  local svcs_dir
+  svcs_dir="$(dirname "${FLEET_DIR}")"
+  local root_ca_pem="${svcs_dir}/services/pki/roots/root-ca.pem"
+  local root_ca_key="${svcs_dir}/services/pki/roots/root-ca-key.pem"
+
+  if [[ ! -f "${root_ca_pem}" || ! -f "${root_ca_key}" ]]; then
+    log_warn "Root CA files not found (${root_ca_pem}, ${root_ca_key}) — skipping CSR signing"
+    return 0
+  fi
+
+  local cluster_id ds_kc
+  cluster_id=$(rancher_api GET "/v3/clusters" | python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+  [[ -n "${cluster_id}" ]] || { log_warn "Cannot find cluster — skipping CSR signing"; return 0; }
+
+  ds_kc=$(mktemp /tmp/ds-kubeconfig.XXXXXX)
+  # shellcheck disable=SC2064
+  trap "rm -f '${ds_kc}'" RETURN
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null
+  [[ -s "${ds_kc}" ]] || { log_warn "Could not get downstream kubeconfig — skipping CSR signing"; return 0; }
+
+  # Wait for vault-0 to be ready (up to 15 min on fresh deploy)
+  log_info "Waiting for vault-0 to be ready..."
+  local vault_ready=false
+  for _i in $(seq 1 180); do
+    if kubectl --kubeconfig="${ds_kc}" -n vault wait pod/vault-0 --for=condition=Ready --timeout=5s &>/dev/null; then
+      vault_ready=true
+      break
+    fi
+    sleep 5
+  done
+  [[ "${vault_ready}" == true ]] || { log_warn "vault-0 not ready after 15 minutes — skipping CSR signing"; rm -f "${ds_kc}"; return 0; }
+
+  # Get root token
+  local vault_root_token
+  vault_root_token=$(kubectl --kubeconfig="${ds_kc}" -n vault get secret vault-init-keys \
+    -o jsonpath='{.data.init\.json}' 2>/dev/null | base64 -d | \
+    grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+  [[ -n "${vault_root_token}" ]] || { log_warn "Cannot read Vault root token — skipping CSR signing"; rm -f "${ds_kc}"; return 0; }
+
+  # Check if already signed
+  local int_check
+  int_check=$(kubectl --kubeconfig="${ds_kc}" -n vault exec vault-0 -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
+    vault read -format=json pki_int/ca/pem 2>/dev/null || true)
+  if echo "${int_check}" | grep -q "BEGIN CERTIFICATE"; then
+    log_ok "Intermediate CA already signed"
+    rm -f "${ds_kc}"
+    return 0
+  fi
+
+  # Wait for CSR Secret (vault-init Job must run: unseal, init KV/PKI, generate CSR)
+  log_info "Waiting for vault-init to generate intermediate CSR..."
+  local csr_found=false
+  for _i in $(seq 1 90); do
+    if kubectl --kubeconfig="${ds_kc}" -n vault get secret vault-intermediate-csr &>/dev/null; then
+      csr_found=true
+      break
+    fi
+    sleep 10
+  done
+  if [[ "${csr_found}" != true ]]; then
+    log_warn "vault-intermediate-csr Secret not found after 15 minutes — skipping"
+    rm -f "${ds_kc}"
+    return 0
+  fi
+
+  # Read CSR
+  local csr_pem
+  csr_pem=$(kubectl --kubeconfig="${ds_kc}" -n vault get secret vault-intermediate-csr \
+    -o jsonpath='{.data.csr\.pem}' | base64 -d)
+  [[ -n "${csr_pem}" ]] || { log_warn "CSR is empty — skipping"; rm -f "${ds_kc}"; return 0; }
+  log_ok "Intermediate CSR retrieved from cluster"
+
+  # Sign CSR locally with Root CA
+  local csr_tmp signed_tmp ext_tmp chain_tmp
+  csr_tmp=$(mktemp)
+  signed_tmp=$(mktemp)
+  ext_tmp=$(mktemp)
+  chain_tmp=$(mktemp)
+
+  echo "${csr_pem}" > "${csr_tmp}"
+  cat > "${ext_tmp}" <<'EXTCONF'
+[v3_intermediate_ca]
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+EXTCONF
+
+  log_info "Signing intermediate CSR with offline Root CA key..."
+  openssl x509 -req -days 5475 \
+    -in "${csr_tmp}" \
+    -CA "${root_ca_pem}" \
+    -CAkey "${root_ca_key}" \
+    -CAcreateserial \
+    -out "${signed_tmp}" \
+    -sha256 \
+    -extfile "${ext_tmp}" \
+    -extensions v3_intermediate_ca
+
+  openssl verify -CAfile "${root_ca_pem}" "${signed_tmp}" || { log_error "Chain verification failed"; rm -f "${csr_tmp}" "${signed_tmp}" "${ext_tmp}" "${chain_tmp}" "${ds_kc}"; return 1; }
+  log_ok "Intermediate CA signed and verified"
+
+  # Build full chain (intermediate + root)
+  cat "${signed_tmp}" "${root_ca_pem}" > "${chain_tmp}"
+
+  # Import signed chain into Vault
+  log_info "Importing signed intermediate chain into Vault..."
+  local chain_b64
+  chain_b64=$(base64 -w0 "${chain_tmp}")
+  kubectl --kubeconfig="${ds_kc}" -n vault exec vault-0 -- \
+    sh -c "echo '${chain_b64}' | base64 -d > /tmp/intermediate-chain.pem"
+  kubectl --kubeconfig="${ds_kc}" -n vault exec vault-0 -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
+    vault write pki_int/intermediate/set-signed certificate=@/tmp/intermediate-chain.pem
+  log_ok "Intermediate chain imported into Vault"
+
+  # Create PKI signing role
+  local domain="${DOMAIN}"
+  local domain_dot="${domain//./-dot-}"
+  kubectl --kubeconfig="${ds_kc}" -n vault exec vault-0 -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
+    vault write "pki_int/roles/${domain_dot}" \
+      allowed_domains="${domain}" \
+      allowed_domains="cluster.local" \
+      allow_subdomains=true \
+      allow_bare_domains=true \
+      max_ttl=720h \
+      require_cn=false \
+      generate_lease=true
+  log_ok "PKI role ${domain_dot} created"
+
+  rm -f "${csr_tmp}" "${signed_tmp}" "${ext_tmp}" "${chain_tmp}" "${ds_kc}"
+}
+
+# NOTE: sign_vault_intermediate_csr runs in the post-deploy phase (Vault must exist first)
+
+# --- Re-inject Harbor Valkey password post-deploy ---
+# On first deploy, harbor-core is created with a placeholder Redis password
+# because Valkey doesn't exist yet. This function waits for Valkey, fetches
+# the real password, and re-creates the harbor-core HelmOp.
+reinject_harbor_valkey_password() {
+  log_info "Waiting for Harbor Valkey to come up..."
+
+  local cluster_id ds_kc_valkey
+  cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+  [[ -n "${cluster_id}" ]] || { log_warn "Cannot find cluster — skipping Valkey re-injection"; return 0; }
+
+  ds_kc_valkey=$(mktemp /tmp/ds-kubeconfig-valkey.XXXXXX)
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc_valkey}" 2>/dev/null
+  if [[ ! -s "${ds_kc_valkey}" ]]; then
+    log_warn "Could not get downstream kubeconfig — skipping Valkey re-injection"
+    rm -f "${ds_kc_valkey}"
+    return 0
+  fi
+
+  # Wait for harbor-valkey-credentials secret (up to 20 min)
+  local valkey_ready=false
+  for _i in $(seq 1 120); do
+    if kubectl --kubeconfig="${ds_kc_valkey}" get secret harbor-valkey-credentials -n harbor &>/dev/null; then
+      valkey_ready=true
+      break
+    fi
+    sleep 10
+  done
+  if [[ "${valkey_ready}" != true ]]; then
+    log_warn "harbor-valkey-credentials not found after 20 minutes — run with --group 30-harbor to re-inject later"
+    rm -f "${ds_kc_valkey}"
+    return 0
+  fi
+
+  local valkey_pw
+  valkey_pw=$(kubectl --kubeconfig="${ds_kc_valkey}" get secret harbor-valkey-credentials -n harbor \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  rm -f "${ds_kc_valkey}"
+
+  if [[ -z "${valkey_pw}" ]]; then
+    log_warn "harbor-valkey-credentials password empty — skipping re-injection"
+    return 0
+  fi
+
+  log_ok "Valkey password fetched — re-deploying harbor-core HelmOp"
+
+  # Find and re-create the harbor-core entry
+  for entry in "${HELMOP_DEFS[@]}"; do
+    IFS='|' read -r name oci_repo version namespace release depends values_file <<< "${entry}"
+    if [[ "${name}" == "harbor-core" ]]; then
+      create_helmop "${name}" "${oci_repo}" "${version}" \
+        "${namespace}" "${release}" "${depends}" "${values_file}"
+      break
+    fi
+  done
+
+  log_ok "harbor-core re-deployed with real Valkey password"
+}
 
 # Deploy HelmOps
 deployed=0
@@ -947,6 +1299,30 @@ echo ""
 
 if [[ "${DRY_RUN}" != true ]]; then
   log_info "HelmOps created. Fleet will generate bundles and deploy to ${FLEET_TARGET_CLUSTER}."
+
+  # --- Post-deploy convergence phase ---
+  # Services that need post-deploy actions: Vault CSR signing, Harbor Valkey password.
+  # These couldn't run in the pre-deploy phase because the services didn't exist yet.
+
+  if [[ -z "${SINGLE_GROUP}" ]]; then
+    echo ""
+    echo -e "${BOLD}${BLUE}--- Post-Deploy Convergence Phase ---${NC}"
+    echo ""
+
+    # 1. Sign Vault intermediate CSR (Vault must be running and init must generate CSR)
+    sign_vault_intermediate_csr
+
+    # 2. Seed CI secrets into Vault (Vault must be initialized and unsealed)
+    seed_ci_secrets
+
+    # 3. Re-deploy harbor-core with real Valkey password once Valkey is up
+    reinject_harbor_valkey_password
+
+    echo ""
+    echo -e "${BOLD}${BLUE}--- Post-Deploy Phase Complete ---${NC}"
+    echo ""
+  fi
+
   log_info "Monitor with: $0 --status"
   log_info "View in Rancher UI: Continuous Delivery → App Bundles"
 fi

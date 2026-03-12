@@ -1,3 +1,6 @@
 defaultNamespace: argocd
+dependsOn:
+  - name: gitops-argocd
+  - name: gitlab-ready
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

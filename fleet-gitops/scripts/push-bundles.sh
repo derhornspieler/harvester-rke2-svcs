@@ -38,38 +38,43 @@ VERSION="${BUNDLE_VERSION:-1.0.0}"
 # Format: "<dir-path>:<chart-name>"
 ###############################################################################
 BUNDLES=(
+  # 00-operators: cluster-wide operators and CRDs
   "00-operators/cluster-autoscaler:operators-cluster-autoscaler"
   "00-operators/overprovisioning:operators-overprovisioning"
   "00-operators/node-labeler:operators-node-labeler"
   "00-operators/storage-autoscaler:operators-storage-autoscaler"
   "00-operators/gateway-api-crds:operators-gateway-api-crds"
+  # 05-pki-secrets: Vault, cert-manager, ESO bootstrap
   "05-pki-secrets/vault-init:pki-vault-init"
   "05-pki-secrets/vault-init-wait:pki-vault-init-wait"
   "05-pki-secrets/vault-unsealer:pki-vault-unsealer"
   "05-pki-secrets/vault-pki-issuer:pki-vault-pki-issuer"
+  "05-pki-secrets/vault-bootstrap-store:pki-vault-bootstrap-store"
+  # 10-identity: Keycloak + CNPG
   "10-identity/cnpg-keycloak:identity-cnpg-keycloak"
   "10-identity/keycloak:identity-keycloak"
-  "10-identity/keycloak-realm-init:identity-keycloak-realm-init"
-  "10-identity/keycloak-init:identity-keycloak-init"
+  "10-identity/keycloak-config:identity-keycloak-config"
+  # 11-infra-auth: OAuth2-proxy for infra services
   "11-infra-auth/traefik-auth:infra-auth-traefik"
   "11-infra-auth/vault-auth:infra-auth-vault"
   "11-infra-auth/hubble-auth:infra-auth-hubble"
-  "20-monitoring/grafana-init:monitoring-grafana-init"
-  "20-monitoring/prometheus-init:monitoring-prometheus-init"
-  "20-monitoring/alertmanager-init:monitoring-alertmanager-init"
-  "20-monitoring/loki-init:monitoring-loki-init"
-  "20-monitoring/alloy-init:monitoring-alloy-init"
+  # 15-dns: external-dns secrets
+  "15-dns/external-dns-secrets:dns-external-dns-secrets"
+  # 20-monitoring: observability stack
+  "20-monitoring/monitoring-init:monitoring-init"
   "20-monitoring/cnpg-grafana:monitoring-cnpg-grafana"
   "20-monitoring/monitoring-secrets:monitoring-secrets"
   "20-monitoring/loki:monitoring-loki"
   "20-monitoring/alloy:monitoring-alloy"
   "20-monitoring/ingress-auth:monitoring-ingress-auth"
+  # 30-harbor: registry + dependencies
   "30-harbor/harbor-init:harbor-init"
-  "30-harbor/harbor-credentials:harbor-credentials"
+  "30-harbor/harbor-secrets:harbor-secrets"
   "30-harbor/minio:minio"
   "30-harbor/cnpg-harbor:harbor-cnpg-harbor"
   "30-harbor/valkey:harbor-valkey"
   "30-harbor/harbor-manifests:harbor-manifests"
+  # 40-gitops: ArgoCD + Argo Rollouts + Argo Workflows
   "40-gitops/argocd-init:gitops-argocd-init"
   "40-gitops/rollouts-init:gitops-rollouts-init"
   "40-gitops/workflows-init:gitops-workflows-init"
@@ -79,12 +84,14 @@ BUNDLES=(
   "40-gitops/argo-rollouts-manifests:gitops-argo-rollouts-manifests"
   "40-gitops/argo-workflows-manifests:gitops-argo-workflows-manifests"
   "40-gitops/analysis-templates:gitops-analysis-templates"
+  # 50-gitlab: GitLab EE + runners
   "50-gitlab/gitlab-init:gitlab-init"
-  "50-gitlab/cnpg-gitlab:gitlab-cnpg-gitlab"
-  "50-gitlab/redis:gitlab-redis"
+  "50-gitlab/gitlab-cnpg:gitlab-cnpg-gitlab"
+  "50-gitlab/gitlab-redis:gitlab-redis"
+  "50-gitlab/gitlab-credentials:gitlab-credentials"
   "50-gitlab/gitlab-ready:gitlab-ready"
   "50-gitlab/gitlab-manifests:gitlab-manifests"
-  "50-gitlab/runners:gitlab-runners"
+  "50-gitlab/gitlab-runners:gitlab-runners"
 )
 
 ###############################################################################

@@ -15,10 +15,6 @@ metadata:
   name: vault-jwt-auth-setup
 rules:
   - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["vault-init-keys"]
-    verbs: ["get"]
-  - apiGroups: [""]
     resources: ["configmaps"]
     resourceNames: ["vault-root-ca"]
     verbs: ["get"]
@@ -78,19 +74,21 @@ spec:
               log() { echo "[$(date +%H:%M:%S)] $*"; }
               die() { log "FATAL: $*"; exit 1; }
 
-              # --- Load Vault root token ---
-              init_json=$(kubectl get secret vault-init-keys -n vault \
-                -o jsonpath='{.data.init\.json}' | base64 -d)
-              ROOT_TOKEN=$(echo "$init_json" | \
-                grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | \
-                grep -o '"[^"]*"$' | tr -d '"')
-              [[ -n "$ROOT_TOKEN" ]] || die "Failed to extract root_token"
-              export VAULT_ADDR VAULT_TOKEN="$ROOT_TOKEN"
+              # --- Authenticate to Vault via K8s auth (scoped jwt-auth-admin role) ---
+              log "Authenticating to Vault via K8s ServiceAccount JWT..."
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              VAULT_TOKEN=$(curl -sfk --request POST \
+                --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"jwt-auth-admin\"}" \
+                "${VAULT_ADDR}/v1/auth/kubernetes/login" | \
+                python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])")
+              [[ -n "$VAULT_TOKEN" ]] || die "Failed to authenticate to Vault via K8s auth"
+              export VAULT_ADDR VAULT_TOKEN
+              log "Vault K8s auth successful"
 
               vexec() {
                 kubectl exec -n vault vault-0 -- env \
                   VAULT_ADDR=http://127.0.0.1:8200 \
-                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  VAULT_TOKEN="${VAULT_TOKEN}" \
                   vault "$@"
               }
 
@@ -123,7 +121,7 @@ spec:
                 capabilities = [\"read\", \"list\"]
               }
               HCL
-                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault policy write gitlab-ci-read /tmp/gitlab-ci-read.hcl
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' vault policy write gitlab-ci-read /tmp/gitlab-ci-read.hcl
                 rm -f /tmp/gitlab-ci-read.hcl
               "
               log "Policy gitlab-ci-read created"
@@ -142,7 +140,7 @@ spec:
                 \"bound_claims\": {\"iss\": \"${GITLAB_URL}\"}
               }
               ROLE
-                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' \
                   vault write auth/jwt/role/gitlab-ci @/tmp/gitlab-ci-role.json
                 rm -f /tmp/gitlab-ci-role.json
               "
@@ -162,13 +160,13 @@ spec:
                 \"bound_claims\": {\"iss\": \"${GITLAB_URL}\", \"ref_protected\": \"true\"}
               }
               ROLE
-                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' \
                   vault write auth/jwt/role/gitlab-ci-protected @/tmp/gitlab-ci-protected-role.json
                 rm -f /tmp/gitlab-ci-protected-role.json
               "
               log "Role gitlab-ci-protected created"
 
-              # --- Create IDP role (used by VAULT_AUTH_ROLE=gitlab-ci-idp) ---
+              # --- Create IDP role ---
               log "Creating IDP JWT role..."
               kubectl exec -n vault vault-0 -- sh -c "
                 cat > /tmp/gitlab-ci-idp-role.json <<ROLE
@@ -182,7 +180,7 @@ spec:
                 \"bound_claims\": {\"iss\": \"${GITLAB_URL}\"}
               }
               ROLE
-                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' \
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' \
                   vault write auth/jwt/role/gitlab-ci-idp @/tmp/gitlab-ci-idp-role.json
                 rm -f /tmp/gitlab-ci-idp-role.json
               "

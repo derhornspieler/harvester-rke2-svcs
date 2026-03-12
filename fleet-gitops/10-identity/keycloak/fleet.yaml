@@ -2,6 +2,6 @@ defaultNamespace: keycloak
 dependsOn:
   - selector:
       matchLabels:
-        fleet.cattle.io/bundle-name: cnpg-keycloak
+        fleet.cattle.io/bundle-name: identity-cnpg-keycloak
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

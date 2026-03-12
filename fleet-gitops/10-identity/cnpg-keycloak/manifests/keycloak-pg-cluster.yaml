@@ -49,6 +49,9 @@ spec:
   monitoring:
     enablePodMonitor: false
 
+  # NOTE: cnpg-minio-credentials Secret is created by harbor-cnpg bundle (30-harbor).
+  # Until that bundle deploys, backups are non-functional. CNPG tolerates this and
+  # starts backups automatically once the secret appears.
   backup:
     barmanObjectStore:
       destinationPath: "s3://${MINIO_BUCKET_CNPG_BACKUPS}/keycloak-pg"

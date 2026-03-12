@@ -181,6 +181,13 @@ seed_root_ca() {
     kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply -f -
   log_ok "Root CA secret seeded in cert-manager namespace"
 
+  # Create kube-system vault-root-ca ConfigMap (needed by traefik-auth, hubble-auth, keycloak-config, gitlab runners)
+  kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n kube-system create configmap vault-root-ca \
+    --from-file=ca.crt="${ROOT_CA_PEM}" \
+    --dry-run=client -o yaml | \
+    kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply -f -
+  log_ok "vault-root-ca ConfigMap seeded in kube-system"
+
   # Create vault namespace (cert-only — root CA key stays offline)
   kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" create namespace vault --dry-run=client -o yaml | \
     kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply -f - 2>/dev/null

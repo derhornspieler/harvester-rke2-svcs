@@ -1,0 +1,102 @@
+# Helm values for GitLab golden-image-builder runner
+# Chart: gitlab/gitlab-runner
+#
+# This runner executes golden image builds. The heavy lifting runs inside
+# a Harvester utility VM -- the runner only needs Terraform + kubectl.
+
+replicas: 1
+
+## GitLab instance URL -- runner registers here
+gitlabUrl: ${GITLAB_URL}
+
+## TLS certificates for GitLab instance trust (Vault CA chain)
+certsSecretName: gitlab-runner-certs
+
+## Runner registration token (created by GitLab chart)
+runners:
+  secret: gitlab-gitlab-runner-secret
+  config: |
+    [[runners]]
+      name = "golden-image-builder"
+      executor = "kubernetes"
+      pre_build_script = """
+      # Trust the private CA
+      if command -v update-ca-certificates >/dev/null 2>&1; then
+        cp /etc/ssl/certs/vault-root-ca.pem /usr/local/share/ca-certificates/vault-root-ca.crt 2>/dev/null || true
+        update-ca-certificates 2>/dev/null || true
+      elif command -v update-ca-trust >/dev/null 2>&1; then
+        cp /etc/ssl/certs/vault-root-ca.pem /etc/pki/ca-trust/source/anchors/vault-root-ca.crt 2>/dev/null || true
+        update-ca-trust 2>/dev/null || true
+      fi
+      # Install build tools and set kubeconfig
+      apk add --no-cache kubectl jq bash coreutils 2>/dev/null || true
+      export KUBECONFIG=/etc/harvester/kubeconfig-harvester.yaml
+      """
+      [runners.kubernetes]
+        namespace = "gitlab-runners"
+        image = "hashicorp/terraform:1.12"
+        service_account = "gitlab-runner-sa"
+        pull_policy = ["if-not-present"]
+        # Golden image builds take 30-60 minutes
+        poll_timeout = 7200
+        [runners.kubernetes.node_selector]
+          "workload-type" = "compute"
+        [runners.kubernetes.volumes]
+          [[runners.kubernetes.volumes.config_map]]
+            name = "vault-root-ca"
+            mount_path = "/etc/ssl/certs/vault-root-ca.pem"
+            sub_path = "ca.crt"
+            read_only = true
+          [[runners.kubernetes.volumes.secret]]
+            name = "harvester-kubeconfig"
+            mount_path = "/etc/harvester"
+            read_only = true
+        [runners.kubernetes.pod_labels]
+          "app.kubernetes.io/managed-by" = "gitlab-runner"
+        [runners.kubernetes.pod_annotations]
+          "golden-image-builder" = "true"
+
+  ## Tags -- only jobs tagged with "golden-image-builder" run here
+  tags: "golden-image-builder"
+
+## Runner pod node selector (the runner manager pod itself)
+nodeSelector:
+  workload-type: general
+
+## Use pre-existing RBAC and ServiceAccount (from rbac.yaml)
+rbac:
+  create: false
+
+serviceAccount:
+  create: false
+  name: gitlab-runner-sa
+
+## VAULT_CACERT tells the runner's Vault secret resolver where to find
+## the private CA so it can verify the Vault TLS certificate
+envVars:
+  - name: VAULT_CACERT
+    value: /etc/ssl/certs/vault-root-ca.pem
+
+## Mount Root CA into the runner manager pod for Vault + GitLab TLS trust
+volumeMounts:
+  - name: vault-root-ca
+    mountPath: /etc/ssl/certs/vault-root-ca.pem
+    subPath: gitlab-ca.crt
+    readOnly: true
+
+volumes:
+  - name: vault-root-ca
+    secret:
+      secretName: gitlab-runner-certs
+
+## Prometheus metrics
+metrics:
+  enabled: true
+  portName: metrics
+  port: 9252
+
+## Resource requests for the runner manager pod
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi

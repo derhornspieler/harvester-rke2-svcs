@@ -1,0 +1,13 @@
+defaultNamespace: gitlab-runners
+helm:
+  releaseName: gitlab-runner-golden-image
+  chart: ${OCI_HELM_PREFIX}/gitlab-runner
+  version: "${CHART_VER_GITLAB_RUNNER}"
+  valuesFiles:
+    - values.yaml
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: gitlab-runners
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}

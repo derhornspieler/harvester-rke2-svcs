@@ -41,7 +41,7 @@ spec:
 
               log() { echo "[$(date +%H:%M:%S)] $*"; }
 
-              # Wait for GitLab to be ready (use -o /dev/null without -f since version endpoint requires auth)
+              # Wait for GitLab to be ready
               log "Waiting for GitLab API..."
               for i in $(seq 1 60); do
                 HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "${GITLAB_URL}/users/sign_in" 2>/dev/null)
@@ -60,8 +60,7 @@ spec:
                 "${GITLAB_URL}/oauth/token" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
               [ -n "$TOKEN" ] || { log "FATAL: Could not authenticate as root"; exit 1; }
 
-              # Trigger admin user first login via OIDC if they don't exist yet
-              # (she auto-provisions on first OIDC login, so we just need to check)
+              # Find or create admin user
               log "Looking up user ${ADMIN_USER}..."
               USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
                 "${GITLAB_URL}/api/v4/users?username=${ADMIN_USER}")
@@ -69,8 +68,7 @@ spec:
               USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
 
               if [ -z "$USER_ID" ]; then
-                log "User ${ADMIN_USER} not found — they need to login via Keycloak first"
-                log "Creating user via API instead..."
+                log "User ${ADMIN_USER} not found -- creating via API..."
                 CREATE_RESP=$(curl -sfk -X POST \
                   -H "Authorization: Bearer ${TOKEN}" \
                   -H "Content-Type: application/json" \

@@ -4,8 +4,7 @@
 #
 # Fleet marks a bundle "Ready" when resources are applied, NOT when pods
 # are healthy. This job waits for GitLab's API and OIDC discovery endpoint
-# to respond. Downstream bundles (gitlab-manifests, gitops-argocd-manifests,
-# gitops-argo-workflows-manifests) depend on this bundle instead of
+# to respond. Downstream bundles depend on this bundle instead of
 # gitlab-core directly.
 ---
 apiVersion: v1
@@ -94,29 +93,29 @@ spec:
               for i in $(seq 1 24); do
                 http_code=$(curl -sk -o /dev/null -w '%{http_code}' \
                   "${GITLAB_SVC}/-/readiness" 2>/dev/null || echo "000")
-                if [[ "$http_code" == "200" ]]; then
+                if [[ "${http_code}" == "200" ]]; then
                   log "GitLab readiness endpoint responding (HTTP 200)"
                   break
                 fi
                 log "GitLab not ready yet (HTTP ${http_code}), retrying..."
                 sleep 5
               done
-              [[ "$http_code" == "200" ]] || { log "FATAL: GitLab API not responding after 2 minutes"; exit 1; }
+              [[ "${http_code}" == "200" ]] || { log "FATAL: GitLab API not responding after 2 minutes"; exit 1; }
 
               # Phase 3: Verify OIDC discovery endpoint (needed by vault-jwt-auth-setup)
               log "Verifying GitLab OIDC discovery endpoint..."
               for i in $(seq 1 12); do
                 http_code=$(curl -sk -o /dev/null -w '%{http_code}' \
                   "${GITLAB_SVC}/.well-known/openid-configuration" 2>/dev/null || echo "000")
-                if [[ "$http_code" == "200" ]]; then
+                if [[ "${http_code}" == "200" ]]; then
                   log "GitLab OIDC discovery endpoint responding (HTTP 200)"
                   break
                 fi
                 sleep 5
               done
-              [[ "$http_code" == "200" ]] || log "WARN: OIDC discovery not responding — vault-jwt-auth may need retry"
+              [[ "${http_code}" == "200" ]] || log "WARN: OIDC discovery not responding -- vault-jwt-auth may need retry"
 
-              log "GitLab readiness verification complete — safe for dependents to deploy"
+              log "GitLab readiness verification complete -- safe for dependents to deploy"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

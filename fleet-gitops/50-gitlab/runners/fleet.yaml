@@ -1,7 +1,0 @@
-defaultNamespace: gitlab-runners
-dependsOn:
-  - selector:
-      matchLabels:
-        fleet.cattle.io/bundle-name: gitlab
-targets:
-  - clusterName: ${FLEET_TARGET_CLUSTER}

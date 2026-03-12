@@ -12,16 +12,16 @@ spec:
           - path: "services/*"
   template:
     metadata:
-      name: "{{path.basename}}"
+      name: "{{ "{{path.basename}}" }}"
     spec:
       project: developer-apps
       source:
         repoURL: "https://gitlab.${DOMAIN}/platform/platform-deployments.git"
         targetRevision: main
-        path: "{{path}}"
+        path: "{{ "{{path}}" }}"
       destination:
         server: "https://kubernetes.default.svc"
-        namespace: "app-{{path.basename}}"
+        namespace: "app-{{ "{{path.basename}}" }}"
       syncPolicy:
         automated:
           prune: true
