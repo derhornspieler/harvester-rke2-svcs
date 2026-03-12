@@ -341,24 +341,26 @@ histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="<service
 
 All queries are evaluated by Argo Rollouts every 2 minutes during canary stages.
 
-### GitLab Bundle Structure
+### GitLab Bundle Structure (50-gitlab group)
 
 The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runners + golden image system:
 
-| Bundle | Purpose | Depends On | Notes |
-|--------|---------|-----------|-------|
-| gitlab-init | Bootstrap secrets and CNPG cluster | minio, identity, pki | Waits for dependencies |
-| gitlab-cnpg | 3-replica PostgreSQL for GitLab | gitlab-init, operators-cnpg | Database for all services |
-| gitlab-redis | 3-node Redis Sentinel for caching | gitlab-init, operators-redis | Cache backend |
-| gitlab-credentials | Seed CI secrets into Vault | gitlab-init | **Deployed right after gitlab-redis** |
-| gitlab-core | GitLab EE Helm chart (webservice, sidekiq, gitaly) | gitlab-cnpg, gitlab-redis, gitlab-credentials | Main service |
-| gitlab-ready | Wait for GitLab webservice readiness | gitlab-core | Health check + probing |
-| gitlab-manifests | Additional ingress, RBAC, StorageClass | gitlab-ready | Manifests for operations |
-| gitlab-runners | Runner namespace + init Job | gitlab-ready | Executor setup |
-| gitlab-runner-shared | Shared runners (uses Harbor images) | gitlab-runners | Docker machine executor |
-| gitlab-runner-golden-image | Golden image builder (uses Harvester) | gitlab-runners | VM-based builder |
+| Bundle # | Bundle Name | Purpose | Depends On | Notes |
+|----------|-----------|---------|-----------|-------|
+| 38 | gitlab-init | Bootstrap secrets, namespaces, CNPG init | minio, monitoring, pki | Waits for infrastructure ready |
+| 39 | gitlab-cnpg | 3-replica PostgreSQL for GitLab data | gitlab-init, operators-cnpg | Database backend |
+| 40 | gitlab-redis | 3-node Redis Sentinel for caching | gitlab-init, operators-redis | Session & cache backend |
+| 41 | gitlab-credentials | Seed CI secrets into Vault (PushSecret) | gitlab-cnpg, gitlab-redis | **Deployed right after redis** |
+| 42 | gitlab-core | GitLab EE Helm chart (webservice, sidekiq, gitaly/praefect) | gitlab-cnpg, gitlab-redis, gitlab-credentials | Main service deployment |
+| 43 | gitlab-ready | Wait for GitLab webservice readiness probe | gitlab-core | Health check + readiness verification |
+| 44 | gitlab-manifests | Additional Gateway, RBAC, StorageClass, NetworkPolicy | gitlab-ready | Manifests for operations |
+| 45 | gitlab-runners | Runner namespace + executor init Job | gitlab-ready | Runner infrastructure setup |
+| 46 | gitlab-runner-shared | Shared runners (Kubernetes executor, uses Harbor images) | gitlab-runners | Distributed job execution |
+| 47 | gitlab-runner-golden-image | Golden image builder (VM-based, uses Harvester) | gitlab-runners | Golden image CI pipeline |
 
-**Critical design**: `gitlab-credentials` deploys immediately after `gitlab-redis` (before `gitlab-core`) to seed CI secrets into Vault early. This allows the credentials to be pulled by `gitlab-core` at startup, and by `gitlab-runner-golden-image` when the ExternalSecret refreshes.
+**Critical design**: `gitlab-credentials` (Bundle 41) deploys immediately after `gitlab-redis` (Bundle 40) and before `gitlab-core` (Bundle 42). The `gitlab-credentials` bundle contains a **PushSecret** that seeds CI credentials into Vault during the synchronization. This allows the credentials to be pulled by `gitlab-core` at startup, and by `gitlab-runner-golden-image` when the ExternalSecret syncs (default 5-minute refresh interval).
+
+**Bundles 38-44 are pure infrastructure** (no user-facing services). Bundles 45-47 scale with the platform.
 
 ### CI Pipeline YAML Structure
 

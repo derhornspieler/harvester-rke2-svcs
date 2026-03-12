@@ -206,15 +206,15 @@ Creates 58 HelmOp CRs on the Rancher management cluster. Each HelmOp references 
 
 Fleet controller reconciles these CRs and synchronizes deployments to the downstream cluster in dependency order.
 
-### Phase 5: Sign Vault Intermediate CSR
+### Phase 5: Sign Vault Intermediate CSR (Post-Deploy)
 
-After `pki-vault-init` deploys to the cluster, it generates a certificate signing request (CSR). Phase 5:
+After Phase 4 creates the HelmOps, the `pki-vault-init` Job deploys and generates a certificate signing request (CSR). Phase 5 (post-deploy):
 
-1. Waits for the `vault-intermediate-csr` Secret (up to 10 minutes)
-2. Extracts CSR PEM
-3. Signs it locally with the offline Root CA key using OpenSSL
-4. Imports the signed chain (`intermediate + root`) into Vault
-5. Configures Vault PKI role for certificate issuance
+1. Waits for vault-0 pod ready + vault-init Job completion (up to 15 minutes total)
+2. Extracts the `vault-intermediate-csr` Secret from the downstream cluster
+3. Signs it locally with the offline Root CA key using OpenSSL (on deployment machine)
+4. Imports the signed chain (`intermediate + root`) back into Vault PKI mount
+5. Configures Vault's `default` signing role to allow cert-manager to issue certificates
 
 **Critical:** Return the Root CA key to offline storage after this phase completes. It's not needed again unless the intermediate CA expires (15-year validity).
 
@@ -380,27 +380,28 @@ Common causes:
 - **Resource quota exceeded**: Check namespace limits: `kubectl describe ns <namespace>`
 - **Image not found in Harbor**: Verify charts/bundles were pushed: `helm ls -n fleet-default`
 
-### Phase 5 times out waiting for Vault CSR
+### Phase 5 times out waiting for Vault CSR (>15 min)
 
-The `pki-vault-init` Job must complete before Phase 5 can sign the intermediate CSR. Check the Job status:
+Phase 5 waits up to 15 minutes for vault-0 to be ready and the vault-init Job to complete. If this times out, check the downstream cluster:
 
 ```bash
-kubectl -n vault get jobs
+# Check if vault-0 pod is running
+kubectl -n vault get pods vault-0
+
+# Check vault-init Job logs
 kubectl -n vault logs job/vault-init
+
+# Check if vault-0 is sealed or initialized
+kubectl -n vault exec vault-0 -- vault status
 ```
 
 Common causes:
-- Vault pod is not running yet (Fleet is still syncing)
-- Vault is unhealthy (check `kubectl -n vault logs vault-0`)
-- CNPG database is not ready for Vault to connect
+- **Vault pods not running yet**: Fleet is still pulling and installing bundles. Wait for 05-pki-secrets bundle group to complete on Rancher.
+- **Vault is sealed**: The `pki-vault-unsealer` CronJob should auto-unseal every 2 minutes. Check logs: `kubectl -n vault logs cronjob/vault-unsealer`
+- **CNPG database not ready**: Vault requires the Raft storage cluster. Check `kubectl -n vault get pvc` — if pending, wait for storage provisioning.
+- **vault-init Job failed**: Check `kubectl -n vault describe job vault-init` and logs for errors.
 
-Wait for `pki-vault` HelmOp to be fully active:
-
-```bash
-./deploy.sh --status | grep pki-vault
-```
-
-All three should show `active` before Phase 5 signs the CSR.
+**If Phase 5 times out:** The script will skip CSR signing and log a warning. Re-run `./deploy.sh --group 05-pki-secrets` to retry Phase 5 after the Vault cluster stabilizes.
 
 ### Vault pods stuck in `0/1 Running`
 
