@@ -25,7 +25,6 @@ metadata:
   annotations:
     helm.sh/hook-delete-policy: before-hook-creation
 spec:
-  ttlSecondsAfterFinished: 120
   backoffLimit: 5
   template:
     metadata:
