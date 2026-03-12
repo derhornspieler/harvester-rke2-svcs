@@ -70,7 +70,6 @@ metadata:
     app.kubernetes.io/name: argocd-gitlab-setup
     app.kubernetes.io/component: bootstrap
 spec:
-  ttlSecondsAfterFinished: 120
   backoffLimit: 6
   template:
     metadata:
