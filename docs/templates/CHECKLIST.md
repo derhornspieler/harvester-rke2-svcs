@@ -2,38 +2,38 @@
 
 ## Service Information
 
-- **Service name:** _______________
-- **Namespace:** app-_______________
-- **Team:** _______________
-- **Container image:** harbor.aegisgroup.ch/<upstream>/<image>:<tag>
+- **Service name:** `_______________`
+- **Namespace:** `app-_______________`
+- **Team:** `_______________`
+- **Container image:** `harbor.aegisgroup.ch/UPSTREAM/IMAGE:TAG`
 
 ## Workload Configuration
 
 - **Node selector:** workload-type: general / database
-- **Replicas:** ___
-- **CPU request:** ___ (e.g., 100m)
-- **Memory request:** ___ (e.g., 128Mi)
+- **Replicas:** `___`
+- **CPU request:** `___` (e.g., 100m)
+- **Memory request:** `___` (e.g., 128Mi)
 - **Deployment strategy:** [ ] Deployment [ ] Argo Rollout (canary/blue-green)
 
 ## External Dependencies
 
 Check all that apply and fill in details:
 
-- [ ] **PostgreSQL (CNPG)** — DB name: ___, size: ___, node: database
-- [ ] **Redis/Valkey** — Sentinel: yes/no, size: ___
-- [ ] **MinIO bucket** — Bucket name: ___, estimated size: ___
-- [ ] **Keycloak OIDC client** — Redirect URI: ___, PKCE: S256/disabled
-- [ ] **Gateway + HTTPRoute** — FQDN: ___, TLS: vault-issuer
-- [ ] **TCPRoute (non-HTTP)** — Port: ___, protocol: ___
-- [ ] **HPA** — Min: ___, Max: ___, CPU target: ___%
-- [ ] **VolumeAutoscaler** — Threshold: ___%, max size: ___
-- [ ] **PodDisruptionBudget** — minAvailable: ___ or maxUnavailable: ___
+- [ ] **PostgreSQL (CNPG)** — DB name: `___`, size: `___`, node: database
+- [ ] **Redis/Valkey** — Sentinel: yes/no, size: `___`
+- [ ] **MinIO bucket** — Bucket name: `___`, estimated size: `___`
+- [ ] **Keycloak OIDC client** — Redirect URI: `___`, PKCE: S256/disabled
+- [ ] **Gateway + HTTPRoute** — FQDN: `___`, TLS: vault-issuer
+- [ ] **TCPRoute (non-HTTP)** — Port: `___`, protocol: `___`
+- [ ] **HPA** — Min: `___`, Max: `___`, CPU target: `___%`
+- [ ] **VolumeAutoscaler** — Threshold: `___%`, max size: `___`
+- [ ] **PodDisruptionBudget** — minAvailable: `___` or maxUnavailable: `___`
 - [ ] **oauth2-proxy** — For services without native OIDC
 - [ ] **Root CA trust** — Calls internal HTTPS endpoints: yes/no
-- [ ] **ServiceMonitor** — Metrics port: ___, path: /metrics
+- [ ] **ServiceMonitor** — Metrics port: `___`, path: /metrics
 - [ ] **Argo Rollout** — Strategy: canary / blue-green
 - [ ] **Argo Workflow templates** — Use case: CI / batch / pipeline
-- [ ] **Custom init steps** — Describe: ___
+- [ ] **Custom init steps** — Describe: `___`
 
 ## Auto-Provisioned (no action needed)
 
@@ -53,4 +53,4 @@ Available for Argo Rollouts:
 
 ## Rollback Plan
 
-_______________
+`_______________`
