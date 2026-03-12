@@ -323,7 +323,8 @@ To change manifests in, e.g., monitoring-init bundle:
 
 1. Edit manifests under `fleet-gitops/20-monitoring/monitoring-init/`
 2. Bump `BUNDLE_VERSION` in `.env` (e.g., from `1.0.0` to `1.0.1`)
-3. (Optional) Clean up completed Jobs first: `./cleanup-completed-jobs.sh` (prevents Fleet immutability conflicts)
+3. (Optional) Clean up any leftover Jobs before push: `./cleanup-completed-jobs.sh`
+   - Jobs auto-delete 2 minutes after completion. This is useful for pre-emptively cleaning failed or stuck Jobs.
 4. Push updated bundles: `./push-bundles.sh`
 5. Re-run deployment: `./deploy.sh --skip-push --group 20-monitoring`
 
