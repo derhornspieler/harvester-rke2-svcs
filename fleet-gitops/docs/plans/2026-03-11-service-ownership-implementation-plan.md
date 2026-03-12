@@ -844,7 +844,9 @@ spec:
 
 Follow init Job template from design doc. Sources init-lib.sh from local
 ConfigMap (same namespace). Job security context: `runAsNonRoot: true`,
-`drop: [ALL]`, `seccompProfile: RuntimeDefault`, `ttlSecondsAfterFinished: 3600`.
+`drop: [ALL]`, `seccompProfile: RuntimeDefault`. Current implementation uses
+`ttlSecondsAfterFinished: 120` (2 minutes); this plan proposed 3600 (1 hour) as a
+balance between security and job debugging.
 
 Steps: vault_k8s_login → vault_bind_eso_roles → create SecretStore YAML →
 vault_get_or_generate for admin password and DB password → vault_kv_put.
@@ -1328,7 +1330,7 @@ git commit -m "feat: add MinimalCD developer experience with ArgoCD ApplicationS
 - [ ] Vault OIDC default role does NOT have admin-policy
 - [ ] ArgoCD ApplicationSet auto-discovers test service
 - [ ] Developer AppProject restricts to app-* namespaces
-- [ ] Init Job TTL is 3600 (1 hour)
+- [ ] Init Job TTL is 120 (2 minutes) — current implementation; this plan proposed 3600 as alternative
 - [ ] Init Jobs have securityContext (runAsNonRoot, drop ALL, seccompProfile RuntimeDefault)
 - [ ] No cross-namespace ConfigMap mounts (init-lib.sh embedded per bundle)
 - [ ] monitoring-secrets resources fully migrated (vault-root-ca, scrape-configs, reader ESOs)
