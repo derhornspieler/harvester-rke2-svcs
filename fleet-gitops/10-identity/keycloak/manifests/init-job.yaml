@@ -1,0 +1,294 @@
+# keycloak-init: Bootstrap Vault ESO roles, SecretStores, and seed
+# credentials for the keycloak namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-base-keycloak role).
+# Also creates eso-secrets ServiceAccounts in kube-system and monitoring
+# namespaces so their SecretStores can authenticate.
+#
+# Requires: Vault unsealed with K8s auth enabled (05-pki-secrets).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eso-secrets
+  namespace: keycloak
+---
+# external-secrets SA — referenced by SecretStores for Vault K8s auth
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets
+  namespace: keycloak
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+rules:
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores"]
+    verbs: ["get", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+subjects:
+  - kind: ServiceAccount
+    name: keycloak-init
+    namespace: keycloak
+roleRef:
+  kind: Role
+  name: keycloak-init
+  apiGroup: rbac.authorization.k8s.io
+---
+# ClusterRole for creating eso-secrets SA in other namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloak-init-sa-creator
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "create", "patch"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores"]
+    verbs: ["get", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keycloak-init-sa-creator
+subjects:
+  - kind: ServiceAccount
+    name: keycloak-init
+    namespace: keycloak
+roleRef:
+  kind: ClusterRole
+  name: keycloak-init-sa-creator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-init
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 30
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-init
+    spec:
+      serviceAccountName: keycloak-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: vault-bin
+          emptyDir: {}
+      initContainers:
+        - name: vault-bin
+          image: ${IMAGE_VAULT}
+          command: ["cp", "/bin/vault", "/vault-bin/vault"]
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      containers:
+        - name: keycloak-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: PATH
+              value: "/vault-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # keycloak-init: ESO roles, SecretStores, admin + DB credentials
+              # Also sets up eso-secrets SA in kube-system and monitoring
+              # namespaces. Idempotent — safe to re-run.
+
+              NAMESPACE="keycloak"
+
+              ###############################################################
+              # Inline helpers (no init-lib.sh dependency)
+              ###############################################################
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+
+              vault_k8s_login() {
+                local role="$1"
+                local sa_token
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                  role="${role}" jwt="${sa_token}")
+                export VAULT_TOKEN
+                log "[INFO] Authenticated to Vault as role: ${role}"
+              }
+
+              vault_get_or_generate() {
+                local path="$1" field="$2" length="${3:-32}"
+                local existing
+                existing=$(vault kv get -field="${field}" "kv/${path}" 2>/dev/null || true)
+                if [[ -n "${existing}" ]]; then
+                  echo "${existing}"
+                  return 0
+                fi
+                head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "${length}" || true
+              }
+
+              vault_kv_put() {
+                local path="$1"; shift
+                vault kv put "kv/${path}" "$@"
+                log "[INFO] Written to kv/${path}"
+              }
+
+              vault_bind_eso_roles() {
+                local ns="$1"
+                local sa_names="eso-secrets,external-secrets"
+                vault write "auth/kubernetes/role/eso-reader-${ns}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-reader-${ns}" \
+                  ttl=1h
+                vault write "auth/kubernetes/role/eso-writer-${ns}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${ns}" \
+                  policies="eso-writer-${ns}" \
+                  ttl=1h
+                log "[INFO] Bound ESO roles for namespace: ${ns}"
+              }
+
+              vault_create_secretstore() {
+                local ns="$1"
+                local vault_url="${VAULT_ADDR}"
+                kubectl apply -f - <<SSEOF
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-backend
+                namespace: ${ns}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-reader-${ns}"
+                        serviceAccountRef:
+                          name: external-secrets
+              ---
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-writer
+                namespace: ${ns}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-writer-${ns}"
+                        serviceAccountRef:
+                          name: external-secrets
+              SSEOF
+                log "[INFO] Created SecretStores (reader + writer) in namespace: ${ns}"
+              }
+
+              ###############################################################
+              # Main
+              ###############################################################
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-base-keycloak"
+
+              # --- Bind ESO reader/writer roles for keycloak namespace ---
+              vault_bind_eso_roles "${NAMESPACE}"
+
+              # --- Create namespace SecretStores ---
+              vault_create_secretstore "${NAMESPACE}"
+
+              # --- Generate and store Keycloak admin password ---
+              log "[INFO] Seeding Keycloak admin credentials..."
+              ADMIN_PASSWORD=$(vault_get_or_generate "admin/keycloak" "admin-password")
+              vault_kv_put "admin/keycloak" \
+                admin-password="${ADMIN_PASSWORD}"
+
+              # Also store at services/keycloak/admin-secret for ExternalSecret
+              vault_kv_put "services/keycloak/admin-secret" \
+                KC_BOOTSTRAP_ADMIN_USERNAME="admin" \
+                KC_BOOTSTRAP_ADMIN_PASSWORD="${ADMIN_PASSWORD}"
+              log "[INFO] Keycloak admin credentials stored"
+
+              # --- Generate and store keycloak-pg DB password ---
+              log "[INFO] Seeding keycloak-pg database credentials..."
+              DB_PASSWORD=$(vault_get_or_generate "services/database/keycloak-pg" "password")
+              vault_kv_put "services/database/keycloak-pg" \
+                username="keycloak" \
+                password="${DB_PASSWORD}"
+              log "[INFO] keycloak-pg database credentials stored"
+
+              # --- Create eso-secrets SA in downstream namespaces ---
+              # These namespaces need eso-secrets SA for their SecretStores to
+              # authenticate to Vault. Created here because keycloak-init runs
+              # before monitoring, external-dns, and kube-system init Jobs.
+              DOWNSTREAM_NAMESPACES="kube-system monitoring"
+              for ns in ${DOWNSTREAM_NAMESPACES}; do
+                log "[INFO] Ensuring eso-secrets SA in namespace: ${ns}"
+                kubectl apply -f - <<SAEOF
+              apiVersion: v1
+              kind: ServiceAccount
+              metadata:
+                name: eso-secrets
+                namespace: ${ns}
+              SAEOF
+              done
+              log "[INFO] Downstream eso-secrets ServiceAccounts created"
+
+              log "[INFO] keycloak-init complete"
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

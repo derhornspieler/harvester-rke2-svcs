@@ -1,3 +1,5 @@
 defaultNamespace: argocd
+dependsOn:
+  - name: gitops-argocd-init
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

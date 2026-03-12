@@ -1,3 +1,10 @@
 defaultNamespace: database
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: harbor-init
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: operators-cnpg
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

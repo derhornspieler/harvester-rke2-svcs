@@ -1,3 +1,0 @@
-defaultNamespace: gitlab
-targets:
-  - clusterName: ${FLEET_TARGET_CLUSTER}

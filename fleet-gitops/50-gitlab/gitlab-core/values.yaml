@@ -1,0 +1,349 @@
+## GitLab Helm Chart -- Platform Values (Medium Production)
+##
+## Node scheduling strategy:
+##   - Lightweight (shell, kas, exporter, toolbox, registry, minio)  -> general
+##   - Heavy       (webservice, sidekiq, gitaly, praefect)           -> compute
+##   - Stateful    (CNPG PostgreSQL, OpsTree Redis)                  -> database
+##
+## TLS: cert-manager with vault-issuer ClusterIssuer (already deployed)
+## Storage class: ${STORAGE_CLASS}
+## Ingress: Gateway API (${GATEWAY_CLASS} as GatewayClass) -- NOT standard Ingress
+## Redis: OpsTree Redis Operator (RedisReplication + RedisSentinel CRs)
+## PostgreSQL: CloudNativePG operator (Cluster CR)
+
+global:
+  edition: ee
+
+  ## Enterprise Activation Code (synced from Vault via ESO)
+  extraEnvFrom:
+    GITLAB_ACTIVATION_CODE:
+      secretKeyRef:
+        name: gitlab-license
+        key: activation-code
+
+  ## Shared MinIO from minio namespace
+  minio:
+    enabled: false
+
+  hosts:
+    domain: ${DOMAIN}
+    https: true
+
+  ## Gateway API (Traefik)
+  ingress:
+    enabled: false
+    configureCertmanager: false
+  gatewayApi:
+    enabled: true
+    installEnvoy: false
+    configureCertmanager: false
+    gatewayRef:
+      name: gitlab
+      namespace: gitlab
+
+  ## External PostgreSQL (CloudNativePG via PgBouncer poolers)
+  psql:
+    host: ${GITLAB_DB_HOST_RW}
+    port: 5432
+    username: gitlab
+    database: ${GITLAB_DB_NAME}
+    preparedStatements: false
+    applicationName: gitlab
+    password:
+      useSecret: true
+      secret: gitlab-postgresql-app
+      key: password
+    connectTimeout: 10
+    keepalives: 1
+    keepalivesIdle: 30
+    keepalivesInterval: 10
+    keepalivesCount: 3
+    tcpUserTimeout: 60000
+    ## Read-Replica Load Balancing via PgBouncer pooler-ro
+    load_balancing:
+      hosts:
+        - ${GITLAB_DB_HOST_RO}
+
+  ## External Redis (OpsTree Sentinel HA)
+  ## "host" is the Sentinel master name, NOT a hostname
+  redis:
+    host: ${REDIS_MASTER_NAME}
+    port: 6379
+    auth:
+      enabled: true
+      secret: gitlab-redis-credentials
+      key: password
+    sentinels:
+      - host: ${GITLAB_REDIS_SENTINEL}
+        port: 26379
+
+  ## Gitaly with auth token
+  gitaly:
+    enabled: true
+    authToken:
+      secret: gitlab-gitaly-secret
+      key: token
+
+  ## Praefect (Gitaly HA)
+  praefect:
+    enabled: true
+    replaceInternalGitaly: true
+    autoMigrate: true
+    dbSecret:
+      secret: gitlab-praefect-dbsecret
+      key: secret
+    virtualStorages:
+      - name: default
+        gitalyReplicas: 3
+        maxUnavailable: 1
+    psql:
+      host: ${GITLAB_DB_HOST_RW}
+      port: 5432
+      user: praefect
+      dbName: praefect
+      sslMode: disable
+
+  monitoring:
+    enabled: true
+
+  shell:
+    port: 22
+
+  time_zone: UTC
+
+  nodeSelector:
+    workload-type: general
+
+  ## OIDC (Keycloak) -- PKCE disabled for GitLab
+  appConfig:
+    omniauth:
+      enabled: true
+      allowSingleSignOn: ['openid_connect']
+      blockAutoCreatedUsers: false
+      autoLinkUser: ['openid_connect']
+      providers:
+        - secret: gitlab-oidc-secret
+          key: provider
+
+    ## Object Storage (shared MinIO)
+    object_store:
+      enabled: true
+      proxy_download: true
+      connection:
+        secret: gitlab-minio-storage
+        key: connection
+    lfs:
+      bucket: ${MINIO_BUCKET_GITLAB_LFS}
+    artifacts:
+      bucket: ${MINIO_BUCKET_GITLAB_ARTIFACTS}
+    uploads:
+      bucket: ${MINIO_BUCKET_GITLAB_UPLOADS}
+    packages:
+      bucket: ${MINIO_BUCKET_GITLAB_PACKAGES}
+    externalDiffs:
+      bucket: ${MINIO_BUCKET_GITLAB_MR_DIFFS}
+    terraformState:
+      bucket: ${MINIO_BUCKET_GITLAB_TERRAFORM}
+    ciSecureFiles:
+      bucket: ${MINIO_BUCKET_GITLAB_CI_SECURE_FILES}
+    dependencyProxy:
+      bucket: ${MINIO_BUCKET_GITLAB_DEPENDENCY_PROXY}
+
+  ## Root CA Trust (Vault CA)
+  certificates:
+    customCAs:
+      - secret: gitlab-root-ca
+
+## Disable bundled services (using external)
+postgresql:
+  install: false
+redis:
+  install: false
+prometheus:
+  install: false
+gitlab-runner:
+  install: false
+
+installCertmanager: false
+
+certmanager-issuer:
+  email: ${PLATFORM_ADMIN_EMAIL}
+
+nginx-ingress:
+  enabled: false
+
+traefik:
+  install: false
+
+## Container Registry -- DISABLED (Harbor is the platform registry)
+registry:
+  enabled: false
+
+## GitLab Sub-Charts
+gitlab:
+
+  ## Webservice (Rails + Workhorse) -> COMPUTE nodes
+  webservice:
+    replicaCount: 2
+    minReplicas: 2
+    maxReplicas: 10
+    nodeSelector:
+      workload-type: compute
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2.5Gi
+    workhorse:
+      resources:
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      livenessProbe:
+        initialDelaySeconds: 300
+        periodSeconds: 60
+        timeoutSeconds: 30
+        failureThreshold: 5
+    deployment:
+      livenessProbe:
+        initialDelaySeconds: 300
+        periodSeconds: 60
+        timeoutSeconds: 30
+        failureThreshold: 5
+      readinessProbe:
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 12
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: "10%"
+          maxUnavailable: 0
+    terminationGracePeriodSeconds: 60
+    shutdown:
+      blackoutSeconds: 10
+
+  ## Sidekiq (Background Jobs) -> COMPUTE nodes
+  sidekiq:
+    replicas: 2
+    minReplicas: 2
+    maxReplicas: 5
+    hpa:
+      cpu:
+        targetAverageValue: 800m
+    nodeSelector:
+      workload-type: compute
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+    livenessProbe:
+      initialDelaySeconds: 300
+      periodSeconds: 60
+      timeoutSeconds: 30
+      failureThreshold: 5
+    readinessProbe:
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 12
+    deployment:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: "10%"
+          maxUnavailable: 0
+    terminationGracePeriodSeconds: 600
+
+  ## Gitaly (Git storage) -> COMPUTE nodes
+  gitaly:
+    nodeSelector:
+      workload-type: compute
+    resources:
+      requests:
+        cpu: "2"
+        memory: 4Gi
+    persistence:
+      enabled: true
+      size: 100Gi
+      accessMode: ReadWriteOnce
+      storageClass: ${STORAGE_CLASS}
+    maxUnavailable: 1
+
+  ## Praefect (Gitaly HA proxy) -> COMPUTE nodes
+  praefect:
+    nodeSelector:
+      workload-type: compute
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  ## GitLab Shell (SSH) -> general nodes
+  gitlab-shell:
+    replicaCount: 2
+    minReplicas: 2
+    maxReplicas: 6
+    nodeSelector:
+      workload-type: general
+    resources:
+      requests:
+        cpu: 100m
+        memory: 150Mi
+    deployment:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: "10%"
+          maxUnavailable: 0
+    terminationGracePeriodSeconds: 60
+    ## SSH exposed via Gateway API TCPRoute (in gitlab-manifests bundle)
+    gatewayRoute:
+      enabled: false
+
+  ## KAS (Kubernetes Agent Server) -> general nodes
+  kas:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    nodeSelector:
+      workload-type: general
+    resources:
+      requests:
+        cpu: 100m
+        memory: 150Mi
+
+  ## GitLab Exporter -> general nodes
+  gitlab-exporter:
+    enabled: true
+    nodeSelector:
+      workload-type: general
+    resources:
+      requests:
+        cpu: 50m
+        memory: 100Mi
+
+  ## Migrations -> general nodes
+  migrations:
+    enabled: true
+    nodeSelector:
+      workload-type: general
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+
+  ## Toolbox -> general nodes
+  toolbox:
+    enabled: true
+    replicas: 1
+    nodeSelector:
+      workload-type: general
+    resources:
+      requests:
+        cpu: 50m
+        memory: 512Mi
+
+  ## GitLab Pages -- disabled
+  gitlab-pages:
+    enabled: false

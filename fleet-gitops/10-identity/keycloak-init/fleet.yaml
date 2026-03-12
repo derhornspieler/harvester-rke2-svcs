@@ -1,3 +1,0 @@
-defaultNamespace: keycloak
-targets:
-  - clusterName: ${FLEET_TARGET_CLUSTER}

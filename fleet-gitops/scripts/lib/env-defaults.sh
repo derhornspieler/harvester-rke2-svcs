@@ -75,6 +75,7 @@ export ALERTMANAGER_FQDN="${ALERTMANAGER_FQDN:-alertmanager.${DOMAIN}}"
 export HUBBLE_FQDN="${HUBBLE_FQDN:-hubble.${DOMAIN}}"
 export TRAEFIK_FQDN="${TRAEFIK_FQDN:-traefik.${DOMAIN}}"
 export HARBOR_FQDN="${HARBOR_FQDN:-${HARBOR_HOST}}"
+export RANCHER_FQDN="${RANCHER_FQDN:-rancher.hvst-vip.${DOMAIN}}"
 
 # --- Derived OIDC URLs ---
 export OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-https://${KEYCLOAK_FQDN}/realms/${KEYCLOAK_REALM}}"
@@ -99,8 +100,26 @@ export GITLAB_URL="${GITLAB_URL:-https://${GITLAB_FQDN}}"
 
 # --- Derived Harbor URLs ---
 export HARBOR_EXTERNAL_URL="${HARBOR_EXTERNAL_URL:-https://${HARBOR_FQDN}}"
-export OCI_HELM_PREFIX="oci://${HARBOR_HOST}/helm"
-export OCI_FLEET_PREFIX="oci://${HARBOR_HOST}/fleet"
+export OCI_HELM_PREFIX="${OCI_HELM_PREFIX:-oci://${HARBOR_HOST}/helm}"
+export OCI_FLEET_PREFIX="${OCI_FLEET_PREFIX:-oci://${HARBOR_HOST}/fleet}"
+
+# --- Per-chart OCI URI overrides ---
+# Set any OCI_CHART_* in .env to override the full OCI path for a specific chart.
+# Example: OCI_CHART_VAULT=oci://harbor.dmz.tiger.net/charts.hashicorp.com/vault
+export OCI_CHART_PROMETHEUS_CRDS="${OCI_CHART_PROMETHEUS_CRDS:-${OCI_HELM_PREFIX}/prometheus-operator-crds}"
+export OCI_CHART_CNPG="${OCI_CHART_CNPG:-${OCI_HELM_PREFIX}/cloudnative-pg}"
+export OCI_CHART_REDIS_OPERATOR="${OCI_CHART_REDIS_OPERATOR:-${OCI_HELM_PREFIX}/redis-operator}"
+export OCI_CHART_CERT_MANAGER="${OCI_CHART_CERT_MANAGER:-${OCI_HELM_PREFIX}/cert-manager}"
+export OCI_CHART_VAULT="${OCI_CHART_VAULT:-${OCI_HELM_PREFIX}/vault}"
+export OCI_CHART_EXTERNAL_SECRETS="${OCI_CHART_EXTERNAL_SECRETS:-${OCI_HELM_PREFIX}/external-secrets}"
+export OCI_CHART_EXTERNAL_DNS="${OCI_CHART_EXTERNAL_DNS:-${OCI_HELM_PREFIX}/external-dns}"
+export OCI_CHART_PROMETHEUS_STACK="${OCI_CHART_PROMETHEUS_STACK:-${OCI_HELM_PREFIX}/kube-prometheus-stack}"
+export OCI_CHART_HARBOR="${OCI_CHART_HARBOR:-${OCI_HELM_PREFIX}/harbor}"
+export OCI_CHART_ARGOCD="${OCI_CHART_ARGOCD:-${OCI_HELM_PREFIX}/argo-cd}"
+export OCI_CHART_ARGO_ROLLOUTS="${OCI_CHART_ARGO_ROLLOUTS:-${OCI_HELM_PREFIX}/argo-rollouts}"
+export OCI_CHART_ARGO_WORKFLOWS="${OCI_CHART_ARGO_WORKFLOWS:-${OCI_HELM_PREFIX}/argo-workflows}"
+export OCI_CHART_GITLAB="${OCI_CHART_GITLAB:-${OCI_HELM_PREFIX}/gitlab}"
+export OCI_CHART_GITLAB_RUNNER="${OCI_CHART_GITLAB_RUNNER:-${OCI_HELM_PREFIX}/gitlab-runner}"
 
 # --- Vault PKI role (domain dots replaced by -dot-) ---
 export VAULT_PKI_ROLE="${VAULT_PKI_ROLE:-${VAULT_PKI_MOUNT}/sign/${DOMAIN//./-dot-}}"
@@ -199,4 +218,5 @@ ${CHART_VER_HARBOR} ${CHART_VER_ARGOCD} ${CHART_VER_ARGO_ROLLOUTS}
 ${CHART_VER_ARGO_WORKFLOWS} ${CHART_VER_GITLAB} ${CHART_VER_GITLAB_RUNNER}
 ${ROOT_CA_PEM_CONTENT} ${ROOT_CA_PEM_B64}
 ${ROOT_CA_PEM_INDENT2} ${ROOT_CA_PEM_INDENT4} ${ROOT_CA_PEM_INDENT8}
-${VAULT_PKI_MOUNT}'
+${VAULT_PKI_MOUNT}
+${RANCHER_FQDN}'

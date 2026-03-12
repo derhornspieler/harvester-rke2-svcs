@@ -1,12 +1,9 @@
----
-# rollouts-init: Binds ESO reader/writer roles and creates SecretStore for
-# the argo-rollouts namespace.
+# rollouts-init: Binds ESO reader/writer roles, creates SecretStore, and
+# creates rollouts-oidc Keycloak client for the argo-rollouts namespace.
 #
-# Auth: K8s auth to Vault (bootstrap-base-argo-rollouts role). NO root token.
-# Requires: Vault unsealed with K8s auth configured.
-# No OIDC client needed — Argo Rollouts dashboard is accessed via ArgoCD
-# or kubectl plugin.
----
+# Auth: K8s auth to Vault (bootstrap-keycloak-argo-rollouts role). NO root token.
+# Requires: Vault unsealed, Keycloak running, keycloak-admin-bootstrap secret.
+# All helper functions are INLINED — no init-lib.sh dependency.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -16,8 +13,8 @@ metadata:
     app.kubernetes.io/name: rollouts-init
     app.kubernetes.io/component: bootstrap
 spec:
-  backoffLimit: 6
-  ttlSecondsAfterFinished: 3600
+  backoffLimit: 30
+  ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels:
@@ -34,25 +31,239 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       volumes:
-        - name: init-lib
-          configMap:
-            name: init-lib
+        - name: bootstrap-secrets
+          secret:
+            secretName: keycloak-admin-bootstrap
+        - name: vault-bin
+          emptyDir: {}
+      initContainers:
+        - name: vault-bin
+          image: ${IMAGE_VAULT}
+          command: ["cp", "/bin/vault", "/vault-bin/vault"]
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
       containers:
         - name: rollouts-init
           image: ${IMAGE_ALPINE_K8S}
           env:
+            - name: PATH
+              value: "/vault-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
+            - name: KEYCLOAK_URL
+              value: "http://keycloak.keycloak.svc.cluster.local:8080"
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              # rollouts-init: bind ESO roles and create SecretStore for argo-rollouts
+              # rollouts-init: ESO roles, SecretStore, OIDC client for argo-rollouts
               # Idempotent — safe to re-run.
 
-              source /init-lib/init-lib.sh
+              DOMAIN="${DOMAIN}"
+
+              ###################################################################
+              # Inlined helper functions
+              ###################################################################
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+
+              vault_k8s_login() {
+                local role="$1"
+                local sa_token
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                  role="${role}" jwt="${sa_token}")
+                export VAULT_TOKEN
+                log "[INFO] Authenticated to Vault as role: ${role}"
+              }
+
+              vault_get_or_generate() {
+                local path="$1" property="$2" length="${3:-32}"
+                local existing
+                existing=$(vault kv get -field="${property}" "kv/${path}" 2>/dev/null || true)
+                if [[ -n "${existing}" ]]; then
+                  echo "${existing}"
+                  return 0
+                fi
+                head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "${length}" || true
+              }
+
+              vault_kv_put() {
+                local path="$1"; shift
+                vault kv put "kv/${path}" "$@"
+                log "[INFO] Written to kv/${path}"
+              }
+
+              vault_bind_eso_roles() {
+                local namespace="$1"
+                local sa_names="eso-secrets,external-secrets"
+                vault write "auth/kubernetes/role/eso-reader-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-reader-${namespace}" \
+                  ttl=1h
+                vault write "auth/kubernetes/role/eso-writer-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-writer-${namespace}" \
+                  ttl=1h
+                log "[INFO] Bound ESO roles for namespace: ${namespace}"
+              }
+
+              vault_create_secretstore() {
+                local namespace="$1"
+                local vault_url="${VAULT_ADDR}"
+                kubectl apply -f - <<SSEOF
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-backend
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-reader-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              ---
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-writer
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-writer-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              SSEOF
+                log "[INFO] Created SecretStores (reader + writer) in namespace: ${namespace}"
+              }
+
+              wait_for_keycloak() {
+                local keycloak_url="${KEYCLOAK_URL}"
+                local max_attempts="${1:-60}" interval="${2:-10}"
+                log "[INFO] Waiting for Keycloak to be ready at ${keycloak_url}..."
+                for i in $(seq 1 "${max_attempts}"); do
+                  http_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
+                    "${keycloak_url}/realms/master/.well-known/openid-configuration" 2>/dev/null || echo "000")
+                  if [[ "${http_code}" == "200" ]]; then
+                    log "[INFO] Keycloak is ready (attempt ${i})"
+                    return 0
+                  fi
+                  if (( i % 6 == 0 )); then
+                    log "[INFO] Keycloak not ready yet (HTTP ${http_code}), attempt ${i}/${max_attempts}..."
+                  fi
+                  sleep "${interval}"
+                done
+                log "[ERROR] Keycloak not ready after ${max_attempts} attempts"
+                return 1
+              }
+
+              keycloak_create_oidc_client() {
+                local client_id="$1" redirect_uri="$2" pkce="${3:-S256}"
+                local keycloak_url="${KEYCLOAK_URL}"
+                local admin_pass
+                admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
+
+                local token
+                token=$(curl -s --http1.1 -X POST \
+                  "${keycloak_url}/realms/master/protocol/openid-connect/token" \
+                  -d "grant_type=password&client_id=admin-cli" \
+                  -d "username=admin&password=${admin_pass}" \
+                  | jq -r '.access_token')
+
+                if [[ -z "${token}" || "${token}" == "null" ]]; then
+                  log "[ERROR] Failed to get Keycloak admin token"
+                  return 1
+                fi
+
+                local realm="platform"
+                local api="${keycloak_url}/admin/realms/${realm}/clients"
+
+                local existing_id
+                existing_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                  "${api}?clientId=${client_id}" \
+                  | jq -r '.[0].id // empty' 2>/dev/null || true)
+
+                local client_secret
+                client_secret=$(vault_get_or_generate "oidc/${client_id}" "client-secret")
+
+                local cookie_secret
+                cookie_secret=$(vault_get_or_generate "oidc/${client_id}" "cookie-secret" 16)
+
+                local post_logout
+                post_logout="${redirect_uri%/*}/*"
+
+                local client_json
+                client_json=$(jq -n \
+                  --arg clientId "${client_id}" \
+                  --arg secret "${client_secret}" \
+                  --arg redirectUri "${redirect_uri}" \
+                  --arg postLogout "${post_logout}" \
+                  '{
+                    clientId: $clientId,
+                    enabled: true,
+                    protocol: "openid-connect",
+                    publicClient: false,
+                    secret: $secret,
+                    redirectUris: [$redirectUri],
+                    webOrigins: ["+"],
+                    standardFlowEnabled: true,
+                    directAccessGrantsEnabled: false,
+                    attributes: {
+                      "post.logout.redirect.uris": $postLogout
+                    }
+                  }')
+
+                if [[ "${pkce}" == "S256" ]]; then
+                  client_json=$(echo "${client_json}" | jq '.attributes["pkce.code.challenge.method"] = "S256"')
+                fi
+
+                if [[ -n "${existing_id}" ]]; then
+                  curl -s --http1.1 -X PUT -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    "${api}/${existing_id}" -d "${client_json}" >/dev/null
+                  log "[INFO] Updated OIDC client: ${client_id}"
+                else
+                  curl -s --http1.1 -X POST -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    "${api}" -d "${client_json}" >/dev/null
+                  log "[INFO] Created OIDC client: ${client_id}"
+                fi
+
+                vault_kv_put "oidc/${client_id}" \
+                  client-secret="${client_secret}" \
+                  cookie-secret="${cookie_secret}"
+              }
+
+              ###################################################################
+              # Main logic
+              ###################################################################
 
               # --- Authenticate to Vault via K8s auth ---
-              vault_k8s_login "bootstrap-base-argo-rollouts"
+              vault_k8s_login "bootstrap-keycloak-argo-rollouts"
 
               # --- Bind ESO reader/writer roles for argo-rollouts namespace ---
               log "[INFO] Binding ESO roles for argo-rollouts namespace..."
@@ -61,10 +272,24 @@ spec:
               # --- Create namespace SecretStores ---
               vault_create_secretstore "argo-rollouts"
 
+              # --- Wait for Keycloak to be ready ---
+              wait_for_keycloak
+
+              # --- Create Rollouts OIDC client in Keycloak ---
+              # Uses PKCE S256 because OAuth2-proxy handles the flow.
+              log "[INFO] Creating Rollouts OIDC client..."
+              keycloak_create_oidc_client "rollouts-oidc" \
+                "https://rollouts.${DOMAIN}/oauth2/callback" \
+                "S256"
+              log "[INFO] Rollouts OIDC client created"
+
               log "[INFO] rollouts-init complete"
           volumeMounts:
-            - name: init-lib
-              mountPath: /init-lib
+            - name: bootstrap-secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: vault-bin
+              mountPath: /vault-bin
               readOnly: true
           securityContext:
             allowPrivilegeEscalation: false

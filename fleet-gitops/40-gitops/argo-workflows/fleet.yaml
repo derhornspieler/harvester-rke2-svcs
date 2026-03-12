@@ -5,5 +5,7 @@ helm:
   version: "${CHART_VER_ARGO_WORKFLOWS}"
   valuesFiles:
     - values.yaml
+dependsOn:
+  - name: gitops-workflows-init
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}
