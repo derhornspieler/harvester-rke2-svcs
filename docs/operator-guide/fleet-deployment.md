@@ -1,6 +1,6 @@
 # Fleet Deployment Guide
 
-This guide walks through deploying all 7 Fleet bundles (37 total bundles) to your RKE2 cluster using Rancher Fleet. This is the primary and only supported deployment method. Clusters are provisioned via Rancher API script.
+This guide walks through deploying all 7 Fleet bundle groups (58 total bundles) to your RKE2 cluster using Rancher Fleet. For a faster getting-started path, see [Getting Started](../getting-started.md) which uses the unified `deploy.sh` script. This guide shows the step-by-step details of the underlying deployment process. Clusters are provisioned via Rancher API script.
 
 ## Prerequisites
 
@@ -40,19 +40,20 @@ git --version
 - Ability to create DNS A records for `*.example.com`
 - (Root CA will be created offline during setup)
 
-## Overview: The 7 Bundles
+## Overview: The 7 Bundle Groups (58 Total Bundles)
 
-Bundles deploy in strict order, each depending on previous ones:
+Bundle groups deploy in strict order, each depending on previous ones. For detailed bundle structure, see [Platform Overview](../architecture/overview.md).
 
-| # | Bundle | Contains | Depends On |
-|---|--------|----------|------------|
-| 00 | operators | CNPG, Redis, node-labeler, storage-autoscaler, cluster-autoscaler | None |
-| 05 | PKI & Secrets | Vault, cert-manager, ESO | 00-operators |
-| 10 | Identity | Keycloak, OAuth2-proxy, CNPG | 05-pki-secrets |
-| 20 | Monitoring | Prometheus, Grafana, Loki, Alloy, Hubble | 05-pki-secrets, 10-identity |
-| 30 | Harbor | Harbor registry, MinIO, CNPG, Valkey | 05-pki-secrets, 10-identity |
-| 40 | GitOps | ArgoCD, Argo Rollouts, Argo Workflows | 05-pki-secrets, 10-identity |
-| 50 | Git & CI | GitLab, Runners, CNPG, Redis | 05-pki-secrets, 10-identity, 30-harbor |
+| Group | Count | Main Bundles | Depends On |
+|-------|-------|--------------|------------|
+| 00-operators | 8 | CNPG, Redis, node-labeler, storage-autoscaler, cluster-autoscaler, Gateway API CRDs | None |
+| 05-pki-secrets | 8 | Vault HA, cert-manager, ESO, vault-init, vault-unsealer, vault-issuer | 00-operators |
+| 10-identity | 3 | Keycloak, OAuth2-proxy, Keycloak database (CNPG) | 05-pki-secrets |
+| 11-infra-auth | 3 | Auth gateways for Prometheus, Alertmanager, Hubble | 10-identity |
+| 20-monitoring | 7 | Prometheus, Grafana, Loki, Alloy, Hubble, Alertmanager | 05-pki-secrets, 11-infra-auth |
+| 30-harbor | 7 | Harbor registry, MinIO, Harbor database (CNPG), Valkey cache | 05-pki-secrets, 11-infra-auth |
+| 40-gitops | 9 | ArgoCD, Argo Rollouts, Argo Workflows + initialization | 05-pki-secrets, 10-identity, 11-infra-auth |
+| 50-gitlab | 13 | GitLab EE, Praefect/Gitaly, Runners, golden image builder, CNPG, Redis | 05-pki-secrets, 10-identity, 11-infra-auth, 30-harbor |
 
 ## Step 1: Prepare Your Environment
 
