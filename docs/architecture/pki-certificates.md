@@ -98,7 +98,24 @@ When a client connects to any service on the platform:
 4. The client trusts Root CA (it's mounted on every node and in every pod as `root-ca.pem`)
 5. Connection is established securely
 
-This means all 23 services on the platform share a single trust boundary — if you trust the Root CA, you trust every certificate on the platform.
+This means all 27 services on the platform share a single trust boundary — if you trust the Root CA, you trust every certificate on the platform.
+
+### Vault Intermediate CA Setup (Automated in Phase 5)
+
+During deployment, the `deploy.sh` script automates the entire process of creating the Vault Intermediate CA:
+
+1. **pki-vault-init Job** generates a Certificate Signing Request (CSR) inside Vault and stores it in a Kubernetes Secret (`vault-intermediate-csr`)
+2. **Phase 5 of deploy.sh** retrieves the CSR from the cluster and signs it locally with the offline Root CA key
+3. **OpenSSL** (running on the deployment machine) performs the signing with 5475 days (15 years) validity
+4. **The signed chain** (intermediate + root) is imported back into Vault's `pki_int/` mount
+5. **Vault's signing role** is configured to allow cert-manager to request certificates for `&lt;DOMAIN&gt;` and `cluster.local`
+
+This automation eliminates manual CSR handling and ensures the Root CA key is used for only a few seconds during deployment, then returned to offline storage.
+
+**Timeline:**
+- After Phase 4 completes, the script waits up to 10 minutes for vault-init Job to complete
+- CSR signing takes ~30 seconds
+- Root CA key remains offline except during this signing window
 
 ## Certificate Inventory
 
