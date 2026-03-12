@@ -43,7 +43,7 @@ Layer 1: Per-Service Init Jobs (one per service, ephemeral)
                           -> MinIO bucket + access key (if uses object storage)
                           -> Generate passwords (admin, Redis, DB, etc.)
                           -> Push all credentials to Vault KV
-                          -> Self-destructs via ttlSecondsAfterFinished: 86400
+                          -> Self-destructs via ttlSecondsAfterFinished: 120 (2 minutes)
 
 Layer 2: Declarative Manifests (Fleet-managed, standard bundles)
   CNPG Cluster CRs        -> Reference credentials from Layer 1
@@ -90,7 +90,8 @@ access to Vault — only ESO controllers do via the `eso-writer` role.
 - Init Jobs **cannot create** arbitrary Vault policies. vault-init pre-creates
   template policies (`eso-reader-<ns>`, `eso-writer-<ns>`). Init Jobs can only
   **bind** existing policies to auth roles.
-- Job TTL reduced to 3600 (1 hour) to minimize credential exposure window.
+- **Job TTL**: Currently 120 seconds (2 minutes, as of 2026-03-12) to prevent completed Jobs from hoarding CPU requests.
+  This design doc proposed 3600 (1 hour) as a more practical balance between credential exposure and job debugging needs — future implementation may adjust.
 - Bootstrap credentials mounted as **files** (not env vars) to prevent leaking
   in process listings or crash dumps.
 - Init Job ServiceAccount names (`<service>-init`) must never be reused by
