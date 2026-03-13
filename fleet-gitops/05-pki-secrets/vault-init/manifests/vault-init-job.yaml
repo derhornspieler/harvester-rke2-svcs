@@ -1038,15 +1038,7 @@ spec:
                 policies="argocd-gitlab-setup" \
                 ttl=1h
 
-              # K8s auth role: golden-image-watcher-setup (bound to SA in argo-workflows namespace)
-              # Reuses argocd-gitlab-setup policy (same kv/services/ci/* paths)
-              vexec write "auth/kubernetes/role/golden-image-watcher-setup" \
-                bound_service_account_names="golden-image-watcher-setup" \
-                bound_service_account_namespaces="argo-workflows" \
-                policies="argocd-gitlab-setup" \
-                ttl=1h
-
-              log "Scoped policies and K8s auth roles created for jwt-auth-admin, argocd-gitlab-setup, and golden-image-watcher-setup"
+              log "Scoped policies and K8s auth roles created for jwt-auth-admin and argocd-gitlab-setup"
 
               # ================================================================
               # Step 12: Seed admin credentials (idempotent)
