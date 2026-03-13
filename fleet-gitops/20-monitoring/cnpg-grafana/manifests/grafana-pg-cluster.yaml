@@ -44,7 +44,7 @@ spec:
     topologyKey: kubernetes.io/hostname
 
   monitoring:
-    enablePodMonitor: false
+    enablePodMonitor: true
 
   # NOTE: cnpg-minio-credentials Secret is created by harbor-cnpg bundle (30-harbor).
   # Until that bundle deploys, backups are non-functional. CNPG tolerates this and

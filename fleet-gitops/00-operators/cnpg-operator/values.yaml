@@ -14,6 +14,11 @@ topologySpreadConstraints:
       matchLabels:
         app.kubernetes.io/name: cloudnative-pg
 
+monitoring:
+  podMonitorEnabled: true
+  podMonitorAdditionalLabels:
+    release: kube-prometheus-stack
+
 config:
   data:
     INHERITED_ANNOTATIONS: "kustomize.toolkit.fluxcd.io/*"
