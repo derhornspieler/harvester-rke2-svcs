@@ -178,6 +178,8 @@ traefik:
 ## Container Registry -- DISABLED (Harbor is the platform registry)
 registry:
   enabled: false
+  gatewayRoute:
+    enabled: false
 
 ## GitLab Sub-Charts
 gitlab:
@@ -304,6 +306,12 @@ gitlab:
   ## KAS (Kubernetes Agent Server) -> general nodes
   kas:
     enabled: true
+    ## Disable chart-generated HTTPRoute — port 8142 (autoflow/codec-server)
+    ## is unconditionally rendered but the Service doesn't expose it unless
+    ## autoflow.enabled=true (chart bug in gitlab 9.9.2). KAS is already
+    ## reachable via our Gateway (gitlab-manifests bundle, kas-web listener).
+    gatewayRoute:
+      enabled: false
     minReplicas: 2
     maxReplicas: 6
     nodeSelector:
