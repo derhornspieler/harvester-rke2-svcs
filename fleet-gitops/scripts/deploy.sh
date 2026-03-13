@@ -477,23 +477,6 @@ seed_manual_secrets() {
     log_warn "GITLAB_LICENSE not set in .env — skipping GitLab license seeding"
   fi
 
-  # Golden image watcher credentials (used by Argo CronWorkflow to push upstream-versions.json)
-  if [[ -n "${GOLDEN_IMAGE_GITLAB_USER:-}" && -n "${GOLDEN_IMAGE_GITLAB_TOKEN:-}" ]]; then
-    local existing_watcher
-    existing_watcher=$(vexec kv get -field=username kv/services/ci/golden-image-watcher 2>/dev/null || true)
-    if [[ -n "${existing_watcher}" ]]; then
-      log_warn "Golden image watcher credentials already in Vault — skipping"
-    else
-      vexec kv put kv/services/ci/golden-image-watcher \
-        username="${GOLDEN_IMAGE_GITLAB_USER}" \
-        token="${GOLDEN_IMAGE_GITLAB_TOKEN}" \
-        repo-url="${GOLDEN_IMAGE_GITLAB_REPO_URL}"
-      log_ok "Golden image watcher credentials seeded in Vault at services/ci/golden-image-watcher"
-    fi
-  else
-    log_warn "GOLDEN_IMAGE_GITLAB_USER/TOKEN not set in .env — skipping watcher secret seeding"
-  fi
-
   # Harvester kubeconfig (used by golden-image-builder runner to orchestrate builds)
   if [[ -n "${HARVESTER_KUBECONFIG_PATH:-}" && -f "${HARVESTER_KUBECONFIG_PATH}" ]]; then
     local existing_kubeconfig
