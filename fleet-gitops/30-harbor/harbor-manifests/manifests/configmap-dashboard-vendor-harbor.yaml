@@ -92,7 +92,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -138,7 +138,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "disableTextWrap": false,
               "editorMode": "builder",
@@ -168,7 +168,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -218,7 +218,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "harbor_system_info{instance=~\"$instance\",job=\"harbor-exporter\"}",
@@ -246,7 +246,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -296,7 +296,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "harbor_system_info{instance=~\"$instance\",job=\"harbor-exporter\"}",
@@ -322,7 +322,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -372,7 +372,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "harbor_system_info{instance=~\"$instance\",job=\"harbor-exporter\"}",
@@ -398,7 +398,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -464,7 +464,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "harbor_health{instance=~\"$instance\",job=\"harbor-exporter\"}",
@@ -493,7 +493,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -554,7 +554,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "disableTextWrap": false,
               "editorMode": "code",
@@ -599,7 +599,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -645,7 +645,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum (harbor_project_total{instance=~\"$instance\",job=\"harbor-exporter\"})",
@@ -661,7 +661,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -707,7 +707,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "disableTextWrap": false,
               "editorMode": "builder",
@@ -728,7 +728,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -812,7 +812,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum (harbor_project_total{instance=~\"$instance\",job=\"harbor-exporter\"})",
@@ -825,7 +825,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum by (public)(harbor_project_total{instance=~\"$instance\"})",
@@ -841,7 +841,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -888,7 +888,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum (harbor_project_quota_usage_byte{instance=~\"$instance\",job=\"harbor-exporter\"})",
@@ -914,7 +914,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -967,7 +967,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum by (project_name)(harbor_project_repo_total{instance=~\"$instance\"})",
@@ -983,7 +983,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -1036,7 +1036,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "editorMode": "code",
               "expr": "sum by (project_name) (harbor_project_quota_usage_byte{instance=~\"$instance\"})",
@@ -1052,7 +1052,7 @@ data:
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS-LAB}"
+            "uid": "prometheus"
           },
           "fieldConfig": {
             "defaults": {
@@ -1104,7 +1104,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "disableTextWrap": false,
               "editorMode": "builder",
@@ -1134,7 +1134,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "fieldConfig": {
                 "defaults": {
@@ -1180,7 +1180,7 @@ data:
                 {
                   "datasource": {
                     "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS-LAB}"
+                    "uid": "prometheus"
                   },
                   "disableTextWrap": false,
                   "editorMode": "builder",
@@ -1200,7 +1200,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "fieldConfig": {
                 "defaults": {
@@ -1246,7 +1246,7 @@ data:
                 {
                   "datasource": {
                     "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS-LAB}"
+                    "uid": "prometheus"
                   },
                   "disableTextWrap": false,
                   "editorMode": "builder",
@@ -1266,7 +1266,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "fieldConfig": {
                 "defaults": {
@@ -1344,7 +1344,7 @@ data:
                 {
                   "datasource": {
                     "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS-LAB}"
+                    "uid": "prometheus"
                   },
                   "editorMode": "code",
                   "expr": "sum by (project_name)(harbor_project_artifact_total{instance=~\"$instance\"})",
@@ -1360,7 +1360,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "fieldConfig": {
                 "defaults": {
@@ -1413,7 +1413,7 @@ data:
                 {
                   "datasource": {
                     "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS-LAB}"
+                    "uid": "prometheus"
                   },
                   "disableTextWrap": false,
                   "editorMode": "builder",
@@ -1433,7 +1433,7 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_PROMETHEUS-LAB}"
+                "uid": "prometheus"
               },
               "fieldConfig": {
                 "defaults": {
@@ -1511,7 +1511,7 @@ data:
                 {
                   "datasource": {
                     "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS-LAB}"
+                    "uid": "prometheus"
                   },
                   "disableTextWrap": false,
                   "editorMode": "builder",
@@ -1545,7 +1545,7 @@ data:
             "current": {},
             "datasource": {
               "type": "prometheus",
-              "uid": "${DS_PROMETHEUS-LAB}"
+              "uid": "prometheus"
             },
             "definition": "label_values(harbor_system_info,instance)",
             "hide": 0,
@@ -1568,7 +1568,7 @@ data:
             "current": {},
             "datasource": {
               "type": "prometheus",
-              "uid": "${DS_PROMETHEUS-LAB}"
+              "uid": "prometheus"
             },
             "definition": "label_values(harbor_project_artifact_total{instance=~\"$instance\"},project_name)",
             "hide": 0,
