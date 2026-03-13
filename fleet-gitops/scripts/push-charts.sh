@@ -75,4 +75,22 @@ for entry in "${OCI_CHARTS[@]}"; do
   log "  Pushed oci://${HARBOR}/helm/${name}:${version}"
 done
 
+# Grafana plugins: push to Harbor as OCI artifact for air-gapped install
+if [[ -n "${GRAFANA_PLUGIN_LOKIEXPLORE_FILE:-}" && "${GRAFANA_PLUGIN_LOKIEXPLORE_FILE}" != /* ]]; then
+  GRAFANA_PLUGIN_LOKIEXPLORE_FILE="${FLEET_DIR}/${GRAFANA_PLUGIN_LOKIEXPLORE_FILE#./}"
+fi
+PLUGIN_FILE="${GRAFANA_PLUGIN_LOKIEXPLORE_FILE:-${FLEET_DIR}/plugins/grafana-lokiexplore-app-${GRAFANA_PLUGIN_LOKIEXPLORE_VER:-}.zip}"
+if [[ -n "${GRAFANA_PLUGIN_LOKIEXPLORE_VER:-}" && -f "${PLUGIN_FILE}" ]]; then
+  log "Pushing Grafana Logs Drilldown plugin to Harbor..."
+  echo "${HARBOR_PASS}" | crane auth login "${HARBOR}" -u "${HARBOR_USER}" --password-stdin 2>/dev/null
+  _plugin_tar="$(mktemp)"
+  tar czf "${_plugin_tar}" -C "$(dirname "${PLUGIN_FILE}")" "$(basename "${PLUGIN_FILE}")"
+  crane append -f "${_plugin_tar}" \
+    -t "${HARBOR}/library/grafana-lokiexplore-app:${GRAFANA_PLUGIN_LOKIEXPLORE_VER}"
+  rm -f "${_plugin_tar}"
+  log "  Pushed ${HARBOR}/library/grafana-lokiexplore-app:${GRAFANA_PLUGIN_LOKIEXPLORE_VER}"
+elif [[ -n "${GRAFANA_PLUGIN_LOKIEXPLORE_VER:-}" ]]; then
+  log "WARN: GRAFANA_PLUGIN_LOKIEXPLORE_VER=${GRAFANA_PLUGIN_LOKIEXPLORE_VER} set but ${PLUGIN_FILE} not found — skipping"
+fi
+
 log "All charts pushed to oci://${HARBOR}/helm/"

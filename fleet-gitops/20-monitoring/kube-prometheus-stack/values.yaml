@@ -120,6 +120,9 @@ alertmanager:
 grafana:
   replicas: 2
   fullnameOverride: "grafana"
+  # Air-gapped plugin install: GF_INSTALL_PLUGINS handled by Docker entrypoint
+  # (chart's plugins: key maps to GF_PLUGINS_PREINSTALL_SYNC which only supports
+  # plugin IDs from grafana.com — broken for custom URLs / air-gapped installs)
   serviceMonitor:
     enabled: false  # Managed by ArgoCD (svc-monitoring-stack)
   ingress:
@@ -138,6 +141,7 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
   env:
+    GF_INSTALL_PLUGINS: "${GRAFANA_PLUGIN_INSTALL_URL}"
     GF_SERVER_ROOT_URL: https://${GRAFANA_FQDN}/
     GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /tmp/dashboards/Home/home-overview.json
     # PostgreSQL database backend (shared sessions across replicas)
