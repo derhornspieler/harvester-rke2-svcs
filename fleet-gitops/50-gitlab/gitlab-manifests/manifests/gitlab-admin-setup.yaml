@@ -12,7 +12,6 @@ metadata:
     app.kubernetes.io/component: bootstrap
 spec:
   backoffLimit: 6
-  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
