@@ -28,7 +28,6 @@ FLEET_JOBS=(
   "harbor/harbor-init"
   "harbor/harbor-oidc-setup"
   "argocd/argocd-gitlab-setup"
-  "argo-workflows/golden-image-watcher-setup"
   "gitlab/gitlab-ready"
   "gitlab/vault-jwt-auth-setup"
   "gitlab/gitlab-admin-setup"
