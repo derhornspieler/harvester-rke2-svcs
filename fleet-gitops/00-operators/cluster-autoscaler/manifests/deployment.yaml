@@ -60,10 +60,10 @@ spec:
             - --namespace=cluster-autoscaler
             # Scale-down behavior (mirrors cluster-level annotations for
             # defense-in-depth; the annotations take priority if set)
-            - --scale-down-delay-after-add=10m
-            - --scale-down-delay-after-delete=1m
-            - --scale-down-unneeded-time=10m
-            - --scale-down-utilization-threshold=0.5
+            - --scale-down-delay-after-add=${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}
+            - --scale-down-delay-after-delete=${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE}
+            - --scale-down-unneeded-time=${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}
+            - --scale-down-utilization-threshold=${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}
             # Safety: never scale below PDB minimums
             - --skip-nodes-with-local-storage=false
             - --balance-similar-node-groups=true
