@@ -340,6 +340,12 @@ Complete CI/CD platform: Git repository hosting, merge request workflows, CI pip
 | Gateway | `gitlab` | gitlab gateway |
 | TCPRoute | `gitlab` | SSH access (port 22) |
 
+### HTTPRoute Configuration Notes
+
+**Registry HTTPRoute Disabled**: The internal GitLab Registry (built-in container registry) is disabled in favor of Harbor as the platform-wide registry. The `registry.gatewayRoute.enabled: false` setting prevents the chart from rendering an HTTPRoute for the disabled registry subchart.
+
+**KAS HTTPRoute Disabled**: The Kubernetes Agent Server (KAS) HTTPRoute is disabled due to a chart bug in gitlab 9.9.2 where the template unconditionally renders a route for port 8142 (autoflow/codec-server), but the Service does not expose this port unless `autoflow.enabled=true`. KAS remains accessible via a custom Gateway (defined in the `gitlab-manifests` bundle) with a dedicated `kas-web` listener on port 8150.
+
 ### Customization
 
 - **Runner tags**: match CI jobs to appropriate runner types via GitLab CI `tags:` keyword
