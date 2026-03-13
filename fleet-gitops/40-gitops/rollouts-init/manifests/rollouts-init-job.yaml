@@ -302,6 +302,54 @@ spec:
                 log "[INFO] Assigned groups scope to ${client_id}"
               }
 
+              keycloak_add_audience_mapper() {
+                local client_id="$1"
+                local keycloak_url="${KEYCLOAK_URL}"
+                local admin_pass
+                admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
+
+                local token
+                token=$(curl -s --http1.1 -X POST \
+                  "${keycloak_url}/realms/master/protocol/openid-connect/token" \
+                  -d "grant_type=password&client_id=admin-cli" \
+                  -d "username=admin&password=${admin_pass}" \
+                  | jq -r '.access_token')
+
+                if [[ -z "${token}" || "${token}" == "null" ]]; then
+                  log "[WARN] Failed to get token for audience mapper"
+                  return 0
+                fi
+
+                local realm="platform"
+                local client_uuid
+                client_uuid=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                  "${keycloak_url}/admin/realms/${realm}/clients?clientId=${client_id}" \
+                  | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+
+                if [[ -z "${client_uuid}" ]]; then
+                  log "[WARN] Client ${client_id} not found — skipping audience mapper"
+                  return 0
+                fi
+
+                curl -s --http1.1 -o /dev/null \
+                  -X POST "${keycloak_url}/admin/realms/${realm}/clients/${client_uuid}/protocol-mappers/models" \
+                  -H "Authorization: Bearer ${token}" \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "name": "audience-mapper",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                      "included.client.audience": "'"${client_id}"'",
+                      "id.token.claim": "true",
+                      "access.token.claim": "true",
+                      "included.custom.audience": "",
+                      "userinfo.token.claim": "false"
+                    }
+                  }'
+                log "[INFO] Added audience mapper to ${client_id}"
+              }
+
               ###################################################################
               # Main logic
               ###################################################################
@@ -327,6 +375,7 @@ spec:
                 "S256"
               log "[INFO] Rollouts OIDC client created"
               keycloak_assign_groups_scope "rollouts-oidc"
+              keycloak_add_audience_mapper "rollouts-oidc"
 
               log "[INFO] rollouts-init complete"
           volumeMounts:
