@@ -150,6 +150,7 @@ grafana:
     GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
     GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "grafana"
     GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email groups"
+    GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
     GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
     GF_AUTH_GENERIC_OAUTH_AUTH_URL: "${OIDC_ISSUER_URL}/protocol/openid-connect/auth"
     GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "${OIDC_ISSUER_URL}/protocol/openid-connect/token"
