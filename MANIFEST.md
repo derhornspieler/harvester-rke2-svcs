@@ -9,20 +9,20 @@ All container images are pulled through Harbor pull-through cache.
 
 | Chart | Version | Upstream Source | Bundle Group |
 |-------|---------|----------------|--------------|
-| cert-manager | v1.19.4 | https://charts.jetstack.io | 05-pki-secrets |
-| vault | 0.32.0 | https://helm.releases.hashicorp.com | 05-pki-secrets |
-| external-secrets | 2.0.1 | https://charts.external-secrets.io | 05-pki-secrets |
-| cloudnative-pg | 0.27.1 | https://cloudnative-pg.github.io/charts | 00-operators |
-| redis-operator | 0.23.0 | https://ot-container-kit.github.io/helm-charts | 00-operators |
-| external-dns | 1.16.1 | https://kubernetes-sigs.github.io/external-dns | 15-dns |
-| prometheus-operator-crds | 27.0.0 | https://prometheus-community.github.io/helm-charts | 00-operators |
-| kube-prometheus-stack | 82.10.0 | https://prometheus-community.github.io/helm-charts | 20-monitoring |
-| harbor | 1.18.2 | https://helm.goharbor.io | 30-harbor |
-| argo-cd | 9.4.7 | oci://ghcr.io/argoproj/argo-helm/argo-cd | 40-gitops |
-| argo-rollouts | 2.40.6 | oci://ghcr.io/argoproj/argo-helm/argo-rollouts | 40-gitops |
-| argo-workflows | 0.47.4 | oci://ghcr.io/argoproj/argo-helm/argo-workflows | 40-gitops |
-| gitlab | 9.9.2 | https://charts.gitlab.io | 50-gitlab |
-| gitlab-runner | 0.86.0 | https://charts.gitlab.io | 50-gitlab |
+| cert-manager | v1.19.4 | <https://charts.jetstack.io> | 05-pki-secrets |
+| vault | 0.32.0 | <https://helm.releases.hashicorp.com> | 05-pki-secrets |
+| external-secrets | 2.0.1 | <https://charts.external-secrets.io> | 05-pki-secrets |
+| cloudnative-pg | 0.27.1 | <https://cloudnative-pg.github.io/charts> | 00-operators |
+| redis-operator | 0.23.0 | <https://ot-container-kit.github.io/helm-charts> | 00-operators |
+| external-dns | 1.16.1 | <https://kubernetes-sigs.github.io/external-dns> | 15-dns |
+| prometheus-operator-crds | 27.0.0 | <https://prometheus-community.github.io/helm-charts> | 00-operators |
+| kube-prometheus-stack | 82.10.0 | <https://prometheus-community.github.io/helm-charts> | 20-monitoring |
+| harbor | 1.18.2 | <https://helm.goharbor.io> | 30-harbor |
+| argo-cd | 9.4.7 | `oci://ghcr.io/argoproj/argo-helm/argo-cd` | 40-gitops |
+| argo-rollouts | 2.40.6 | `oci://ghcr.io/argoproj/argo-helm/argo-rollouts` | 40-gitops |
+| argo-workflows | 0.47.4 | `oci://ghcr.io/argoproj/argo-helm/argo-workflows` | 40-gitops |
+| gitlab | 9.9.2 | <https://charts.gitlab.io> | 50-gitlab |
+| gitlab-runner | 0.86.0 | <https://charts.gitlab.io> | 50-gitlab |
 
 ## Container Images
 
