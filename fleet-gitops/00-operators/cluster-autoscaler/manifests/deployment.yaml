@@ -64,6 +64,10 @@ spec:
             - --scale-down-delay-after-delete=${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE}
             - --scale-down-unneeded-time=${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}
             - --scale-down-utilization-threshold=${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}
+            # Ignore pods with priority < 0 (overprovisioning) in utilization
+            # calculations — prevents scale-down/scale-up oscillation when
+            # overprovisioning pods are preempted and leave nodes underutilized
+            - --expendable-pods-priority-cutoff=0
             # Safety: never scale below PDB minimums
             - --skip-nodes-with-local-storage=false
             - --balance-similar-node-groups=true
