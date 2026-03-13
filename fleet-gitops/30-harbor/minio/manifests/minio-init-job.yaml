@@ -302,15 +302,17 @@ spec:
                 if mc stat "myminio/${MINIO_BUCKET_GRAFANA_PLUGINS}/grafana-lokiexplore-app-${PLUGIN_VER}.zip" >/dev/null 2>&1; then
                   log "[INFO] Plugin grafana-lokiexplore-app-${PLUGIN_VER}.zip already in MinIO — skipping"
                 else
-                  # Download plugin layer from Harbor OCI artifact
+                  # Download plugin layer from Harbor OCI artifact (authenticated)
                   log "[INFO] Downloading grafana-lokiexplore-app:${PLUGIN_VER} from Harbor..."
                   HARBOR_URL="https://${HARBOR_HOST}"
-                  MANIFEST=$(curl -sk "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/manifests/${PLUGIN_VER}" \
+                  MANIFEST=$(curl -sk -u "${HARBOR_USER}:${HARBOR_PASS}" \
+                    "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/manifests/${PLUGIN_VER}" \
                     -H "Accept: application/vnd.oci.image.manifest.v1+json" 2>/dev/null || true)
                   DIGEST=$(echo "${MANIFEST}" | jq -r '.layers[0].digest // empty' 2>/dev/null || true)
 
                   if [[ -n "${DIGEST}" ]]; then
-                    curl -sk "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/blobs/${DIGEST}" \
+                    curl -sk -u "${HARBOR_USER}:${HARBOR_PASS}" \
+                      "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/blobs/${DIGEST}" \
                       -o /tmp/plugin-layer.tar.gz
                     tar xzf /tmp/plugin-layer.tar.gz -C /tmp/
                     mc cp "/tmp/grafana-lokiexplore-app-${PLUGIN_VER}.zip" \
