@@ -362,6 +362,10 @@ The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runne
 
 **Bundles 38-44 are pure infrastructure** (no user-facing services). Bundles 45-47 scale with the platform.
 
+**HTTPRoute configuration**: The `gitlab-core` Helm chart has two subcharts with disabled HTTPRoutes:
+- **Registry** (`registry.gatewayRoute.enabled: false`): The internal GitLab Registry subchart is disabled because Harbor serves as the platform registry. Even when disabled, the chart was rendering a dangling HTTPRoute.
+- **KAS** (`kas.gatewayRoute.enabled: false`): The Kubernetes Agent Server HTTPRoute is disabled due to a chart bug (gitlab 9.9.2) where the template unconditionally renders port 8142 for autoflow/codec-server, but the Service does not expose this port unless `autoflow.enabled=true`. KAS is accessible via the custom Gateway defined in the `gitlab-manifests` bundle with a dedicated `kas-web` listener.
+
 ### CI Pipeline YAML Structure
 
 CI pipelines in GitLab are defined in `.gitlab-ci.yml`:
