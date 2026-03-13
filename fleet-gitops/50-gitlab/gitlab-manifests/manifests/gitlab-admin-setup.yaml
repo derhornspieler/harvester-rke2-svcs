@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/component: bootstrap
 spec:
   backoffLimit: 6
+  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
@@ -74,7 +75,7 @@ spec:
                   "${GITLAB_URL}/api/v4/users" \
                   -d '{
                     "username": "'"${ADMIN_USER}"'",
-                    "name": "Alice Morgan",
+                    "name": "${PLATFORM_ADMIN_NAME}",
                     "email": "'"${ADMIN_USER}@${DOMAIN}"'",
                     "password": "'"${ROOT_PASS}"'",
                     "skip_confirmation": true,
@@ -90,7 +91,7 @@ spec:
                   -H "Authorization: Bearer ${TOKEN}" \
                   -H "Content-Type: application/json" \
                   "${GITLAB_URL}/api/v4/users/${USER_ID}" \
-                  -d '{"admin": true, "name": "Alice Morgan"}'
+                  -d '{"admin": true, "name": "${PLATFORM_ADMIN_NAME}"}'
                 log "${ADMIN_USER} promoted to admin and name fixed"
               fi
 
