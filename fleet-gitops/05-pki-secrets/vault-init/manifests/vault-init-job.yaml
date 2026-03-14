@@ -777,10 +777,10 @@ spec:
               ENDPOLICY
 
               write_policy eso-writer-gitlab-runners <<'ENDPOLICY'
-              path "kv/data/ci/*" {
+              path "kv/data/services/ci/*" {
                 capabilities = ["create", "read", "update", "list"]
               }
-              path "kv/metadata/ci/*" {
+              path "kv/metadata/services/ci/*" {
                 capabilities = ["create", "update", "read", "list", "delete"]
               }
               ENDPOLICY
