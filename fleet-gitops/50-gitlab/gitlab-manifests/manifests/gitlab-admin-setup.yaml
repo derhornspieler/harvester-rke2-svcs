@@ -1,7 +1,12 @@
 ---
-# gitlab-admin-setup: Creates platform admin user via gitlab-rails with OIDC
-# identity pre-linked, so Keycloak login maps to this account (no duplicates).
+# gitlab-admin-setup: Creates platform users via gitlab-rails with OIDC
+# identities pre-linked, so Keycloak login maps correctly (no duplicates).
 # Uses kubectl exec into the toolbox pod to run rails commands.
+#
+# Users created:
+#   - Platform admin (alice.morgan) — GitLab admin + Owner on project group
+#   - Senior developer (frank.jones) — Maintainer on project group (can merge to main)
+#
 # Idempotent — safe to re-run on every deploy.
 ---
 apiVersion: v1
@@ -68,10 +73,8 @@ spec:
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              ADMIN_USER="${PLATFORM_ADMIN_USER}"
-              ADMIN_EMAIL="${PLATFORM_ADMIN_EMAIL}"
-              ADMIN_NAME="${PLATFORM_ADMIN_NAME}"
               OIDC_PROVIDER="openid_connect"
+              GITLAB_GROUP="infra_and_platform_services"
 
               log() { echo "[$(date +%H:%M:%S)] $*"; }
 
@@ -95,29 +98,22 @@ spec:
               [[ -n "${TOOLBOX_POD}" ]] || { log "FATAL: Toolbox pod not ready after 10 minutes"; exit 1; }
               log "Toolbox pod ready: ${TOOLBOX_POD}"
 
-              # Split name into first/last
-              FIRST_NAME=$(echo "${ADMIN_NAME}" | cut -d' ' -f1)
-              LAST_NAME=$(echo "${ADMIN_NAME}" | cut -d' ' -f2-)
-              [[ -n "${LAST_NAME}" ]] || LAST_NAME="Admin"
-
-              # Create or update admin user with OIDC identity via gitlab-rails
-              log "Creating/updating admin user ${ADMIN_USER} via gitlab-rails..."
-
               # Write Ruby script to temp file (avoids heredoc quoting issues in YAML)
-              cat > /tmp/admin-setup.rb << 'RUBYEOF'
-              admin_user = ENV['ADMIN_USER']
-              admin_email = ENV['ADMIN_EMAIL']
-              first_name = ENV['FIRST_NAME']
-              last_name = ENV['LAST_NAME']
+              cat > /tmp/user-setup.rb << 'RUBYEOF'
+              username = ENV['SETUP_USER']
+              email = ENV['SETUP_EMAIL']
+              full_name = ENV['SETUP_NAME']
               oidc_provider = ENV['OIDC_PROVIDER']
-              full_name = "#{first_name} #{last_name}"
+              is_admin = ENV['SETUP_ADMIN'] == 'true'
+              access_level = ENV.fetch('SETUP_ACCESS_LEVEL', '0').to_i
+              group_path = ENV.fetch('SETUP_GROUP', '')
 
-              user = User.find_by(username: admin_user)
+              user = User.find_by(username: username)
 
               if user
-                puts "User #{admin_user} exists (ID: #{user.id})"
+                puts "User #{username} exists (ID: #{user.id})"
                 changed = false
-                unless user.admin?
+                if is_admin && !user.admin?
                   user.admin = true
                   changed = true
                   puts "Promoted to admin"
@@ -130,60 +126,102 @@ spec:
                   user.save!
                   puts "User updated"
                 else
-                  puts "Already admin, no changes needed"
+                  puts "No changes needed"
                 end
               else
-                puts "Creating user #{admin_user}..."
-                user = User.new(
-                  username: admin_user,
-                  email: admin_email,
-                  name: full_name,
-                  admin: true,
-                  skip_confirmation: true
-                )
+                puts "Creating user #{username}..."
                 random_pass = SecureRandom.hex(32)
-                user.password = random_pass
-                user.password_confirmation = random_pass
-                user.save!
-                puts "Created user #{admin_user} (ID: #{user.id}) as admin"
+                params = {
+                  username: username,
+                  email: email,
+                  name: full_name,
+                  admin: is_admin,
+                  skip_confirmation: true,
+                  password: random_pass,
+                  password_confirmation: random_pass
+                }
+                user = Users::CreateService.new(nil, params).execute
+                if user.persisted?
+                  puts "Created user #{username} (ID: #{user.id}, admin: #{is_admin})"
+                else
+                  raise "Failed to create #{username}: #{user.errors.full_messages.join(', ')}"
+                end
               end
 
+              # Ensure OIDC identity exists
               identity = user.identities.find_by(provider: oidc_provider)
               if identity
-                if identity.extern_uid != admin_user
-                  identity.update!(extern_uid: admin_user)
-                  puts "Updated OIDC identity extern_uid to #{admin_user}"
+                if identity.extern_uid != username
+                  identity.update!(extern_uid: username)
+                  puts "Updated OIDC identity extern_uid to #{username}"
                 else
-                  puts "OIDC identity already linked (extern_uid: #{admin_user})"
+                  puts "OIDC identity already linked"
                 end
               else
-                user.identities.create!(provider: oidc_provider, extern_uid: admin_user)
-                puts "Created OIDC identity (provider: #{oidc_provider}, extern_uid: #{admin_user})"
+                user.identities.create!(provider: oidc_provider, extern_uid: username)
+                puts "Created OIDC identity (provider: #{oidc_provider}, extern_uid: #{username})"
               end
 
-              puts "Admin setup complete for #{admin_user}"
+              # Grant group access if specified
+              if !group_path.empty? && access_level > 0
+                group = Group.find_by_full_path(group_path)
+                if group
+                  member = group.members.find_by(user_id: user.id)
+                  if member
+                    if member.access_level != access_level
+                      member.update!(access_level: access_level)
+                      puts "Updated #{username} access to #{group_path}: level #{access_level}"
+                    else
+                      puts "#{username} already has access level #{access_level} on #{group_path}"
+                    end
+                  else
+                    group.add_member(user, access_level)
+                    puts "Granted #{username} access level #{access_level} on #{group_path}"
+                  end
+                else
+                  puts "WARNING: Group #{group_path} not found — skipping access grant"
+                end
+              end
+
+              puts "Setup complete for #{username}"
               RUBYEOF
 
-              # Copy script into toolbox pod and execute
-              kubectl cp /tmp/admin-setup.rb "gitlab/${TOOLBOX_POD}:/tmp/admin-setup.rb"
+              # Copy script into toolbox pod
+              kubectl cp /tmp/user-setup.rb "gitlab/${TOOLBOX_POD}:/tmp/user-setup.rb"
 
-              OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
-                env ADMIN_USER="${ADMIN_USER}" \
-                    ADMIN_EMAIL="${ADMIN_EMAIL}" \
-                    FIRST_NAME="${FIRST_NAME}" \
-                    LAST_NAME="${LAST_NAME}" \
-                    OIDC_PROVIDER="${OIDC_PROVIDER}" \
-                gitlab-rails runner /tmp/admin-setup.rb 2>&1) || {
-                log "FATAL: gitlab-rails failed"
-                log "${OUTPUT}"
-                exit 1
+              # Helper to run the script for a user
+              run_setup() {
+                local user="$1" email="$2" name="$3" admin="$4" level="$5" group="$6"
+                log "Setting up GitLab user: ${user} (admin=${admin}, group=${group}, level=${level})..."
+                OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
+                  env SETUP_USER="${user}" \
+                      SETUP_EMAIL="${email}" \
+                      SETUP_NAME="${name}" \
+                      SETUP_ADMIN="${admin}" \
+                      SETUP_ACCESS_LEVEL="${level}" \
+                      SETUP_GROUP="${group}" \
+                      OIDC_PROVIDER="${OIDC_PROVIDER}" \
+                  gitlab-rails runner /tmp/user-setup.rb 2>&1) || {
+                  log "WARNING: gitlab-rails failed for ${user}"
+                  log "${OUTPUT}"
+                  return 1
+                }
+                echo "${OUTPUT}" | while IFS= read -r line; do
+                  log "  ${line}"
+                done
               }
 
-              echo "${OUTPUT}" | while IFS= read -r line; do
-                log "${line}"
-              done
+              # GitLab access levels: Guest=10, Reporter=20, Developer=30, Maintainer=40, Owner=50
 
-              log "GitLab admin setup complete"
+              # Platform admin — GitLab admin + Owner on project group
+              run_setup "${PLATFORM_ADMIN_USER}" "${PLATFORM_ADMIN_EMAIL}" \
+                "${PLATFORM_ADMIN_NAME}" "true" "50" "${GITLAB_GROUP}"
+
+              # Senior developer — not admin, Maintainer on project group (can merge to main)
+              run_setup "${SENIOR_DEV_USER}" "${SENIOR_DEV_EMAIL}" \
+                "${SENIOR_DEV_NAME}" "false" "40" "${GITLAB_GROUP}"
+
+              log "GitLab user setup complete"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

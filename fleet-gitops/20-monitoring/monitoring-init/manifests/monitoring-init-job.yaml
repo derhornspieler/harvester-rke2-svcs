@@ -280,28 +280,35 @@ spec:
                 local keycloak_url="${KEYCLOAK_URL}"
                 local admin_pass
                 admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
-
-                local token
-                token=$(curl -s --http1.1 -X POST \
-                  "${keycloak_url}/realms/master/protocol/openid-connect/token" \
-                  -d "grant_type=password&client_id=admin-cli" \
-                  -d "username=admin&password=${admin_pass}" \
-                  | jq -r '.access_token')
-
-                if [[ -z "${token}" || "${token}" == "null" ]]; then
-                  log "[WARN] Failed to get token for groups scope assignment"
-                  return 0
-                fi
-
                 local realm="platform"
-                local scope_id
-                scope_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
-                  "${keycloak_url}/admin/realms/${realm}/client-scopes" \
-                  | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
+                local max_wait=300
+                local elapsed=0
 
-                if [[ -z "${scope_id}" ]]; then
-                  log "[WARN] groups client scope not found — skipping assignment"
-                  return 0
+                # Wait for groups scope to exist (created by keycloak-config job)
+                log "[INFO] Waiting for 'groups' client scope in Keycloak..."
+                local token scope_id
+                while [[ "${elapsed}" -lt "${max_wait}" ]]; do
+                  token=$(curl -s --http1.1 -X POST \
+                    "${keycloak_url}/realms/master/protocol/openid-connect/token" \
+                    -d "grant_type=password&client_id=admin-cli" \
+                    -d "username=admin&password=${admin_pass}" \
+                    | jq -r '.access_token' 2>/dev/null || echo "")
+
+                  if [[ -n "${token}" && "${token}" != "null" ]]; then
+                    scope_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                      "${keycloak_url}/admin/realms/${realm}/client-scopes" \
+                      | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
+                    [[ -n "${scope_id}" ]] && break
+                  fi
+
+                  elapsed=$((elapsed + 10))
+                  log "[INFO] groups scope not found yet (${elapsed}/${max_wait}s)..."
+                  sleep 10
+                done
+
+                if [[ -z "${scope_id:-}" ]]; then
+                  log "[ERROR] groups client scope not found after ${max_wait}s — OIDC group-based access will fail"
+                  return 1
                 fi
 
                 local client_uuid
@@ -310,8 +317,8 @@ spec:
                   | jq -r '.[0].id // empty' 2>/dev/null || echo "")
 
                 if [[ -z "${client_uuid}" ]]; then
-                  log "[WARN] Client ${client_id} not found — skipping groups scope"
-                  return 0
+                  log "[ERROR] Client ${client_id} not found in Keycloak"
+                  return 1
                 fi
 
                 curl -s --http1.1 -o /dev/null \
