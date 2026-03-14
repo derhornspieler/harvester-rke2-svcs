@@ -1,10 +1,41 @@
 ---
-# gitlab-admin-setup: Promotes platform admin user to GitLab admin
-# Strategy: wait for user to appear (via OIDC login), then promote.
-# Never pre-creates users — avoids duplicate accounts when OIDC provisions
-# a separate identity (e.g. alice.morgan vs alice.morgan1).
-# Polls for up to 30 minutes, then exits 0 so the Job completes.
-# On subsequent deploys the Job re-runs and catches the user.
+# gitlab-admin-setup: Creates platform admin user via gitlab-rails with OIDC
+# identity pre-linked, so Keycloak login maps to this account (no duplicates).
+# Uses kubectl exec into the toolbox pod to run rails commands.
+# Idempotent — safe to re-run on every deploy.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-admin-setup
+    namespace: gitlab
+roleRef:
+  kind: Role
+  name: gitlab-admin-setup
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: batch/v1
 kind: Job
@@ -15,12 +46,13 @@ metadata:
     app.kubernetes.io/name: gitlab-admin-setup
     app.kubernetes.io/component: bootstrap
 spec:
-  backoffLimit: 6
+  backoffLimit: 30
   template:
     metadata:
       labels:
         app.kubernetes.io/name: gitlab-admin-setup
     spec:
+      serviceAccountName: gitlab-admin-setup
       restartPolicy: OnFailure
       nodeSelector:
         workload-type: general
@@ -32,109 +64,131 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gitlab-admin-setup
-          image: ${IMAGE_CURL}
-          command: ["/bin/sh", "-c"]
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
-              set -eu
-
-              GITLAB_URL="${GITLAB_URL}"
               ADMIN_USER="${PLATFORM_ADMIN_USER}"
               ADMIN_EMAIL="${PLATFORM_ADMIN_EMAIL}"
-              ROOT_PASS="${GITLAB_ROOT_PASSWORD}"
-              POLL_INTERVAL=30
-              MAX_WAIT=1800
+              ADMIN_NAME="${PLATFORM_ADMIN_NAME}"
+              OIDC_PROVIDER="openid_connect"
 
               log() { echo "[$(date +%H:%M:%S)] $*"; }
 
-              # Wait for GitLab to be ready
-              log "Waiting for GitLab API..."
-              for i in $(seq 1 60); do
-                HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "${GITLAB_URL}/users/sign_in" 2>/dev/null)
-                if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
-                  break
+              # Wait for toolbox pod to be ready
+              log "Waiting for GitLab toolbox pod..."
+              TOOLBOX_POD=""
+              for i in $(seq 1 120); do
+                TOOLBOX_POD=$(kubectl get pods -n gitlab \
+                  -l app=toolbox,release=gitlab \
+                  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                if [[ -n "${TOOLBOX_POD}" ]]; then
+                  READY=$(kubectl get pod -n gitlab "${TOOLBOX_POD}" \
+                    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+                  if [[ "${READY}" == "True" ]]; then
+                    break
+                  fi
                 fi
+                TOOLBOX_POD=""
                 sleep 5
               done
-              HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "${GITLAB_URL}/users/sign_in" 2>/dev/null)
-              [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || { log "FATAL: GitLab not ready (HTTP $HTTP_CODE)"; exit 1; }
-              log "GitLab is ready"
+              [[ -n "${TOOLBOX_POD}" ]] || { log "FATAL: Toolbox pod not ready after 10 minutes"; exit 1; }
+              log "Toolbox pod ready: ${TOOLBOX_POD}"
 
-              # Get OAuth token for root user
-              log "Authenticating as root..."
-              TOKEN=$(curl -sfk --data "grant_type=password&username=root&password=${ROOT_PASS}" \
-                "${GITLAB_URL}/oauth/token" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
-              [ -n "$TOKEN" ] || { log "FATAL: Could not authenticate as root"; exit 1; }
+              # Split name into first/last
+              FIRST_NAME=$(echo "${ADMIN_NAME}" | cut -d' ' -f1)
+              LAST_NAME=$(echo "${ADMIN_NAME}" | cut -d' ' -f2-)
+              [[ -n "${LAST_NAME}" ]] || LAST_NAME="Admin"
 
-              # Poll for admin user to appear (created by OIDC on first login)
-              log "Waiting for user ${ADMIN_USER} to appear (OIDC first login)..."
-              elapsed=0
-              USER_ID=""
-              while [ "$elapsed" -lt "$MAX_WAIT" ]; do
-                USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
-                  "${GITLAB_URL}/api/v4/users?username=${ADMIN_USER}" 2>/dev/null || echo "[]")
-                USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+              # Create or update admin user with OIDC identity via gitlab-rails
+              log "Creating/updating admin user ${ADMIN_USER} via gitlab-rails..."
 
-                if [ -n "$USER_ID" ]; then
-                  break
-                fi
+              # Write Ruby script to temp file (avoids heredoc quoting issues in YAML)
+              cat > /tmp/admin-setup.rb << 'RUBYEOF'
+              admin_user = ENV['ADMIN_USER']
+              admin_email = ENV['ADMIN_EMAIL']
+              first_name = ENV['FIRST_NAME']
+              last_name = ENV['LAST_NAME']
+              oidc_provider = ENV['OIDC_PROVIDER']
+              full_name = "#{first_name} #{last_name}"
 
-                # Also search by email in case OIDC used a different username
-                USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
-                  "${GITLAB_URL}/api/v4/users?search=${ADMIN_EMAIL}" 2>/dev/null || echo "[]")
-                USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+              user = User.find_by(username: admin_user)
 
-                if [ -n "$USER_ID" ]; then
-                  ADMIN_USER=$(echo "$USER_JSON" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p' | head -1)
-                  log "Found user by email as ${ADMIN_USER} (ID: ${USER_ID})"
-                  break
-                fi
+              if user
+                puts "User #{admin_user} exists (ID: #{user.id})"
+                changed = false
+                unless user.admin?
+                  user.admin = true
+                  changed = true
+                  puts "Promoted to admin"
+                end
+                if user.name != full_name
+                  user.name = full_name
+                  changed = true
+                end
+                if changed
+                  user.save!
+                  puts "User updated"
+                else
+                  puts "Already admin, no changes needed"
+                end
+              else
+                puts "Creating user #{admin_user}..."
+                user = User.new(
+                  username: admin_user,
+                  email: admin_email,
+                  name: full_name,
+                  admin: true,
+                  skip_confirmation: true
+                )
+                random_pass = SecureRandom.hex(32)
+                user.password = random_pass
+                user.password_confirmation = random_pass
+                user.save!
+                puts "Created user #{admin_user} (ID: #{user.id}) as admin"
+              end
 
-                elapsed=$((elapsed + POLL_INTERVAL))
-                log "User not found yet (${elapsed}/${MAX_WAIT}s)..."
-                sleep "$POLL_INTERVAL"
+              identity = user.identities.find_by(provider: oidc_provider)
+              if identity
+                if identity.extern_uid != admin_user
+                  identity.update!(extern_uid: admin_user)
+                  puts "Updated OIDC identity extern_uid to #{admin_user}"
+                else
+                  puts "OIDC identity already linked (extern_uid: #{admin_user})"
+                end
+              else
+                user.identities.create!(provider: oidc_provider, extern_uid: admin_user)
+                puts "Created OIDC identity (provider: #{oidc_provider}, extern_uid: #{admin_user})"
+              end
+
+              puts "Admin setup complete for #{admin_user}"
+              RUBYEOF
+
+              # Copy script into toolbox pod and execute
+              kubectl cp /tmp/admin-setup.rb "gitlab/${TOOLBOX_POD}:/tmp/admin-setup.rb"
+
+              OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
+                env ADMIN_USER="${ADMIN_USER}" \
+                    ADMIN_EMAIL="${ADMIN_EMAIL}" \
+                    FIRST_NAME="${FIRST_NAME}" \
+                    LAST_NAME="${LAST_NAME}" \
+                    OIDC_PROVIDER="${OIDC_PROVIDER}" \
+                gitlab-rails runner /tmp/admin-setup.rb 2>&1) || {
+                log "FATAL: gitlab-rails failed"
+                log "${OUTPUT}"
+                exit 1
+              }
+
+              echo "${OUTPUT}" | while IFS= read -r line; do
+                log "${line}"
               done
 
-              if [ -z "$USER_ID" ]; then
-                log "User ${ADMIN_USER} not found after ${MAX_WAIT}s — will retry on next deploy"
-                exit 0
-              fi
-
-              # Check if already admin
-              IS_ADMIN=$(echo "$USER_JSON" | sed -n 's/.*"is_admin":\([a-z]*\).*/\1/p' | head -1)
-              if [ "$IS_ADMIN" = "true" ]; then
-                log "${ADMIN_USER} (ID: ${USER_ID}) is already admin — nothing to do"
-                exit 0
-              fi
-
-              # Promote to admin
-              log "Promoting ${ADMIN_USER} (ID: ${USER_ID}) to admin..."
-              RESP=$(curl -sfk -X PUT \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Content-Type: application/json" \
-                "${GITLAB_URL}/api/v4/users/${USER_ID}" \
-                -d '{"admin": true}')
-
-              IS_ADMIN=$(echo "$RESP" | sed -n 's/.*"is_admin":\([a-z]*\).*/\1/p' | head -1)
-              if [ "$IS_ADMIN" = "true" ]; then
-                log "${ADMIN_USER} promoted to admin successfully"
-              else
-                log "WARNING: Promotion response did not confirm admin status"
-                log "Response: ${RESP}"
-              fi
-
               log "GitLab admin setup complete"
-          env:
-            - name: GITLAB_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: gitlab-gitlab-initial-root-password
-                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
           resources:
             requests:
               cpu: 50m
