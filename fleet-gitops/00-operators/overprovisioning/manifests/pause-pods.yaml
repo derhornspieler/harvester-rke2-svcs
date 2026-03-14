@@ -60,9 +60,9 @@ spec:
             readOnlyRootFilesystem: true
 ---
 # Overprovisioning pause pods for the compute node pool
-# Reserve capacity on compute nodes (16 CPU, 32Gi per node)
-# 1 replica x 2 CPU/4Gi = modest buffer on the existing node
-# (compute pool min=1, so 1 replica avoids Pending from anti-affinity)
+# Reserve half a compute node (16 CPU, 32Gi per node)
+# 1 replica x 8 CPU/16Gi = ~50% of node capacity
+# Will sit Pending if node is full — autoscaler ignores it (priority < 0)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,8 +109,8 @@ spec:
           image: registry.k8s.io/pause:3.10
           resources:
             requests:
-              cpu: "2"
-              memory: 4Gi
+              cpu: "8"
+              memory: 16Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

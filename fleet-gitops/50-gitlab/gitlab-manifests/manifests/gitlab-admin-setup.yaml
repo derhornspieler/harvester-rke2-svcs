@@ -1,6 +1,10 @@
 ---
-# gitlab-admin-setup: Promotes platform admin user to GitLab admin after OIDC login
-# Requires: GitLab running, admin user already logged in via Keycloak OIDC
+# gitlab-admin-setup: Promotes platform admin user to GitLab admin
+# Strategy: wait for user to appear (via OIDC login), then promote.
+# Never pre-creates users — avoids duplicate accounts when OIDC provisions
+# a separate identity (e.g. alice.morgan vs alice.morgan1).
+# Polls for up to 30 minutes, then exits 0 so the Job completes.
+# On subsequent deploys the Job re-runs and catches the user.
 ---
 apiVersion: batch/v1
 kind: Job
@@ -36,7 +40,10 @@ spec:
 
               GITLAB_URL="${GITLAB_URL}"
               ADMIN_USER="${PLATFORM_ADMIN_USER}"
+              ADMIN_EMAIL="${PLATFORM_ADMIN_EMAIL}"
               ROOT_PASS="${GITLAB_ROOT_PASSWORD}"
+              POLL_INTERVAL=30
+              MAX_WAIT=1800
 
               log() { echo "[$(date +%H:%M:%S)] $*"; }
 
@@ -59,39 +66,61 @@ spec:
                 "${GITLAB_URL}/oauth/token" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
               [ -n "$TOKEN" ] || { log "FATAL: Could not authenticate as root"; exit 1; }
 
-              # Find or create admin user
-              log "Looking up user ${ADMIN_USER}..."
-              USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
-                "${GITLAB_URL}/api/v4/users?username=${ADMIN_USER}")
+              # Poll for admin user to appear (created by OIDC on first login)
+              log "Waiting for user ${ADMIN_USER} to appear (OIDC first login)..."
+              elapsed=0
+              USER_ID=""
+              while [ "$elapsed" -lt "$MAX_WAIT" ]; do
+                USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
+                  "${GITLAB_URL}/api/v4/users?username=${ADMIN_USER}" 2>/dev/null || echo "[]")
+                USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
 
-              USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+                if [ -n "$USER_ID" ]; then
+                  break
+                fi
+
+                # Also search by email in case OIDC used a different username
+                USER_JSON=$(curl -sfk -H "Authorization: Bearer ${TOKEN}" \
+                  "${GITLAB_URL}/api/v4/users?search=${ADMIN_EMAIL}" 2>/dev/null || echo "[]")
+                USER_ID=$(echo "$USER_JSON" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
+
+                if [ -n "$USER_ID" ]; then
+                  ADMIN_USER=$(echo "$USER_JSON" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p' | head -1)
+                  log "Found user by email as ${ADMIN_USER} (ID: ${USER_ID})"
+                  break
+                fi
+
+                elapsed=$((elapsed + POLL_INTERVAL))
+                log "User not found yet (${elapsed}/${MAX_WAIT}s)..."
+                sleep "$POLL_INTERVAL"
+              done
 
               if [ -z "$USER_ID" ]; then
-                log "User ${ADMIN_USER} not found -- creating via API..."
-                CREATE_RESP=$(curl -sfk -X POST \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Content-Type: application/json" \
-                  "${GITLAB_URL}/api/v4/users" \
-                  -d '{
-                    "username": "'"${ADMIN_USER}"'",
-                    "name": "${PLATFORM_ADMIN_NAME}",
-                    "email": "'"${ADMIN_USER}@${DOMAIN}"'",
-                    "password": "'"${ROOT_PASS}"'",
-                    "skip_confirmation": true,
-                    "admin": true
-                  }')
-                USER_ID=$(echo "$CREATE_RESP" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
-                [ -n "$USER_ID" ] || { log "FATAL: Could not create user"; exit 1; }
-                log "Created ${ADMIN_USER} (ID: ${USER_ID}) as admin"
+                log "User ${ADMIN_USER} not found after ${MAX_WAIT}s — will retry on next deploy"
+                exit 0
+              fi
+
+              # Check if already admin
+              IS_ADMIN=$(echo "$USER_JSON" | sed -n 's/.*"is_admin":\([a-z]*\).*/\1/p' | head -1)
+              if [ "$IS_ADMIN" = "true" ]; then
+                log "${ADMIN_USER} (ID: ${USER_ID}) is already admin — nothing to do"
+                exit 0
+              fi
+
+              # Promote to admin
+              log "Promoting ${ADMIN_USER} (ID: ${USER_ID}) to admin..."
+              RESP=$(curl -sfk -X PUT \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/json" \
+                "${GITLAB_URL}/api/v4/users/${USER_ID}" \
+                -d '{"admin": true}')
+
+              IS_ADMIN=$(echo "$RESP" | sed -n 's/.*"is_admin":\([a-z]*\).*/\1/p' | head -1)
+              if [ "$IS_ADMIN" = "true" ]; then
+                log "${ADMIN_USER} promoted to admin successfully"
               else
-                # Promote existing user to admin
-                log "Found ${ADMIN_USER} (ID: ${USER_ID}), promoting to admin..."
-                curl -sfk -X PUT \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Content-Type: application/json" \
-                  "${GITLAB_URL}/api/v4/users/${USER_ID}" \
-                  -d '{"admin": true, "name": "${PLATFORM_ADMIN_NAME}"}'
-                log "${ADMIN_USER} promoted to admin and name fixed"
+                log "WARNING: Promotion response did not confirm admin status"
+                log "Response: ${RESP}"
               fi
 
               log "GitLab admin setup complete"
