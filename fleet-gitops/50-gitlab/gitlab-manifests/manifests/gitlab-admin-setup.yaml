@@ -131,6 +131,8 @@ spec:
               else
                 puts "Creating user #{username}..."
                 random_pass = SecureRandom.hex(32)
+                admin_user = User.find_by(admin: true)
+                raise "No admin user found to create new users" unless admin_user
                 params = {
                   username: username,
                   email: email,
@@ -138,14 +140,18 @@ spec:
                   admin: is_admin,
                   skip_confirmation: true,
                   password: random_pass,
-                  password_confirmation: random_pass
+                  password_confirmation: random_pass,
+                  organization_id: Organizations::Organization.default_organization&.id
                 }
-                user = Users::CreateService.new(nil, params).execute
-                if user.persisted?
-                  puts "Created user #{username} (ID: #{user.id}, admin: #{is_admin})"
+                result = Users::CreateService.new(admin_user, params).execute
+                if result.respond_to?(:payload)
+                  raise "Failed to create #{username}: #{result.message}" unless result.success?
+                  user = result.payload[:user]
                 else
-                  raise "Failed to create #{username}: #{user.errors.full_messages.join(', ')}"
+                  user = result
+                  raise "Failed to create #{username}: #{user.errors.full_messages.join(', ')}" unless user.persisted?
                 end
+                puts "Created user #{username} (ID: #{user.id}, admin: #{is_admin})"
               end
 
               # Ensure OIDC identity exists
