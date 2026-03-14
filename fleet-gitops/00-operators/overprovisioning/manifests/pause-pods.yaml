@@ -1,7 +1,9 @@
 ---
 # Overprovisioning pause pods for the general node pool
-# Reserve ~1 node worth of capacity (4 CPU, 16Gi per general node)
-# 2 replicas x 2 CPU/6Gi = 4 CPU/12Gi buffer (~1 node headroom)
+# Reserve capacity on general nodes (4 CPU, 16Gi per node)
+# 1 replica x 2 CPU/6Gi = buffer on one node
+# Using 1 replica so Fleet sees 1/1 Ready (Pending pause pods are by-design
+# but Fleet interprets them as "not minimum availability")
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,7 +14,7 @@ metadata:
     app.kubernetes.io/component: general
     app.kubernetes.io/part-of: cluster-autoscaler
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: overprovisioning
@@ -58,8 +60,9 @@ spec:
             readOnlyRootFilesystem: true
 ---
 # Overprovisioning pause pods for the compute node pool
-# Reserve ~1 node worth of capacity (16 CPU, 32Gi per compute node)
-# 2 replicas x 4 CPU/12Gi = 8 CPU/24Gi buffer (~1 node headroom)
+# Reserve capacity on compute nodes (16 CPU, 32Gi per node)
+# 1 replica x 2 CPU/4Gi = modest buffer on the existing node
+# (compute pool min=1, so 1 replica avoids Pending from anti-affinity)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -70,7 +73,7 @@ metadata:
     app.kubernetes.io/component: compute
     app.kubernetes.io/part-of: cluster-autoscaler
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: overprovisioning
@@ -106,8 +109,8 @@ spec:
           image: registry.k8s.io/pause:3.10
           resources:
             requests:
-              cpu: "4"
-              memory: 12Gi
+              cpu: "2"
+              memory: 4Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -116,8 +119,8 @@ spec:
             readOnlyRootFilesystem: true
 ---
 # Overprovisioning pause pods for the database node pool
-# Reserve ~1 node worth of capacity (4 CPU, 24Gi per database node)
-# 2 replicas x 2 CPU/10Gi = 4 CPU/20Gi buffer (~1 node headroom)
+# Reserve capacity on database nodes (4 CPU, 24Gi per node)
+# 1 replica x 2 CPU/10Gi = buffer on one node
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -128,7 +131,7 @@ metadata:
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: cluster-autoscaler
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: overprovisioning
