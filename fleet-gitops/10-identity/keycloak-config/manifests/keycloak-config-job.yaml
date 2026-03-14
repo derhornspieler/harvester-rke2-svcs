@@ -272,6 +272,41 @@ spec:
                 email="${PLATFORM_ADMIN_EMAIL}"
               log "[INFO] Platform admin user created"
 
+              # =============== Phase 2b: Create senior developer user ===============
+              SENIOR_DEV_USER="${SENIOR_DEV_USER}"
+              SENIOR_DEV_EMAIL="${SENIOR_DEV_EMAIL}"
+              SENIOR_DEV_NAME="${SENIOR_DEV_NAME}"
+
+              log "[INFO] Creating user '${SENIOR_DEV_USER}'..."
+              _dev_first=$(echo "${SENIOR_DEV_NAME}" | cut -d' ' -f1)
+              _dev_last=$(echo "${SENIOR_DEV_NAME}" | cut -d' ' -f2-)
+              [[ -n "${_dev_last}" ]] || _dev_last="Developer"
+
+              SENIOR_DEV_PASS=$(vault kv get -field=password kv/services/keycloak/senior-dev 2>/dev/null) || SENIOR_DEV_PASS=""
+              if [[ -z "${SENIOR_DEV_PASS}" ]]; then
+                SENIOR_DEV_PASS="${DEFAULT_PLATFORM_ADMIN_PASS}"
+                log "[INFO] Using generated senior dev password"
+              else
+                log "[INFO] Using senior dev password from Vault"
+              fi
+
+              _dev_json=$(jq -n \
+                --arg user "${SENIOR_DEV_USER}" \
+                --arg email "${SENIOR_DEV_EMAIL}" \
+                --arg first "${_dev_first}" \
+                --arg last "${_dev_last}" \
+                --arg pass "${SENIOR_DEV_PASS}" \
+                '{username:$user, email:$email, firstName:$first, lastName:$last,
+                  enabled:true, emailVerified:true,
+                  credentials:[{type:"password", value:$pass, temporary:false}]}')
+              kc_create POST "${KC_REALM}/users" -d "${_dev_json}"
+
+              vault_kv_put "services/keycloak/senior-dev" \
+                username="${SENIOR_DEV_USER}" \
+                password="${SENIOR_DEV_PASS}" \
+                email="${SENIOR_DEV_EMAIL}"
+              log "[INFO] Senior developer user created"
+
               # =============== Phase 3: Create infra OIDC clients ===============
               # Only infra clients — per-service clients created by their init Jobs
               INFRA_CLIENTS="vault rancher traefik-oidc hubble-oidc"
@@ -376,6 +411,16 @@ spec:
                   log "[INFO] ${PLATFORM_ADMIN_USER} assigned to ${_admin_grp}"
                 fi
               done
+
+              # Assign senior developer to senior-developers group
+              _dev_id=$(kc_api GET "${KC_REALM}/users?username=${SENIOR_DEV_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [[ -n "${_dev_id}" ]]; then
+                _dev_grp_id=$(kc_api GET "${KC_REALM}/groups?search=${RBAC_GROUP_SENIOR_DEVS}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                if [[ -n "${_dev_grp_id}" ]]; then
+                  kc_create PUT "${KC_REALM}/users/${_dev_id}/groups/${_dev_grp_id}"
+                  log "[INFO] ${SENIOR_DEV_USER} assigned to ${RBAC_GROUP_SENIOR_DEVS}"
+                fi
+              fi
 
               # Create groups client scope with mapper
               kc_create POST "${KC_REALM}/client-scopes" -d '{
