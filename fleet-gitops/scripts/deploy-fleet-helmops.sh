@@ -1263,10 +1263,10 @@ import json,sys
 # them, causing ErrApplied. Delete completed Jobs so Fleet recreates
 # them with the latest spec.
 cleanup_completed_init_jobs() {
-  # Map of group → "namespace/job-name" pairs
+  # Map of group → "namespace/job-name" pairs (must match all Job manifests)
   declare -A GROUP_JOBS=(
     ["05-pki-secrets"]="vault/vault-init vault/vault-init-wait"
-    ["10-identity"]="keycloak/keycloak-config keycloak/keycloak-ldap-federation"
+    ["10-identity"]="keycloak/keycloak-init keycloak/keycloak-config database/database-init"
     ["20-monitoring"]="monitoring/monitoring-init"
     ["30-harbor"]="harbor/harbor-init harbor/harbor-oidc-setup minio/minio-init"
     ["40-gitops"]="argocd/argocd-init argocd/argocd-gitlab-setup argo-rollouts/rollouts-init argo-workflows/workflows-init"
@@ -1275,6 +1275,10 @@ cleanup_completed_init_jobs() {
 
   local groups_to_clean=()
   if [[ -n "${SINGLE_GROUP}" ]]; then
+    if [[ -z "${GROUP_JOBS[${SINGLE_GROUP}]+set}" ]]; then
+      log_info "Group '${SINGLE_GROUP}' has no init Jobs to clean up"
+      return 0
+    fi
     groups_to_clean=("${SINGLE_GROUP}")
   else
     groups_to_clean=("${!GROUP_JOBS[@]}")
@@ -1285,7 +1289,9 @@ cleanup_completed_init_jobs() {
     local jobs="${GROUP_JOBS[${group}]:-}"
     [[ -z "${jobs}" ]] && continue
 
-    for entry in ${jobs}; do
+    local job_entries
+    IFS=' ' read -ra job_entries <<< "${jobs}"
+    for entry in "${job_entries[@]}"; do
       local ns="${entry%%/*}"
       local job_name="${entry##*/}"
       local status
