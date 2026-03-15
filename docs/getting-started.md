@@ -299,7 +299,9 @@ Continuously updates status until all bundles are ready. Press Ctrl+C to stop.
 
 ### Targeted Updates (Single Service Changes)
 
-When you change a single service or bundle group, use targeted deploys instead of full redeploys. A full deploy (without `--group`) attempts to update ALL init jobs across all 58 bundles. Completed init Jobs are immutable in Kubernetes, so unchanged Jobs that already ran will fail with `cannot patch` errors, requiring manual deletion before the deploy can succeed.
+When you change a single service or bundle group, use targeted deploys instead of full redeploys.
+
+> **Note:** `deploy.sh` automatically deletes completed init Jobs before deploying, so you no longer need to manually clean them up. When using `--group`, only Jobs belonging to that group are cleaned. This prevents the `cannot patch` errors that previously occurred when Fleet tried to update immutable completed Jobs.
 
 **Targeted update workflow:**
 
@@ -368,10 +370,10 @@ To change manifests in, e.g., monitoring-init bundle:
 
 1. Edit manifests under `fleet-gitops/20-monitoring/monitoring-init/`
 2. Bump `BUNDLE_VERSION` in `.env` (e.g., from `1.0.0` to `1.0.1`)
-3. (Optional) Clean up any leftover Jobs before push: `./cleanup-completed-jobs.sh`
-   - Jobs auto-delete 2 minutes after completion. This is useful for pre-emptively cleaning failed or stuck Jobs.
-4. Push updated bundles: `./push-bundles.sh`
-5. Re-run deployment: `./deploy.sh --skip-push --group 20-monitoring`
+3. Push updated bundles: `./push-bundles.sh`
+4. Re-run deployment: `./deploy.sh --skip-push --group 20-monitoring`
+
+> Completed init Jobs are auto-cleaned before deploy. Use `./cleanup-completed-jobs.sh` only if you need to manually clean up failed or stuck Jobs.
 
 ### Delete all HelmOps and namespaces
 
