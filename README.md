@@ -71,7 +71,7 @@ See [Platform Overview](docs/architecture/overview.md) for the full diagram.
 
 1. **Prepare your environment:** `cd fleet-gitops && ./scripts/prepare.sh`
 2. **Deploy the platform:** Follow [Getting Started Guide](docs/getting-started.md)
-3. **Manage day-2 operations:** See Troubleshooting section for token refresh, bundle updates, and scaling
+3. **Manage day-2 operations:** Use [targeted updates](docs/getting-started.md#targeted-updates-single-service-changes) for single-service changes (always bump `BUNDLE_VERSION` and use `--group`). See Getting Started Guide for troubleshooting, token refresh, and scaling
 
 ### For Developers
 
