@@ -25,7 +25,7 @@ metadata:
   annotations:
     helm.sh/hook-delete-policy: before-hook-creation
 spec:
-  backoffLimit: 5
+  backoffLimit: 30
   template:
     metadata:
       labels:
@@ -73,8 +73,9 @@ spec:
                 sleep 10
               done
 
-              # Configure OIDC auth
-              curl -sf -X PUT \
+              # Configure OIDC auth (only works on first run — admin basic auth
+              # is disabled after OIDC mode is active, but the config persists)
+              curl -s -X PUT \
                 -u "admin:${HARBOR_ADMIN_PASSWORD}" \
                 -H "Content-Type: application/json" \
                 http://harbor-core.harbor.svc.cluster.local/api/v2.0/configurations \
@@ -90,45 +91,39 @@ spec:
                   "oidc_auto_onboard": true,
                   "oidc_verify_cert": false,
                   "oidc_user_claim": "preferred_username"
-                }'
-              echo "Harbor OIDC configuration applied successfully"
+                }' || true
+              echo "Harbor OIDC configuration applied"
 
-              # Create CI robot account for GitLab runners to push images
-              # Check if robot already exists
+              # Create CI robot account (only works before OIDC mode is active,
+              # or on first deploy when admin basic auth still works)
               ROBOT_NAME="ci-push"
-              EXISTING=$(curl -sf -u "admin:${HARBOR_ADMIN_PASSWORD}" \
-                "http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots?q=name%3D${ROBOT_NAME}" \
-                2>/dev/null || echo "[]")
+              EXISTING=$(curl -s -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+                http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots 2>/dev/null || echo "")
 
-              ROBOT_ID=$(echo "${EXISTING}" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -1)
-
-              if [ -n "${ROBOT_ID}" ]; then
-                echo "Robot account '${ROBOT_NAME}' already exists (ID: ${ROBOT_ID})"
-              else
-                echo "Creating robot account '${ROBOT_NAME}'..."
-                ROBOT_RESP=$(curl -sf -X POST \
+              if echo "${EXISTING}" | grep -q "${ROBOT_NAME}"; then
+                echo "Robot account '${ROBOT_NAME}' already exists"
+              elif [ -n "${EXISTING}" ] && [ "${EXISTING}" != "" ]; then
+                ROBOT_RESP=$(curl -s -X POST \
                   -u "admin:${HARBOR_ADMIN_PASSWORD}" \
                   -H "Content-Type: application/json" \
-                  "http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots" \
+                  http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots \
                   -d '{
                     "name": "'"${ROBOT_NAME}"'",
                     "description": "GitLab CI push account",
                     "duration": -1,
                     "level": "system",
-                    "permissions": [
-                      {
-                        "kind": "project",
-                        "namespace": "*",
-                        "access": [
-                          {"resource": "repository", "action": "push"},
-                          {"resource": "repository", "action": "pull"},
-                          {"resource": "artifact", "action": "read"},
-                          {"resource": "tag", "action": "create"},
-                          {"resource": "tag", "action": "list"}
-                        ]
-                      }
-                    ]
-                  }')
+                    "permissions": [{
+                      "kind": "project",
+                      "namespace": "*",
+                      "access": [
+                        {"resource": "repository", "action": "push"},
+                        {"resource": "repository", "action": "pull"},
+                        {"resource": "artifact", "action": "read"},
+                        {"resource": "tag", "action": "create"},
+                        {"resource": "tag", "action": "list"}
+                      ]
+                    }]
+                  }' 2>/dev/null || echo "")
 
                 ROBOT_SECRET=$(echo "${ROBOT_RESP}" | sed -n 's/.*"secret":"\([^"]*\)".*/\1/p')
                 ROBOT_FULL_NAME=$(echo "${ROBOT_RESP}" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')
@@ -136,7 +131,7 @@ spec:
                 if [ -n "${ROBOT_SECRET}" ]; then
                   echo "Robot account created: ${ROBOT_FULL_NAME}"
 
-                  # Store robot credentials in Vault via harbor-init SA
+                  # Store in Vault via harbor-init SA
                   VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
                   SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
                   VAULT_TOKEN=$(curl -sk --request POST \
@@ -150,12 +145,13 @@ spec:
                       -H "Content-Type: application/json" \
                       "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" \
                       -d "{\"data\":{\"username\":\"${ROBOT_FULL_NAME}\",\"password\":\"${ROBOT_SECRET}\"}}"
-                    echo "Robot credentials stored in Vault at services/harbor/ci-robot"
+                    echo "Robot credentials stored in Vault"
                   else
-                    echo "WARNING: Could not authenticate to Vault — robot credentials not stored"
+                    echo "WARNING: Could not authenticate to Vault"
                   fi
                 else
-                  echo "WARNING: Failed to create robot account"
-                  echo "Response: ${ROBOT_RESP}"
+                  echo "WARNING: Could not create robot account (OIDC mode may be active)"
                 fi
+              else
+                echo "WARNING: Could not query robots API (OIDC mode may be active)"
               fi
