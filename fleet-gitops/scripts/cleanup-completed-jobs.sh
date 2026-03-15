@@ -22,8 +22,9 @@ set -euo pipefail
 FLEET_JOBS=(
   "vault/vault-init"
   "vault/vault-init-wait"
+  "keycloak/keycloak-init"
   "keycloak/keycloak-config"
-  "keycloak/keycloak-ldap-federation"
+  "database/database-init"
   "monitoring/monitoring-init"
   "minio/minio-init"
   "harbor/harbor-init"
