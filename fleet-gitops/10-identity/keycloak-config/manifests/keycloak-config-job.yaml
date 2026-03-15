@@ -284,8 +284,8 @@ spec:
 
               SENIOR_DEV_PASS=$(vault kv get -field=password kv/services/keycloak/senior-dev 2>/dev/null) || SENIOR_DEV_PASS=""
               if [[ -z "${SENIOR_DEV_PASS}" ]]; then
-                SENIOR_DEV_PASS="${DEFAULT_PLATFORM_ADMIN_PASS}"
-                log "[INFO] Using generated senior dev password"
+                SENIOR_DEV_PASS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+                log "[INFO] Generated unique senior dev password"
               else
                 log "[INFO] Using senior dev password from Vault"
               fi
