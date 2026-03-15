@@ -512,6 +512,12 @@ spec:
               path "kv/metadata/ci/*" {
                 capabilities = ["read", "list"]
               }
+              path "kv/data/services/harbor/ci-robot" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/harbor/ci-robot" {
+                capabilities = ["read"]
+              }
               POLICY
 
               vault policy write eso-writer-gitlab-runners - <<'POLICY'
