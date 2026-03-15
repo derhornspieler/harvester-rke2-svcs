@@ -135,7 +135,7 @@ spec:
                   VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
                   SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
                   VAULT_TOKEN=$(curl -sk --request POST \
-                    --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"eso-writer-harbor\"}" \
+                    --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"bootstrap-keycloak-harbor\"}" \
                     "${VAULT_ADDR}/v1/auth/kubernetes/login" | \
                     sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
 
