@@ -1256,6 +1256,58 @@ import json,sys
   log_ok "harbor-core re-deployed with real Valkey password"
 }
 
+# ============================================================
+# Auto-cleanup completed init Jobs before deploy
+# ============================================================
+# Kubernetes Jobs are immutable after completion. Fleet cannot patch
+# them, causing ErrApplied. Delete completed Jobs so Fleet recreates
+# them with the latest spec.
+cleanup_completed_init_jobs() {
+  # Map of group → "namespace/job-name" pairs
+  declare -A GROUP_JOBS=(
+    ["05-pki-secrets"]="vault/vault-init vault/vault-init-wait"
+    ["10-identity"]="keycloak/keycloak-config keycloak/keycloak-ldap-federation"
+    ["20-monitoring"]="monitoring/monitoring-init"
+    ["30-harbor"]="harbor/harbor-init harbor/harbor-oidc-setup minio/minio-init"
+    ["40-gitops"]="argocd/argocd-init argocd/argocd-gitlab-setup argo-rollouts/rollouts-init argo-workflows/workflows-init"
+    ["50-gitlab"]="gitlab/gitlab-init gitlab/gitlab-ready gitlab/vault-jwt-auth-setup gitlab/gitlab-admin-setup gitlab-runners/runner-secrets-setup"
+  )
+
+  local groups_to_clean=()
+  if [[ -n "${SINGLE_GROUP}" ]]; then
+    groups_to_clean=("${SINGLE_GROUP}")
+  else
+    groups_to_clean=("${!GROUP_JOBS[@]}")
+  fi
+
+  local cleaned=0
+  for group in "${groups_to_clean[@]}"; do
+    local jobs="${GROUP_JOBS[${group}]:-}"
+    [[ -z "${jobs}" ]] && continue
+
+    for entry in ${jobs}; do
+      local ns="${entry%%/*}"
+      local job_name="${entry##*/}"
+      local status
+      status=$(kubectl get job "${job_name}" -n "${ns}" \
+        -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
+      if [[ "${status}" == "True" ]]; then
+        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+        log_info "Deleted completed Job: ${ns}/${job_name}"
+        cleaned=$((cleaned + 1))
+      fi
+    done
+  done
+
+  if [[ ${cleaned} -gt 0 ]]; then
+    log_ok "Cleaned up ${cleaned} completed init Job(s)"
+  fi
+}
+
+if [[ "${STATUS_MODE}" != true && "${WATCH_MODE}" != true && "${DELETE_MODE}" != true && "${PURGE_MODE}" != true ]]; then
+  cleanup_completed_init_jobs
+fi
+
 # Deploy HelmOps
 deployed=0
 failed=0
