@@ -297,6 +297,51 @@ kubectl -n gitlab get deploy gitlab-webservice-default
 
 Continuously updates status until all bundles are ready. Press Ctrl+C to stop.
 
+### Targeted Updates (Single Service Changes)
+
+When you change a single service or bundle group, use targeted deploys instead of full redeploys. A full deploy (without `--group`) attempts to update ALL init jobs across all 58 bundles. Completed init Jobs are immutable in Kubernetes, so unchanged Jobs that already ran will fail with `cannot patch` errors, requiring manual deletion before the deploy can succeed.
+
+**Targeted update workflow:**
+
+1. Edit the template or values under `fleet-gitops/<group>/<bundle>/`
+2. Bump `BUNDLE_VERSION` in `.env` (e.g., `1.0.0` → `1.0.1`)
+3. Deploy only the affected group:
+
+```bash
+./deploy.sh --skip-charts --group <group>
+```
+
+The `--skip-charts` flag skips re-pushing upstream Helm charts (which rarely change). The script still pushes raw manifest bundles and creates/updates HelmOps, but only for the specified group.
+
+**Why BUNDLE_VERSION must always be bumped:** Fleet pulls bundles from Harbor as OCI artifacts tagged with `BUNDLE_VERSION`. Without a new version tag, Fleet sees no change in the OCI registry and will not pull updated artifacts, even if the bundle contents changed.
+
+**Available bundle groups:**
+
+| Group | Contents |
+|-------|----------|
+| `00-operators` | CNPG, Redis Operator, cluster-autoscaler, node-labeler, overprovisioning |
+| `05-pki-secrets` | Vault, cert-manager, ESO, vault-init, vault-unsealer |
+| `10-identity` | Keycloak CNPG, Keycloak server, Keycloak OIDC config |
+| `11-infra-auth` | Traefik auth gateway, Vault auth proxy, Hubble auth proxy |
+| `20-monitoring` | Prometheus, Grafana, Loki, Alloy, monitoring-init |
+| `30-harbor` | MinIO, Harbor core, CNPG, Valkey, harbor-init |
+| `40-gitops` | ArgoCD, Argo Rollouts, Argo Workflows |
+| `50-gitlab` | GitLab, Runners, CNPG, Redis, gitlab-credentials |
+
+**Example — update ArgoCD configuration:**
+
+```bash
+# 1. Edit ArgoCD values
+vim fleet-gitops/40-gitops/argocd-core/values.yaml
+
+# 2. Bump bundle version
+sed -i 's/BUNDLE_VERSION=.*/BUNDLE_VERSION=1.0.2/' fleet-gitops/scripts/.env
+
+# 3. Deploy only the gitops group
+cd fleet-gitops/scripts
+./deploy.sh --skip-charts --group 40-gitops
+```
+
 ### Re-deploy a single bundle group
 
 To redeploy only one group (e.g., after fixing a bug in monitoring stack):
