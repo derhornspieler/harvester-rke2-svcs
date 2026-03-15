@@ -501,10 +501,10 @@ spec:
               ENDPOLICY
 
               write_policy eso-reader-gitlab-runners <<'ENDPOLICY'
-              path "kv/data/ci/*" {
+              path "kv/data/services/ci/*" {
                 capabilities = ["read", "list"]
               }
-              path "kv/metadata/ci/*" {
+              path "kv/metadata/services/ci/*" {
                 capabilities = ["read", "list"]
               }
               ENDPOLICY
