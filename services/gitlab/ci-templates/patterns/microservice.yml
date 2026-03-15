@@ -2,7 +2,7 @@
 # Include this for a complete build-test-scan-deploy pipeline
 #
 # Required CI/CD variables:
-#   HARBOR_REGISTRY, HARBOR_CI_USER, HARBOR_CI_PASSWORD (group-level)
+#   Harbor credentials are fetched from Vault at runtime (no CI variables needed)
 #   APP_NAME — ArgoCD application name (project-level)
 #
 # Usage in .gitlab-ci.yml:
