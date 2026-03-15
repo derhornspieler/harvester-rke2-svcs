@@ -10,6 +10,21 @@
     CONTEXT: .
   script:
     - mkdir -p /kaniko/.docker
+    # Fetch Harbor robot credentials from Vault via JWT auth
+    - |
+      VAULT_RESP=$(wget -qO- --no-check-certificate \
+        --header="Content-Type: application/json" \
+        --post-data="{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" 2>/dev/null || echo "")
+      VAULT_TOKEN=$(echo "${VAULT_RESP}" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+      if [ -z "${VAULT_TOKEN}" ]; then echo "ERROR: Vault JWT auth failed"; exit 1; fi
+      HARBOR_CREDS=$(wget -qO- --no-check-certificate \
+        --header="X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" 2>/dev/null || echo "")
+      HARBOR_CI_USER=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+      HARBOR_CI_PASSWORD=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+      if [ -z "${HARBOR_CI_USER}" ]; then echo "ERROR: Failed to get Harbor creds from Vault"; exit 1; fi
+      echo "Harbor credentials loaded from Vault (user: ${HARBOR_CI_USER})"
     - |
       echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"username\":\"${HARBOR_CI_USER}\",\"password\":\"${HARBOR_CI_PASSWORD}\"}}}" \
         > /kaniko/.docker/config.json
