@@ -244,8 +244,10 @@ spec:
                 local token
                 token=$(curl -s --http1.1 -X POST \
                   "${keycloak_url}/realms/master/protocol/openid-connect/token" \
-                  -d "grant_type=password&client_id=admin-cli" \
-                  -d "username=admin&password=${admin_pass}" \
+                  --data-urlencode "grant_type=password" \
+                  --data-urlencode "client_id=admin-cli" \
+                  --data-urlencode "username=admin" \
+                  --data-urlencode "password=${admin_pass}" \
                   | jq -r '.access_token')
 
                 if [[ -z "${token}" || "${token}" == "null" ]]; then
@@ -331,8 +333,10 @@ spec:
                 while [[ "${elapsed}" -lt "${max_wait}" ]]; do
                   token=$(curl -s --http1.1 -X POST \
                     "${keycloak_url}/realms/master/protocol/openid-connect/token" \
-                    -d "grant_type=password&client_id=admin-cli" \
-                    -d "username=admin&password=${admin_pass}" \
+                    --data-urlencode "grant_type=password" \
+                    --data-urlencode "client_id=admin-cli" \
+                    --data-urlencode "username=admin" \
+                    --data-urlencode "password=${admin_pass}" \
                     | jq -r '.access_token' 2>/dev/null || echo "")
 
                   if [[ -n "${token}" && "${token}" != "null" ]]; then
