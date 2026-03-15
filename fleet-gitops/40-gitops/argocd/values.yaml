@@ -61,10 +61,12 @@ ${ROOT_CA_PEM_INDENT8}
   params:
     # TLS terminated at Traefik — run server in plaintext mode
     server.insecure: true
-  # Trust Keycloak CA for OIDC and repo connections
+  # Trust platform CA for OIDC (Keycloak) and repo connections (GitLab)
   tls:
     certificates:
       ${KEYCLOAK_FQDN}: |
+${ROOT_CA_PEM_INDENT8}
+      ${GITLAB_FQDN}: |
 ${ROOT_CA_PEM_INDENT8}
 
 ## Controller (Application Controller)
