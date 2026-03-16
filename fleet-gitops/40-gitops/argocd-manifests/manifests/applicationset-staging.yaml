@@ -30,6 +30,10 @@ spec:
       syncPolicy:
         automated:
           prune: true
+        managedNamespaceMetadata:
+          labels:
+            platform.aegisgroup.ch/environment: staging
+            platform.aegisgroup.ch/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
