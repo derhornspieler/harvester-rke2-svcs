@@ -25,7 +25,7 @@ default:
     - |
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
         role="${VAULT_ROLE:-gitlab-ci}" \
-        jwt="${CI_JOB_JWT_V2}")
+        jwt="${VAULT_ID_TOKEN}")
 
 # Fetch Harbor robot credentials from Vault via JWT auth.
 # Sets HARBOR_CI_USER and HARBOR_CI_PASSWORD for use in build/push jobs.
@@ -36,7 +36,7 @@ default:
       # Authenticate to Vault via GitLab JWT
       VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         --request POST \
-        --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/login" | \
         sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
       if [ -z "${VAULT_TOKEN}" ]; then
