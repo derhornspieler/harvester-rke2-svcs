@@ -9,6 +9,10 @@ stages:
   - lint
   - sync
 
+variables:
+  GIT_SSL_CAINFO: /etc/ssl/certs/vault-root-ca.pem
+  CURL_CA_BUNDLE: /etc/ssl/certs/vault-root-ca.pem
+
 default:
   tags:
     - shared
@@ -110,7 +114,7 @@ sync-to-github:
   script:
     - |
       # Authenticate to Vault via GitLab JWT
-      VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+      VAULT_TOKEN=$(curl -sf \
         --request POST \
         --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" | \
@@ -122,7 +126,7 @@ sync-to-github:
       fi
 
       # Fetch GitHub mirror credentials from Vault
-      GH_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+      GH_CREDS=$(curl -sf \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
         "${VAULT_ADDR}/v1/kv/data/services/ci/github-mirror")
 
