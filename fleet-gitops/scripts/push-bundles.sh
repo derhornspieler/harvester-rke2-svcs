@@ -92,6 +92,8 @@ BUNDLES=(
   "50-gitlab/gitlab-ready:gitlab-ready"
   "50-gitlab/gitlab-manifests:gitlab-manifests"
   "50-gitlab/gitlab-runners:gitlab-runners"
+  # 60-apps
+  "60-apps/forge:apps-forge"
 )
 
 ###############################################################################

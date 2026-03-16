@@ -1,0 +1,38 @@
+# Forge ArgoCD ApplicationSet
+# Deploys forge services via ArgoCD using GitLab repos.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: forge-services
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: forge
+            repoPath: forge/svc-forge
+            path: k8s
+          - name: milvus
+            repoPath: forge/svc-milvus
+            path: k8s
+  template:
+    metadata:
+      name: "forge-{{name}}"
+      labels:
+        app.kubernetes.io/part-of: forge
+    spec:
+      project: default
+      source:
+        repoURL: "https://${GITLAB_FQDN}/{{repoPath}}.git"
+        targetRevision: main
+        path: "{{path}}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{name}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
