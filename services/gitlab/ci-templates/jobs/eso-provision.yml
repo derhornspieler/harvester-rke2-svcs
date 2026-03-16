@@ -20,7 +20,7 @@
     ESO_VAULT_PATHS: ""
   before_script:
     - |
-      export VAULT_TOKEN=$(vault write -field=token auth/jwt/gitlab/login \
+      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
         role="${VAULT_ROLE}" \
         jwt="${CI_JOB_JWT_V2}")
   script:

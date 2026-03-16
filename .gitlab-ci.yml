@@ -121,7 +121,7 @@ sync-to-github:
       VAULT_RESP=$(curl -s -w "\n%{http_code}" \
         --request POST \
         --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
-        "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" 2>&1)
+        "${VAULT_ADDR}/v1/auth/jwt/login" 2>&1)
       VAULT_HTTP=$(echo "${VAULT_RESP}" | tail -1)
       VAULT_BODY=$(echo "${VAULT_RESP}" | sed '$d')
       echo "Vault auth response: HTTP ${VAULT_HTTP}"
