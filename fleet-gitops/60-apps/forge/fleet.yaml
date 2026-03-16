@@ -1,0 +1,7 @@
+defaultNamespace: argocd
+dependsOn:
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: gitops-argocd
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}
