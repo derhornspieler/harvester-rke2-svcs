@@ -28,6 +28,10 @@ spec:
         server: https://kubernetes.default.svc
         namespace: 'app-{{ "{{ .path.basename }}" }}'
       syncPolicy:
+        managedNamespaceMetadata:
+          labels:
+            platform.example.com/environment: production
+            platform.example.com/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true

@@ -30,6 +30,10 @@ spec:
       syncPolicy:
         automated:
           prune: true
+        managedNamespaceMetadata:
+          labels:
+            platform.example.com/environment: staging
+            platform.example.com/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
