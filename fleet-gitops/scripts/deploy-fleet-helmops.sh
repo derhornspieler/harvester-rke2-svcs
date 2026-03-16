@@ -177,6 +177,8 @@ HELMOP_DEFS=(
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
   "gitlab-runner-golden-image|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/gitlab-runner-golden-image/values.yaml"
+  # 60-apps (developer team ApplicationSets — depends on ArgoCD)
+  "apps-forge|oci://${HARBOR}/fleet/apps-forge|${BUNDLE_VERSION}|argocd|apps-forge|gitops-argocd|"
 )
 
 # ============================================================
@@ -1353,6 +1355,7 @@ for entry in "${HELMOP_DEFS[@]}"; do
       harbor-*|minio) group="30-harbor" ;;
       gitops-*)     group="40-gitops" ;;
       gitlab-*)     group="50-gitlab" ;;
+      apps-*)       group="60-apps" ;;
       *)            group="unknown" ;;
     esac
     if [[ "${group}" != "${SINGLE_GROUP}" ]]; then
