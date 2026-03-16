@@ -143,6 +143,12 @@ export SENIOR_DEV_USER="${SENIOR_DEV_USER:-dev.user}"
 export SENIOR_DEV_NAME="${SENIOR_DEV_NAME:-Senior Developer}"
 export SENIOR_DEV_EMAIL="${SENIOR_DEV_EMAIL:-dev@${DOMAIN}}"
 
+# --- GitHub mirror ---
+export GITHUB_API_TOKEN="${GITHUB_API_TOKEN:-}"
+export GITHUB_MIRROR_URL="${GITHUB_MIRROR_URL:-}"
+export GITHUB_MIRROR_REPO="${GITHUB_MIRROR_REPO:-}"
+export GITHUB_SSH_PRIVATE_KEY_FILE="${GITHUB_SSH_PRIVATE_KEY_FILE:-}"
+
 # --- RBAC groups ---
 export RBAC_GROUP_ADMINS="${RBAC_GROUP_ADMINS:-platform-admins}"
 export RBAC_GROUP_INFRA="${RBAC_GROUP_INFRA:-infra-engineers}"
