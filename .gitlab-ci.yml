@@ -79,17 +79,11 @@ sync-wiki-to-docs:
     - git checkout -b "$BRANCH"
     - git commit -m "sync: wiki edits -> docs/"
     - git push -u origin "$BRANCH"
-    - >
-      apk add --no-cache curl &&
+    - apk add --no-cache curl
+    - |
       curl --fail --header "PRIVATE-TOKEN: ${GITLAB_API_TOKEN}" \
         --header "Content-Type: application/json" \
-        --data "{
-          \"source_branch\": \"${BRANCH}\",
-          \"target_branch\": \"main\",
-          \"title\": \"Wiki sync: edits from GitLab wiki\",
-          \"description\": \"Automated sync of wiki edits back to docs/ directory.\",
-          \"remove_source_branch\": true
-        }" \
+        --data "{\"source_branch\":\"${BRANCH}\",\"target_branch\":\"main\",\"title\":\"Wiki sync: edits from GitLab wiki\",\"description\":\"Automated sync of wiki edits back to docs/ directory.\",\"remove_source_branch\":true}" \
         "https://${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/merge_requests"
     - echo "MR created for wiki edits"
 
@@ -139,6 +133,7 @@ sync-to-github:
         --path-glob 'fleet-gitops/root-ca.pem' --invert-paths \
         --path-glob 'GIT_LOG.txt' --invert-paths \
         --path-glob 'scripts/github-sanitize.sh' --invert-paths \
+        --path-glob '.gitlab-ci.yml' --invert-paths \
         --force
 
       # Pass 2: Replace PII in commit messages

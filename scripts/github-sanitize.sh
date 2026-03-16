@@ -86,6 +86,7 @@ REMOVE_PATHS=(
   "fleet-gitops/root-ca.pem"
   "GIT_LOG.txt"
   "scripts/github-sanitize.sh"
+  ".gitlab-ci.yml"
 )
 
 # =============================================================================
