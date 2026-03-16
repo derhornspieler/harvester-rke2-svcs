@@ -58,7 +58,7 @@ spec:
           expr: |
             kube_pod_status_phase{phase=~"Pending|Unknown"} == 1
             unless on(pod, namespace)
-            kube_pod_labels{label_app_kubernetes_io_name="overprovisioning"}
+            kube_pod_info{priority_class="overprovisioning"}
           for: 15m
           labels:
             severity: warning
@@ -69,8 +69,8 @@ spec:
         - alert: KubeDeploymentReplicasMismatch
           expr: |
             (kube_deployment_spec_replicas != kube_deployment_status_replicas_ready)
-            unless on(deployment, namespace)
-            kube_deployment_labels{label_app_kubernetes_io_name="overprovisioning"}
+            unless on(namespace)
+            kube_pod_info{priority_class="overprovisioning"}
           for: 15m
           labels:
             severity: warning
