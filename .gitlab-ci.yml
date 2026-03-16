@@ -101,6 +101,9 @@ sync-wiki-to-docs:
 sync-to-github:
   stage: sync
   image: docker.io/alpine:3.21
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.example.com
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: always
@@ -113,14 +116,12 @@ sync-to-github:
     - git config --global user.email "mirror@ci.local"
   script:
     - |
-      # Authenticate to Vault via GitLab JWT
+      # Authenticate to Vault via GitLab id_token
       echo "Authenticating to Vault at ${VAULT_ADDR}..."
-      echo "CA bundle: ${CURL_CA_BUNDLE:-not set}"
-      ls -la /etc/ssl/certs/vault-root-ca.pem 2>/dev/null || echo "WARNING: vault-root-ca.pem not found"
 
       VAULT_RESP=$(curl -s -w "\n%{http_code}" \
         --request POST \
-        --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/login" 2>&1)
       VAULT_HTTP=$(echo "${VAULT_RESP}" | tail -1)
       VAULT_BODY=$(echo "${VAULT_RESP}" | sed '$d')
