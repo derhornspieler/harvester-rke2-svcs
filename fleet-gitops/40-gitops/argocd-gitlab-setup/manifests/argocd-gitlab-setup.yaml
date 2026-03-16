@@ -180,6 +180,22 @@ spec:
               EOSECRET
               log "ArgoCD repository credential created for ${GITLAB_URL}"
 
+              # --- Create SCM Provider token secret for ApplicationSet ---
+              log "Creating gitlab-scm-token Secret for SCM Provider generator..."
+              cat <<EOSCM | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: gitlab-scm-token
+                namespace: argocd
+                labels:
+                  app.kubernetes.io/managed-by: argocd-gitlab-setup
+              type: Opaque
+              stringData:
+                token: ${ARGOCD_PAT}
+              EOSCM
+              log "gitlab-scm-token Secret created in argocd namespace"
+
               # --- Create default AppProject allowing GitLab repos ---
               log "Patching default AppProject..."
               kubectl patch appproject default -n argocd --type=merge -p '{
