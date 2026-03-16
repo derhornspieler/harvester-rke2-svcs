@@ -10,13 +10,27 @@ are fetched from Vault at runtime.
 
 Before your pipeline can build and push images:
 
-1. **Create your Harbor project** — Log in to [Harbor](https://harbor.dev.example.com)
+1. **`DOMAIN` CI variable must be set** — The platform team sets this as a
+   group-level CI variable on each GitLab group. It provides the base domain
+   for Vault, Harbor, and other service URLs. Verify it exists:
+   GitLab → Group → Settings → CI/CD → Variables → `DOMAIN`
+
+2. **Create your Harbor project** — Log in to Harbor (`harbor.dev.<DOMAIN>`)
    via Keycloak and create a project matching your GitLab namespace (e.g., `forge`).
    The platform robot account (`robot$ci-push`) has system-level push/pull access
    to all projects automatically.
 
-2. **Your `.gitlab-ci.yml` includes the platform templates** — these handle
+3. **Your `.gitlab-ci.yml` includes the platform templates** — these handle
    Vault authentication, Harbor login, image building, scanning, and deployment.
+
+### Group-Level CI Variables (set by platform team)
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `DOMAIN` | `example.com` | Base domain for all services (Vault, Harbor, etc.) |
+
+These are inherited by all projects within the group. Developers do not
+need to set any project-level variables for basic CI/CD functionality.
 
 ## Quick Start
 
