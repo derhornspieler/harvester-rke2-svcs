@@ -1,6 +1,6 @@
 # harvester-rke2-svcs
 
-[![CI](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml/badge.svg)](https://github.com/derhornspieler/harvester-rke2-svcs/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 Complete platform infrastructure for RKE2 clusters using Fleet GitOps, ArgoCD, and GitLab CI/CD.
 

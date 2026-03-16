@@ -50,7 +50,7 @@ Thumbs.db
 .env.*
 !.env.example
 
-# Claude Code (agents, memory, settings — local dev tools)
+# AI coding assistants (agents, memory, settings — local dev tools)
 .claude/
 CLAUDE.md
 .claude-*
@@ -61,5 +61,5 @@ agent-memory*/
 memory/
 services/pki/roots/root-ca.srl
 
-# Design/planning docs (Claude-generated, local only)
+# Design/planning docs (local only)
 docs/plans/
