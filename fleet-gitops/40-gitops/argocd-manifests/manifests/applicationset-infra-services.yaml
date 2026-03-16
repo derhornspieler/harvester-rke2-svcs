@@ -17,7 +17,8 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   preservedFields:
-    - annotations
+    annotations:
+      - "notifications.argoproj.io/*"
   syncPolicy:
     preserveResourcesOnDeletion: true
   generators:
