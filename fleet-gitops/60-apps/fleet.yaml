@@ -1,0 +1,2 @@
+# 60-apps: Application definitions deployed via ArgoCD
+# Each subdirectory is a team's ApplicationSet(s)
