@@ -23,7 +23,7 @@ default:
 .vault_jwt_auth: &vault_jwt_auth
   before_script:
     - |
-      export VAULT_TOKEN=$(vault write -field=token auth/jwt/gitlab/login \
+      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
         role="${VAULT_ROLE:-gitlab-ci}" \
         jwt="${CI_JOB_JWT_V2}")
 
@@ -37,7 +37,7 @@ default:
       VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         --request POST \
         --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
-        "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" | \
+        "${VAULT_ADDR}/v1/auth/jwt/login" | \
         sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
       if [ -z "${VAULT_TOKEN}" ]; then
         echo "ERROR: Failed to authenticate to Vault"
