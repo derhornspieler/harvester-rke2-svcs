@@ -87,7 +87,8 @@ sync-wiki-to-docs:
 # ---------------------------------------------------------------------------
 # Replaces PII (domain, usernames, org) with generic placeholders and removes
 # sensitive files before pushing to the public GitHub mirror.
-# Requires CI variables: GITHUB_SSH_PRIVATE_KEY, GITHUB_MIRROR_URL
+# Requires CI variables: GITHUB_SSH_PRIVATE_KEY, GITHUB_MIRROR_URL, GITHUB_API_TOKEN
+# GITHUB_API_TOKEN needs repo:status and actions:read scopes
 sync-to-github:
   stage: sync
   image: docker.io/alpine:3.21
@@ -95,7 +96,7 @@ sync-to-github:
     - if: $CI_COMMIT_BRANCH == "main"
       when: always
   before_script:
-    - apk add --no-cache git openssh-client python3 py3-pip
+    - apk add --no-cache git openssh-client python3 py3-pip curl jq
     - pip install git-filter-repo --break-system-packages 2>/dev/null
     - mkdir -p ~/.ssh
     - echo "$GITHUB_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
@@ -106,6 +107,7 @@ sync-to-github:
   script:
     - |
       WORK_DIR="/tmp/github-sanitize"
+      GITHUB_REPO="${GITHUB_MIRROR_REPO:-derhornspieler/harvester-rke2-svcs}"
       rm -rf "${WORK_DIR}"
 
       # Clone the full repo
@@ -147,4 +149,59 @@ sync-to-github:
       # Force push sanitized history to GitHub
       git remote add github "${GITHUB_MIRROR_URL}"
       git push github main --force --tags
-  allow_failure: true
+      echo "Sanitized push to GitHub complete"
+
+      # Wait for GitHub Actions CI to trigger and complete
+      if [ -z "${GITHUB_API_TOKEN:-}" ]; then
+        echo "GITHUB_API_TOKEN not set — skipping CI status check"
+        exit 0
+      fi
+
+      GH_API="https://api.github.com/repos/${GITHUB_REPO}"
+      GH_AUTH="Authorization: token ${GITHUB_API_TOKEN}"
+
+      echo "Waiting for GitHub Actions to start..."
+      sleep 15
+
+      # Find the latest workflow run on main
+      MAX_WAIT=300
+      ELAPSED=0
+      RUN_ID=""
+      while [ "${ELAPSED}" -lt "${MAX_WAIT}" ]; do
+        RUN_ID=$(curl -sf -H "${GH_AUTH}" \
+          "${GH_API}/actions/runs?branch=main&per_page=1" | \
+          jq -r '.workflow_runs[0].id // empty')
+
+        if [ -n "${RUN_ID}" ]; then
+          STATUS=$(curl -sf -H "${GH_AUTH}" \
+            "${GH_API}/actions/runs/${RUN_ID}" | \
+            jq -r '.status')
+          CONCLUSION=$(curl -sf -H "${GH_AUTH}" \
+            "${GH_API}/actions/runs/${RUN_ID}" | \
+            jq -r '.conclusion // "null"')
+
+          if [ "${STATUS}" = "completed" ]; then
+            break
+          fi
+          echo "GitHub CI: ${STATUS} (${ELAPSED}/${MAX_WAIT}s)..."
+        fi
+
+        sleep 15
+        ELAPSED=$((ELAPSED + 15))
+      done
+
+      if [ -z "${RUN_ID}" ]; then
+        echo "WARNING: Could not find GitHub Actions run"
+        exit 1
+      fi
+
+      if [ "${CONCLUSION}" = "success" ]; then
+        echo "GitHub CI passed (run ${RUN_ID})"
+      elif [ "${CONCLUSION}" = "null" ] || [ "${STATUS}" != "completed" ]; then
+        echo "WARNING: GitHub CI did not complete within ${MAX_WAIT}s (status: ${STATUS})"
+        exit 1
+      else
+        echo "ERROR: GitHub CI failed (run ${RUN_ID}, conclusion: ${CONCLUSION})"
+        echo "See: https://github.com/${GITHUB_REPO}/actions/runs/${RUN_ID}"
+        exit 1
+      fi
