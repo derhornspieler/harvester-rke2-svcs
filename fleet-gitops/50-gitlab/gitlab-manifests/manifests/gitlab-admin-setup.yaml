@@ -340,7 +340,8 @@ spec:
               if [[ -n "${EXISTING_KEY}" ]]; then
                 log "Deploy key already in Vault — skipping"
               else
-                # Generate SSH key pair in Job container (alpine/k8s has openssh)
+                # Install openssh-keygen and generate SSH key pair
+                apk add --no-cache openssh-keygen 2>/dev/null || apk add --no-cache openssh 2>/dev/null || true
                 ssh-keygen -t ed25519 -C "ci-deploy-push@platform-deployments" \
                   -f /tmp/deploy_key -N "" -q
                 PUBKEY=$(cat /tmp/deploy_key.pub)
