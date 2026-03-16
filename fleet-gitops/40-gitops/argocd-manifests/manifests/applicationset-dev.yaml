@@ -9,7 +9,7 @@ spec:
   generators:
     - git:
         repoURL: "https://${GITLAB_FQDN}/platform/platform-deployments.git"
-        revision: main
+        revision: dev
         directories:
           - path: "dev/*/*"
   template:
