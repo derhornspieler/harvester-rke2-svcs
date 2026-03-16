@@ -918,6 +918,26 @@ for c in json.load(sys.stdin).get('data',[]):
       log_ok "Seeded GitLab license into Vault (services/gitlab)"
     fi
   fi
+
+  # Seed GitHub mirror credentials (for sanitized push from CI)
+  if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
+    local gh_check
+    gh_check=$(_vexec kv get -field=api-token kv/services/ci/github-mirror 2>/dev/null || true)
+    if [[ -n "${gh_check}" ]]; then
+      log_ok "GitHub mirror credentials already in Vault"
+    else
+      local ssh_key=""
+      if [[ -n "${GITHUB_SSH_PRIVATE_KEY_FILE:-}" && -f "${GITHUB_SSH_PRIVATE_KEY_FILE}" ]]; then
+        ssh_key=$(cat "${GITHUB_SSH_PRIVATE_KEY_FILE}")
+      fi
+      _vexec kv put kv/services/ci/github-mirror \
+        api-token="${GITHUB_API_TOKEN}" \
+        mirror-url="${GITHUB_MIRROR_URL:-}" \
+        mirror-repo="${GITHUB_MIRROR_REPO:-}" \
+        ssh-private-key="${ssh_key}"
+      log_ok "Seeded GitHub mirror credentials into Vault (services/ci/github-mirror)"
+    fi
+  fi
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
