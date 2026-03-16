@@ -114,19 +114,33 @@ sync-to-github:
   script:
     - |
       # Authenticate to Vault via GitLab JWT
-      VAULT_TOKEN=$(curl -sf \
+      echo "Authenticating to Vault at ${VAULT_ADDR}..."
+      echo "CA bundle: ${CURL_CA_BUNDLE:-not set}"
+      ls -la /etc/ssl/certs/vault-root-ca.pem 2>/dev/null || echo "WARNING: vault-root-ca.pem not found"
+
+      VAULT_RESP=$(curl -s -w "\n%{http_code}" \
         --request POST \
         --data "{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
-        "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" | \
-        jq -r '.auth.client_token')
+        "${VAULT_ADDR}/v1/auth/jwt/gitlab/login" 2>&1)
+      VAULT_HTTP=$(echo "${VAULT_RESP}" | tail -1)
+      VAULT_BODY=$(echo "${VAULT_RESP}" | sed '$d')
+      echo "Vault auth response: HTTP ${VAULT_HTTP}"
 
-      if [ -z "${VAULT_TOKEN}" ] || [ "${VAULT_TOKEN}" = "null" ]; then
-        echo "ERROR: Failed to authenticate to Vault"
+      if [ "${VAULT_HTTP}" != "200" ]; then
+        echo "ERROR: Vault JWT auth failed (HTTP ${VAULT_HTTP})"
+        echo "${VAULT_BODY}" | head -5
         exit 1
       fi
 
+      VAULT_TOKEN=$(echo "${VAULT_BODY}" | jq -r '.auth.client_token')
+      if [ -z "${VAULT_TOKEN}" ] || [ "${VAULT_TOKEN}" = "null" ]; then
+        echo "ERROR: Failed to extract Vault token"
+        exit 1
+      fi
+      echo "Vault auth successful"
+
       # Fetch GitHub mirror credentials from Vault
-      GH_CREDS=$(curl -sf \
+      GH_CREDS=$(curl -s \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
         "${VAULT_ADDR}/v1/kv/data/services/ci/github-mirror")
 
