@@ -4,8 +4,8 @@
 # Uses kubectl exec into the toolbox pod to run rails commands.
 #
 # Users created:
-#   - Platform admin (admin.user) — GitLab admin + Owner on project group
-#   - Senior developer (dev.user) — Maintainer on project group (can merge to main)
+#   - Platform admin — GitLab admin + Owner on project group
+#   - Senior developer — Maintainer on project group (can merge to main)
 #
 # Idempotent — safe to re-run on every deploy.
 ---
