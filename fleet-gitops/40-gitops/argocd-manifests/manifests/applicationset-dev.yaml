@@ -31,6 +31,10 @@ spec:
         automated:
           prune: true
           selfHeal: true
+        managedNamespaceMetadata:
+          labels:
+            platform.example.com/environment: dev
+            platform.example.com/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
