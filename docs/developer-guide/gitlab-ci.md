@@ -45,7 +45,16 @@ include:
 
 variables:
   APP_NAME: my-service
+
+# Required for Vault JWT auth (GitLab 17+)
+build:
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
 ```
+
+**Note:** Every job that authenticates to Vault needs the `id_tokens` block.
+The `VAULT_ID_TOKEN` variable name must match what the CI templates expect.
 
 This gives you: secret detection, linting, build, image scan, SBOM, and deploy.
 
@@ -63,10 +72,19 @@ This gives you: secret detection, linting, build, image scan, SBOM, and deploy.
 └─────────────┘                     └───────────┘                   └───────────┘
 ```
 
-1. GitLab injects `CI_JOB_JWT_V2` into every CI job automatically
-2. The job authenticates to Vault using `auth/jwt/gitlab/login`
+1. Each job declares an `id_tokens` block with `VAULT_ID_TOKEN` (audience = GitLab URL)
+2. The job authenticates to Vault using `auth/jwt/login` with the token
 3. The job reads Harbor robot credentials from `kv/services/harbor/ci-robot`
 4. The job uses `robot$ci-push` to push/pull images to/from Harbor
+
+**Important:** Every job that needs Vault access must declare `id_tokens`:
+
+```yaml
+my-job:
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.<DOMAIN>
+```
 
 **No group-level or project-level CI variables are needed for Harbor access.**
 
@@ -149,6 +167,9 @@ Use `.vault_jwt_auth` in custom jobs that need Vault access:
 ```yaml
 my-custom-job:
   <<: *vault_jwt_auth
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
   script:
     - vault kv get kv/services/ci/my-secret
 ```
@@ -172,6 +193,9 @@ JWT role. For protected branches (main/master), use `gitlab-ci-protected`.
 ```yaml
 read-secret:
   <<: *vault_jwt_auth
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
   variables:
     VAULT_ROLE: gitlab-ci-protected   # Only works on protected branches
   script:
@@ -205,10 +229,12 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 - Check Vault has robot credentials: the platform deploys `robot$ci-push` automatically
 - The `$` in `robot$ci-push` must be escaped in shell scripts (`robot\$ci-push`)
 
-### "Vault JWT auth failed"
+### "Vault JWT auth failed" / "permission denied" / "missing token"
 
-- Ensure your project is on the GitLab instance at `gitlab.example.com`
-- `CI_JOB_JWT_V2` is only available in GitLab 15.7+
+- **Must use `id_tokens`** — `CI_JOB_JWT_V2` is removed in GitLab 17+. Add `id_tokens:` block to your job
+- The `aud` must match the GitLab URL: `aud: https://gitlab.<DOMAIN>`
+- The token variable name must be `VAULT_ID_TOKEN` (matching the CI templates)
+- Auth path is `auth/jwt/login` (not `auth/jwt/gitlab/login`)
 - Check the `vault-jwt-auth-setup` Job completed: `kubectl get job vault-jwt-auth-setup -n gitlab`
 
 ### "Failed to get Harbor creds from Vault"

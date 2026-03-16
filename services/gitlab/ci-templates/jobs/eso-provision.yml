@@ -22,7 +22,7 @@
     - |
       export VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
         role="${VAULT_ROLE}" \
-        jwt="${CI_JOB_JWT_V2}")
+        jwt="${VAULT_ID_TOKEN}")
   script:
     - |
       if [ -z "${ESO_VAULT_PATHS}" ]; then

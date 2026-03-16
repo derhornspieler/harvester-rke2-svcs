@@ -12,7 +12,7 @@
     - |
       VAULT_RESP=$(wget -qO- --no-check-certificate \
         --header="Content-Type: application/json" \
-        --post-data="{\"jwt\": \"${CI_JOB_JWT_V2}\", \"role\": \"gitlab-ci\"}" \
+        --post-data="{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/login" 2>/dev/null || echo "")
       VAULT_TOKEN=$(echo "${VAULT_RESP}" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
       HARBOR_CREDS=$(wget -qO- --no-check-certificate \
