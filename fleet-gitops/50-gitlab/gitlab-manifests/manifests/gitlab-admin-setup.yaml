@@ -261,6 +261,26 @@ spec:
                 puts "Platform group not found — skipping access grants (will be created on next run)"
               end
 
+              # --- Share platform group with developer groups (Developer access) ---
+              # All members of forge and infra_and_platform_services groups get Developer
+              # access on the platform group. This allows CI_JOB_TOKEN to push to the
+              # dev branch of platform-deployments.
+              %w[infra_and_platform_services forge].each do |group_path|
+                shared_group = Group.find_by_full_path(group_path)
+                next unless shared_group
+                existing_share = GroupGroupLink.find_by(
+                  shared_group: group, shared_with_group: shared_group)
+                if existing_share
+                  puts "#{group_path} already has shared access to platform group (level: #{existing_share.group_access})"
+                else
+                  GroupGroupLink.create!(
+                    shared_group: group,
+                    shared_with_group: shared_group,
+                    group_access: Gitlab::Access::DEVELOPER)
+                  puts "Shared platform group with #{group_path} (Developer access)"
+                end
+              end
+
               # --- Allow CI_JOB_TOKEN from other groups to access platform-deployments ---
               # Without this, CI pipelines in forge/ or infra_and_platform_services/ can't
               # clone platform/platform-deployments using CI_JOB_TOKEN.
