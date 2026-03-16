@@ -881,6 +881,12 @@ spec:
                 capabilities = ["read"]
               }
               ENDPOLICY
+
+              write_policy harbor-ci-robot-reader <<'ENDPOLICY'
+              path "kv/data/services/harbor/ci-robot" {
+                capabilities = ["read"]
+              }
+              ENDPOLICY
               log "Admin credential reader policies created"
 
               # ================================================================
@@ -985,7 +991,7 @@ spec:
               vexec write "auth/kubernetes/role/bootstrap-cluster-reader" \
                 bound_service_account_names="external-secrets" \
                 bound_service_account_namespaces="external-secrets" \
-                policies="admin-keycloak-reader,admin-minio-reader" \
+                policies="admin-keycloak-reader,admin-minio-reader,harbor-ci-robot-reader" \
                 ttl=1h
               log "Bootstrap auth roles created"
 
