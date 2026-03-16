@@ -211,6 +211,8 @@ sync-to-github:
         exit 0
       fi
 
+      # Unset private CA bundle for GitHub API calls (uses public CA)
+      unset CURL_CA_BUNDLE
       GH_API="https://api.github.com/repos/${GITHUB_REPO}"
       GH_AUTH="Authorization: token ${GITHUB_API_TOKEN}"
 
