@@ -37,7 +37,7 @@ sync-docs-to-wiki:
   before_script:
     - apk add --no-cache git bash
     - git config --global user.name "Wiki Sync Bot"
-    - git config --global user.email "wiki-sync@aegisgroup.ch"
+    - git config --global user.email "wiki-sync@${CI_SERVER_HOST}"
   script:
     - mkdir -p /tmp/wiki-out
     - bash fleet-gitops/scripts/sync-wiki.sh docs-to-wiki --output /tmp/wiki-out
@@ -61,7 +61,7 @@ sync-wiki-to-docs:
   before_script:
     - apk add --no-cache git bash
     - git config --global user.name "Wiki Sync Bot"
-    - git config --global user.email "wiki-sync@aegisgroup.ch"
+    - git config --global user.email "wiki-sync@${CI_SERVER_HOST}"
   script:
     # Clone wiki
     - git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.wiki.git" /tmp/wiki
@@ -110,9 +110,9 @@ sync-to-github:
     - chmod 600 ~/.ssh/id_ed25519
     - ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
     - git config --global user.name "GitLab Mirror"
-    - git config --global user.email "mirror@aegisgroup.ch"
+    - git config --global user.email "mirror@${CI_SERVER_HOST}"
   script:
-    - git remote add github git@github.com:derhornspieler/harvester-rke2-svcs.git || true
+    - git remote add github ${GITHUB_MIRROR_URL} || true
     - git fetch origin main
     - git push github main --tags
   allow_failure: true

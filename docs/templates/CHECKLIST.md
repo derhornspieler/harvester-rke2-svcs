@@ -5,7 +5,7 @@
 - **Service name:** `_______________`
 - **Namespace:** `app-_______________`
 - **Team:** `_______________`
-- **Container image:** `harbor.aegisgroup.ch/UPSTREAM/IMAGE:TAG`
+- **Container image:** `harbor.example.com/UPSTREAM/IMAGE:TAG`
 
 ## Workload Configuration
 

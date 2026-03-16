@@ -9,7 +9,7 @@ This guide walks through deploying a complete production platform to an RKE2 clu
 | Component | Purpose |
 |-----------|---------|
 | Rancher management cluster | Provisions downstream RKE2 clusters, runs Fleet controller |
-| Harbor registry (`harbor.aegisgroup.ch`) | OCI registry for Helm charts and manifest bundles |
+| Harbor registry (`harbor.example.com`) | OCI registry for Helm charts and manifest bundles |
 | Rancher API token | Bearer token with cluster provisioning and Fleet management permissions |
 | Root CA keypair | Offline Root CA for signing the Vault intermediate CA |
 
@@ -48,10 +48,10 @@ This script:
 1. **Bootstraps `.env`** from `.env.example` if `.env` doesn't exist
 2. **Prompts for credentials** (shows current value, press Enter to keep, type to override):
    - `RANCHER_URL` — management cluster API URL
-   - `HARBOR_HOST` — OCI registry hostname (e.g., `harbor.aegisgroup.ch`)
+   - `HARBOR_HOST` — OCI registry hostname (e.g., `harbor.example.com`)
    - `HARBOR_USER` — registry username
    - `HARBOR_PASS` — registry password
-   - `DOMAIN` — cluster domain (e.g., `aegisgroup.ch`)
+   - `DOMAIN` — cluster domain (e.g., `example.com`)
    - `FLEET_TARGET_CLUSTER` — downstream cluster name in Rancher
    - `TRAEFIK_LB_IP` — Traefik LoadBalancer IP
    - (Optional) `GITLAB_LICENSE` — GitLab license activation code
@@ -469,7 +469,7 @@ The `deploy-fleet-helmops.sh` script auto-creates this Secret from Harbor's TLS 
 
 ```bash
 # Extract Harbor's root CA
-openssl s_client -connect harbor.aegisgroup.ch:443 -showcerts < /dev/null 2>/dev/null | \
+openssl s_client -connect harbor.example.com:443 -showcerts < /dev/null 2>/dev/null | \
   sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' | tail -1 > /tmp/harbor-ca.pem
 
 # Create secret on management cluster

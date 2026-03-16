@@ -53,8 +53,8 @@ raw manifest bundles (Jobs, DaemonSets, CronJobs, StatefulSets).
 | `IMAGE_LOKI` | docker.io/grafana/loki:3.4.6 | Loki StatefulSet |
 | `IMAGE_ALLOY` | docker.io/grafana/alloy:v1.6.1 | Alloy DaemonSet |
 | `IMAGE_OAUTH2_PROXY` | quay.io/oauth2-proxy/oauth2-proxy:v7.8.1 | 8 OAuth2-proxy Deployments |
-| `IMAGE_NODE_LABELER` | harbor.aegisgroup.ch/library/node-labeler:v0.2.0 | Node labeler DaemonSet |
-| `IMAGE_STORAGE_AUTOSCALER` | harbor.aegisgroup.ch/library/storage-autoscaler:v0.2.0 | Storage autoscaler Deployment |
+| `IMAGE_NODE_LABELER` | harbor.example.com/library/node-labeler:v0.2.0 | Node labeler DaemonSet |
+| `IMAGE_STORAGE_AUTOSCALER` | harbor.example.com/library/storage-autoscaler:v0.2.0 | Storage autoscaler Deployment |
 | `IMAGE_CLUSTER_AUTOSCALER` | registry.k8s.io/autoscaling/cluster-autoscaler:v1.34.3 | Cluster autoscaler Deployment |
 | `IMAGE_VAULT` | hashicorp/vault:1.21.2 | Vault HA StatefulSet |
 | `IMAGE_VALKEY` | valkey/valkey:8-alpine | Harbor Valkey, ArgoCD redis-ha |

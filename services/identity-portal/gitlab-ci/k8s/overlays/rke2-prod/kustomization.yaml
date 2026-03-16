@@ -15,7 +15,7 @@ patches:
         value: "identity.CHANGEME_DOMAIN"
       - op: replace
         path: /spec/listeners/0/tls/certificateRefs/0/name
-        value: "identity-aegisgroup-ch-tls"
+        value: "identity-CHANGEME_DOMAIN_DASHED-tls"
 
   # Substitute CHANGEME_DOMAIN in HTTPRoute
   - target:

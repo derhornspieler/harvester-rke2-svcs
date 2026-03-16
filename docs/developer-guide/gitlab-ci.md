@@ -10,7 +10,7 @@ are fetched from Vault at runtime.
 
 Before your pipeline can build and push images:
 
-1. **Create your Harbor project** — Log in to [Harbor](https://harbor.dev.aegisgroup.ch)
+1. **Create your Harbor project** — Log in to [Harbor](https://harbor.dev.example.com)
    via Keycloak and create a project matching your GitLab namespace (e.g., `forge`).
    The platform robot account (`robot$ci-push`) has system-level push/pull access
    to all projects automatically.
@@ -193,7 +193,7 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 
 ### "Vault JWT auth failed"
 
-- Ensure your project is on the GitLab instance at `gitlab.aegisgroup.ch`
+- Ensure your project is on the GitLab instance at `gitlab.example.com`
 - `CI_JOB_JWT_V2` is only available in GitLab 15.7+
 - Check the `vault-jwt-auth-setup` Job completed: `kubectl get job vault-jwt-auth-setup -n gitlab`
 

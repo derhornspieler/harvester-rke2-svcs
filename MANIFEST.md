@@ -2,7 +2,7 @@
 
 Bundle version: **2.1.17**
 
-All Helm charts are cached in Harbor OCI registry (`harbor.aegisgroup.ch`).
+All Helm charts are cached in Harbor OCI registry (`harbor.example.com`).
 All container images are pulled through Harbor pull-through cache.
 
 ## Helm Charts
@@ -41,8 +41,8 @@ All container images are pulled through Harbor pull-through cache.
 | docker.io/grafana/loki | 3.4.6 | Loki log aggregation |
 | docker.io/grafana/alloy | v1.6.1 | Alloy telemetry collector |
 | quay.io/oauth2-proxy/oauth2-proxy | v7.8.1 | OAuth2 proxy (Keycloak OIDC) |
-| harbor.aegisgroup.ch/library/node-labeler | v0.2.0 | Automatic node labeling |
-| harbor.aegisgroup.ch/library/storage-autoscaler | v0.2.0 | PVC volume autoscaling |
+| harbor.example.com/library/node-labeler | v0.2.0 | Automatic node labeling |
+| harbor.example.com/library/storage-autoscaler | v0.2.0 | PVC volume autoscaling |
 | registry.k8s.io/autoscaling/cluster-autoscaler | v1.34.3 | Cluster autoscaler |
 | hashicorp/vault | 1.21.2 | Vault secrets management (HA Raft) |
 | valkey/valkey | 8-alpine | Valkey (Harbor cache) |
