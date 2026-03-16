@@ -30,6 +30,9 @@ spec:
             secretName: gitlab-scm-token
             key: token
           includeSubgroups: true
+          caRef:
+            configMapName: argocd-tls-certs-cm
+            key: gitlab.aegisgroup.ch
         cloneProtocol: https
         filters:
           - repositoryMatch: ".*"
