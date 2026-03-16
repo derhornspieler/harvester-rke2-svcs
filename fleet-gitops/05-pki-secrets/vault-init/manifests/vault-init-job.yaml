@@ -1050,7 +1050,24 @@ spec:
                 policies="argocd-gitlab-setup" \
                 ttl=1h
 
-              log "Scoped policies and K8s auth roles created for jwt-auth-admin and argocd-gitlab-setup"
+              # Policy: gitlab-admin-setup — stores deploy keys and platform creds
+              write_policy gitlab-admin-setup <<'ENDPOLICY'
+              path "kv/data/services/ci/platform-deploy-key" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/ci/platform-deploy-key" {
+                capabilities = ["create", "read"]
+              }
+              ENDPOLICY
+
+              # K8s auth role: gitlab-admin-setup (bound to SA in gitlab namespace)
+              vexec write "auth/kubernetes/role/gitlab-admin-setup" \
+                bound_service_account_names="gitlab-admin-setup" \
+                bound_service_account_namespaces="gitlab" \
+                policies="gitlab-admin-setup" \
+                ttl=1h
+
+              log "Scoped policies and K8s auth roles created for jwt-auth-admin, argocd-gitlab-setup, and gitlab-admin-setup"
 
               # ================================================================
               # Step 12: Seed admin credentials (idempotent)
