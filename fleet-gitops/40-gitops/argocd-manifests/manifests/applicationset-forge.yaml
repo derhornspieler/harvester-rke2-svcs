@@ -18,18 +18,18 @@ spec:
             path: k8s
   template:
     metadata:
-      name: "forge-{{name}}"
+      name: 'forge-{{ "{{name}}" }}'
       labels:
         app.kubernetes.io/part-of: forge
     spec:
       project: default
       source:
-        repoURL: "https://${GITLAB_FQDN}/{{repoPath}}.git"
+        repoURL: 'https://${GITLAB_FQDN}/{{ "{{repoPath}}" }}.git'
         targetRevision: main
-        path: "{{path}}"
+        path: '{{ "{{path}}" }}'
       destination:
         server: https://kubernetes.default.svc
-        namespace: "{{name}}"
+        namespace: '{{ "{{name}}" }}'
       syncPolicy:
         automated:
           prune: true
