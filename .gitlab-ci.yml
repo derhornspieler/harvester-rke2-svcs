@@ -103,7 +103,7 @@ sync-to-github:
   image: docker.io/alpine:3.21
   id_tokens:
     VAULT_ID_TOKEN:
-      aud: https://vault.example.com
+      aud: https://gitlab.example.com
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: always
