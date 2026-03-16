@@ -303,41 +303,6 @@ spec:
                 puts "platform-deployments not found — skipping CI token access grants"
               end
 
-              # --- Create Deploy Key with write access for CI push ---
-              # SSH deploy key allows CI pipelines to push image tag updates
-              # to platform-deployments dev branch. Never expires.
-              # Private key stored in Vault at kv/services/ci/platform-deploy-key.
-              if project
-                existing_key = project.deploy_keys.find_by(title: 'ci-deploy-push')
-                if existing_key
-                  puts "DEPLOY_KEY_EXISTS=true"
-                  puts "Deploy key 'ci-deploy-push' already exists (ID: #{existing_key.id})"
-                else
-                  require 'open3'
-                  # Generate ED25519 SSH key pair
-                  privkey, status = Open3.capture2('ssh-keygen', '-t', 'ed25519',
-                    '-C', 'ci-deploy-push@platform-deployments',
-                    '-f', '/tmp/deploy_key', '-N', '')
-                  if status.success?
-                    pubkey = File.read('/tmp/deploy_key.pub').strip
-                    privkey_content = File.read('/tmp/deploy_key')
-                    # Register public key as Deploy Key with write access
-                    dk = DeployKey.new(title: 'ci-deploy-push', key: pubkey)
-                    dk.save!
-                    project.deploy_keys_projects.create!(
-                      deploy_key: dk,
-                      can_push: true
-                    )
-                    puts "DEPLOY_KEY_EXISTS=false"
-                    puts "DEPLOY_KEY_PRIVATE=#{privkey_content}"
-                    puts "Deploy key created with write access on platform-deployments"
-                    # Cleanup temp files
-                    File.delete('/tmp/deploy_key', '/tmp/deploy_key.pub')
-                  else
-                    puts "ERROR: ssh-keygen failed"
-                  end
-                end
-              end
               ACCESSEOF
               kubectl cp /tmp/platform-access.rb "gitlab/${TOOLBOX_POD}:/tmp/platform-access.rb"
               PLATFORM_OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
@@ -348,23 +313,62 @@ spec:
                 log "  ${line}"
               done
 
-              # --- Seed deploy key private key to Vault ---
-              DEPLOY_KEY_PRIVATE=$(echo "${PLATFORM_OUTPUT}" | sed -n '/^DEPLOY_KEY_PRIVATE=/,/^-----END/p' | sed 's/^DEPLOY_KEY_PRIVATE=//')
-              DEPLOY_KEY_EXISTS=$(echo "${PLATFORM_OUTPUT}" | grep '^DEPLOY_KEY_EXISTS=' | cut -d= -f2)
+              # --- Create Deploy Key with write access for CI push ---
+              # SSH deploy key allows CI pipelines to push image tag updates
+              # to platform-deployments. Never expires.
+              # Key generated in Job container (has ssh-keygen), registered via Rails,
+              # private key stored in Vault.
+              log "Checking deploy key for platform-deployments..."
 
-              if [[ -n "${DEPLOY_KEY_PRIVATE}" && "${DEPLOY_KEY_EXISTS}" == "false" ]]; then
-                log "Seeding deploy key to Vault..."
-                # Auth to Vault via K8s SA JWT
-                SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-                VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
-                V_TOKEN=$(curl -sfk --request POST \
-                  --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"gitlab-admin-setup\"}" \
-                  "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null | \
-                  python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null) || V_TOKEN=""
+              # Auth to Vault (needed for both check and seed)
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+              V_TOKEN=$(curl -sfk --request POST \
+                --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"gitlab-admin-setup\"}" \
+                "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null | \
+                python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null) || V_TOKEN=""
 
-                if [[ -n "${V_TOKEN}" ]]; then
-                  # Write private key to Vault
-                  ESCAPED_KEY=$(echo "${DEPLOY_KEY_PRIVATE}" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" 2>/dev/null)
+              # Check if deploy key already in Vault
+              EXISTING_KEY=""
+              if [[ -n "${V_TOKEN}" ]]; then
+                EXISTING_KEY=$(curl -sf \
+                  -H "X-Vault-Token: ${V_TOKEN}" \
+                  "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" 2>/dev/null | \
+                  python3 -c "import json,sys; d=json.load(sys.stdin).get('data',{}).get('data',{}); print(d.get('private-key','')[:20] if d.get('private-key') else '')" 2>/dev/null) || EXISTING_KEY=""
+              fi
+
+              if [[ -n "${EXISTING_KEY}" ]]; then
+                log "Deploy key already in Vault — skipping"
+              else
+                # Generate SSH key pair in Job container (alpine/k8s has openssh)
+                ssh-keygen -t ed25519 -C "ci-deploy-push@platform-deployments" \
+                  -f /tmp/deploy_key -N "" -q
+                PUBKEY=$(cat /tmp/deploy_key.pub)
+                PRIVKEY=$(cat /tmp/deploy_key)
+
+                # Register public key in GitLab via Rails
+                cat > /tmp/register-deploy-key.rb << DKEOF
+                project = Project.find_by_full_path('platform/platform-deployments')
+                raise "Project not found" unless project
+                existing = project.deploy_keys.find_by(title: 'ci-deploy-push')
+                if existing
+                  puts "DEPLOY_KEY_REGISTERED=existing"
+                else
+                  dk = DeployKey.new(title: 'ci-deploy-push', key: "${PUBKEY}")
+                  dk.save!
+                  project.deploy_keys_projects.create!(deploy_key: dk, can_push: true)
+                  puts "DEPLOY_KEY_REGISTERED=created"
+                end
+              DKEOF
+                kubectl cp /tmp/register-deploy-key.rb "gitlab/${TOOLBOX_POD}:/tmp/register-deploy-key.rb"
+                DK_OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
+                  gitlab-rails runner /tmp/register-deploy-key.rb 2>&1) || true
+                DK_STATUS=$(echo "${DK_OUTPUT}" | grep '^DEPLOY_KEY_REGISTERED=' | cut -d= -f2)
+                log "Deploy key registration: ${DK_STATUS:-failed}"
+
+                # Seed private key to Vault
+                if [[ -n "${V_TOKEN}" && ("${DK_STATUS}" == "created" || "${DK_STATUS}" == "existing") ]]; then
+                  ESCAPED_KEY=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/deploy_key)
                   HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
                     -H "X-Vault-Token: ${V_TOKEN}" \
                     -H "Content-Type: application/json" \
@@ -377,28 +381,10 @@ spec:
                     log "WARNING: Failed to seed deploy key to Vault (HTTP ${HTTP_CODE})"
                   fi
                 else
-                  log "WARNING: Could not auth to Vault — deploy key not seeded"
+                  log "WARNING: Could not seed deploy key to Vault"
                 fi
-              elif [[ "${DEPLOY_KEY_EXISTS}" == "true" ]]; then
-                log "Deploy key already exists — checking Vault"
-                SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-                VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
-                V_TOKEN=$(curl -sfk --request POST \
-                  --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"gitlab-admin-setup\"}" \
-                  "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null | \
-                  python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null) || V_TOKEN=""
-                if [[ -n "${V_TOKEN}" ]]; then
-                  EXISTING=$(curl -sf \
-                    -H "X-Vault-Token: ${V_TOKEN}" \
-                    "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" 2>/dev/null | \
-                    python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('private-key','')[:20])" 2>/dev/null) || EXISTING=""
-                  if [[ -n "${EXISTING}" ]]; then
-                    log "Deploy key already in Vault"
-                  else
-                    log "WARNING: Deploy key exists in GitLab but NOT in Vault"
-                    log "Delete 'ci-deploy-push' deploy key in GitLab and re-run to recreate"
-                  fi
-                fi
+
+                rm -f /tmp/deploy_key /tmp/deploy_key.pub
               fi
           securityContext:
             allowPrivilegeEscalation: false
