@@ -941,36 +941,10 @@ for c in json.load(sys.stdin).get('data',[]):
     fi
   fi
 
-  # Seed SSH deploy key for platform-deployments CI push
-  if [[ -n "${GITLAB_DEPLOY_KEY_FILE:-}" ]]; then
-    local dk_check
-    dk_check=$(_vexec kv get -field=private-key kv/services/ci/platform-deploy-key 2>/dev/null || true)
-    if [[ -n "${dk_check}" ]]; then
-      log_ok "Platform deploy key already in Vault"
-    else
-      local dk_path="${GITLAB_DEPLOY_KEY_FILE}"
-      if [[ "${dk_path}" != /* ]]; then
-        dk_path="${FLEET_DIR}/${dk_path#./}"
-      fi
-      # Expand ~ to home directory
-      dk_path="${dk_path/#\~/$HOME}"
-      if [[ -f "${dk_path}" ]]; then
-        local dk_private dk_public
-        dk_private=$(cat "${dk_path}")
-        dk_public=""
-        if [[ -f "${dk_path}.pub" ]]; then
-          dk_public=$(cat "${dk_path}.pub")
-        fi
-        _vexec kv put kv/services/ci/platform-deploy-key \
-          private-key="${dk_private}" \
-          public-key="${dk_public}" \
-          git-url="git@gitlab.${DOMAIN}:platform/platform-deployments.git"
-        log_ok "Seeded platform deploy key into Vault (services/ci/platform-deploy-key)"
-      else
-        log_warn "Deploy key file not found at ${dk_path} — skipping"
-      fi
-    fi
-  fi
+  # NOTE: Platform GDT (Group Deploy Token) for CI push to platform-deployments
+  # is created automatically by the gitlab-admin-setup Job via Rails runner.
+  # No .env variables needed — the Job creates the token and seeds it to Vault
+  # at kv/services/ci/platform-deploy-token (username + token).
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
