@@ -1052,10 +1052,10 @@ spec:
 
               # Policy: gitlab-admin-setup — stores deploy keys and platform creds
               write_policy gitlab-admin-setup <<'ENDPOLICY'
-              path "kv/data/services/ci/platform-deploy-key" {
+              path "kv/data/services/ci/platform-deploy-token" {
                 capabilities = ["create", "read", "update"]
               }
-              path "kv/metadata/services/ci/platform-deploy-key" {
+              path "kv/metadata/services/ci/platform-deploy-token" {
                 capabilities = ["create", "read"]
               }
               ENDPOLICY
