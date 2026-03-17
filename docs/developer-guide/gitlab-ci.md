@@ -34,7 +34,7 @@ need to set any project-level variables for basic CI/CD functionality.
 
 ## Quick Start
 
-Minimal `.gitlab-ci.yml` for a microservice:
+Minimal `.gitlab-ci.yml` for a microservice with full CI/CD pipeline including deployment:
 
 ```yaml
 include:
@@ -44,19 +44,31 @@ include:
       - '/patterns/microservice.yml'
 
 variables:
-  APP_NAME: my-service
+  APP_NAME: svc-forge
+  HARBOR_PROJECT: forge
+  DEPLOY_TEAM: forge
 
-# Required for Vault JWT auth (GitLab 17+)
-build:
-  id_tokens:
-    VAULT_ID_TOKEN:
-      aud: https://gitlab.${DOMAIN}
+deploy-dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: dev
+    DEPLOY_APP: svc-forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+deploy-staging:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: staging
+    DEPLOY_APP: svc-forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
 ```
 
-**Note:** Every job that authenticates to Vault needs the `id_tokens` block.
+**Note:** Every job that authenticates to Vault needs the `id_tokens` block (included in templates).
 The `VAULT_ID_TOKEN` variable name must match what the CI templates expect.
 
-This gives you: secret detection, linting, build, image scan, SBOM, and deploy.
+This gives you: secret detection, linting, build, image scan, SBOM, and automated deployment to dev and staging environments. ArgoCD syncs within ~3 minutes.
 
 ## How Authentication Works
 
@@ -92,7 +104,7 @@ my-job:
 
 ### Microservice Pattern
 
-Full build → test → scan → deploy pipeline:
+Full build → test → scan → deploy to platform-deployments pipeline:
 
 ```yaml
 include:
@@ -102,15 +114,34 @@ include:
       - '/patterns/microservice.yml'
 
 variables:
-  APP_NAME: my-service             # ArgoCD application name
+  APP_NAME: svc-forge              # Application name
   HARBOR_PROJECT: forge            # Harbor project (must exist)
+  DEPLOY_TEAM: forge               # Team name (matches platform-deployments folder)
+
+deploy-dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: dev
+    DEPLOY_APP: svc-forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+deploy-staging:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: staging
+    DEPLOY_APP: svc-forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
 ```
 
-**Stages:** secret-detection → hadolint → build → image-scan → sbom → deploy-staging → promote-production
+**Stages:** secret-detection → hadolint → build → image-scan → sbom → deploy-dev → deploy-staging
+
+Your app must exist in `platform-deployments/dev/forge/svc-forge/` and `platform-deployments/staging/forge/svc-forge/` for deployment to work.
 
 ### Platform Service Pattern
 
-For GitOps-managed platform services with ESO and Blue/Green rollouts:
+Platform services (those deployed via harvester-rke2-svcs Fleet GitOps) have a different pipeline:
 
 ```yaml
 include:
@@ -123,8 +154,9 @@ variables:
   APP_NAME: my-platform-svc
   ESO_NAMESPACE: my-namespace      # Namespace for ESO provisioning
   ESO_VAULT_PATHS: "services/my-svc"
-  DEPLOY_REPO: infra_and_platform_services/platform-deployments
 ```
+
+**Note:** Platform services are not deployed via platform-deployments. They are deployed by the platform team using Fleet GitOps. Use this pattern only if you are a platform operator.
 
 ## Available Job Templates
 
@@ -148,12 +180,14 @@ is mounted at `/etc/ssl/certs/vault-root-ca.pem` for TLS trust.
 | `.scan:sbom` | syft v1.38 | Generate SPDX SBOM |
 | `.scan:license` | trivy v0.69 | License compliance check |
 
-### Deploy
+### Deploy to platform-deployments
+
+The `.deploy:platform-deployments` template updates image tags in the centralized
+deployment repository. This is the standard pattern for all application deployments.
 
 | Template | Description |
 |----------|-------------|
-| `.deploy:argocd-sync` | Trigger ArgoCD sync for staging |
-| `.promote:tag-image` | Tag image for production promotion |
+| `.deploy:platform-deployments` | Update image tag and push to platform-deployments |
 
 ### Vault Authentication
 
@@ -166,7 +200,7 @@ Use `.vault_jwt_auth` in custom jobs that need Vault access:
 
 ```yaml
 my-custom-job:
-  <<: *vault_jwt_auth
+  extends: .vault_jwt_auth
   id_tokens:
     VAULT_ID_TOKEN:
       aud: https://gitlab.${DOMAIN}
@@ -202,6 +236,101 @@ read-secret:
     - MY_SECRET=$(vault kv get -field=password kv/services/ci/my-app)
 ```
 
+## Deploying to platform-deployments
+
+After building and scanning your image, the deploy stage updates the image tag in the `platform-deployments` repository. ArgoCD automatically syncs the updated manifests to the cluster.
+
+### Deploy Stage Pattern
+
+Use the `.deploy:platform-deployments` template in your pipeline. Add one deploy job per environment (dev, staging, prod).
+
+**For development (auto-sync):**
+
+```yaml
+deploy-dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: dev
+    DEPLOY_APP: svc-forge
+    DEPLOY_TEAM: forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+```
+
+**For staging (requires MR + approval):**
+
+```yaml
+deploy-staging:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: staging
+    DEPLOY_APP: svc-forge
+    DEPLOY_TEAM: forge
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  # Optional: create MR instead of direct push
+  # Set DEPLOY_CREATE_MR: "true" to require platform team approval
+```
+
+**For production (manual MR + approval):**
+
+```yaml
+deploy-prod:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: prod
+    DEPLOY_APP: svc-forge
+    DEPLOY_TEAM: forge
+    DEPLOY_CREATE_MR: "true"  # Require platform team approval
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+```
+
+### What the Deploy Stage Does
+
+The template automatically:
+
+1. Authenticates to Vault and fetches SSH deploy key from kv/services/ci/platform-deploy-key, then clones platform-deployments via SSH
+2. Updates the image tag in the overlay's `kustomization.yaml`:
+   ```bash
+   cd ${DEPLOY_ENV}/${DEPLOY_TEAM}/${DEPLOY_APP}
+   kustomize edit set image CHANGEME_IMAGE=harbor.dev.<DOMAIN>/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}
+   ```
+3. Commits the change with message: `deploy: <app> <tag> to <env>`
+4. If `DEPLOY_CREATE_MR=true`: Creates an MR for team review
+5. If `DEPLOY_CREATE_MR=false`: Pushes directly (dev only)
+
+### ArgoCD Auto-Sync Timeline
+
+- **dev**: Syncs immediately within ~3 minutes (auto-sync enabled)
+- **staging**: Syncs after MR is merged (auto-sync enabled post-merge)
+- **prod**: Manual sync via ArgoCD UI or `argocd app sync` command
+
+### Adding Your App to platform-deployments
+
+Before you can deploy, your app structure must exist in `platform-deployments`:
+
+```bash
+platform-deployments/
+  base/
+    microservice/                        # Shared Deployment, Service, HPA
+  dev/forge/svc-forge/
+    kustomization.yaml
+  staging/forge/svc-forge/
+    kustomization.yaml
+  prod/forge/svc-forge/
+    kustomization.yaml
+```
+
+Platform team seeds the initial structure. To add your app:
+
+1. Create a folder in `platform-deployments` (e.g., `dev/forge/svc-forge`)
+2. Create `kustomization.yaml` referencing the base
+3. Submit MR for platform team review
+4. Once merged, your CI/CD deploy stage can update image tags
+
+See the [ArgoCD Deployment Patterns](argocd-deployment.md#adding-a-new-application) guide for detailed steps.
+
 ## Private CA Trust
 
 All CI job pods mount the platform root CA at `/etc/ssl/certs/vault-root-ca.pem`.
@@ -222,6 +351,31 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 ```
 
 ## Troubleshooting
+
+### Deploy stage fails with "git clone failed"
+
+- Verify your app folders exist in `platform-deployments`: `dev/<team>/<app>/`, `staging/<team>/<app>/`, etc.
+- Check that SSH deploy key is in Vault: vault kv get kv/services/ci/platform-deploy-key in the deploy job (should be automatic)
+- Verify the GitLab CI JOB_TOKEN has access to the `platform-deployments` repo (usually inherited from the platform group)
+
+### "kustomize edit set image" command fails
+
+- Ensure `kustomization.yaml` exists in the overlay folder
+- Verify the `CHANGEME_IMAGE` entry exists in the `images:` section
+- Example valid entry:
+  ```yaml
+  images:
+    - name: CHANGEME_IMAGE
+      newName: harbor.dev.<DOMAIN>/forge/svc-forge
+      newTag: latest
+  ```
+
+### Image tag updated but ArgoCD didn't sync
+
+- ArgoCD checks for changes every ~3 minutes (configurable)
+- Check ArgoCD logs: `kubectl logs -n argocd deployment/argocd-application-controller`
+- Manually trigger sync: `argocd app sync svc-forge-dev`
+- Verify the git push was successful: `git log` in platform-deployments should show your commit
 
 ### "invalid username/password" on Harbor login
 
@@ -248,8 +402,97 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 Kaniko uses `${HARBOR_REGISTRY}/ci-cache/${CI_PROJECT_NAME}` for layer caching.
 The `ci-cache` project must exist in Harbor. Create it via Harbor UI if needed.
 
+## Platform Deployment Pipeline (for platform operators)
+
+This section is for **platform operators managing the harvester-rke2-svcs repository**. Application developers should use the patterns in [Deploying to platform-deployments](#deploying-to-platformdeployments) above.
+
+The `harvester-rke2-svcs` repository has its own GitLab CI pipeline for deploying
+platform services (Vault, Keycloak, GitLab, Prometheus, Harbor, ArgoCD) via Fleet GitOps.
+
+### Pipeline Stages
+
+| Stage | Trigger | What it does |
+|-------|---------|-------------|
+| `lint` | MR + main | yamllint, shellcheck on fleet-gitops scripts |
+| `validate` | MR only | Template rendering dry-run (catches variable errors) |
+| `build` | main only | Computes next BUNDLE_VERSION from `bundle-v*` git tags |
+| `push` | main only | Pushes Helm charts and Fleet bundles to Harbor OCI registry |
+| `deploy` | **manual** | Creates Fleet HelmOps on Rancher management cluster |
+| `post-deploy` | **manual** | Re-runs post-deploy checks (fallback if deploy's post-deploy phase needs retry) |
+| `sync` | main only | Sanitized push to GitHub mirror |
+| `rotate` | scheduled | Rancher API token rotation (every 60 days) |
+
+### Credential Flow
+
+All credentials are fetched from Vault via JWT auth at runtime. The pipeline uses
+the `gitlab-ci-fleet-deploy` Vault role, which is bound to this specific project
+on protected branches only.
+
+```
+GitLab CI Job → JWT id_token → Vault auth/jwt/login → Vault token
+  → Read kv/services/ci/fleet-deploy → RANCHER_URL, RANCHER_TOKEN, HARBOR_USER, HARBOR_PASS
+  → Build .env from .env.ci + Vault secrets
+  → Run deploy scripts
+```
+
+No GitLab CI variables are needed for deployment (the group-level `DOMAIN` variable
+is the only CI variable used).
+
+### Making Platform Changes
+
+```bash
+# 1. Create feature branch
+git checkout -b feat/update-monitoring
+
+# 2. Edit templates/values
+vim fleet-gitops/20-monitoring/prometheus-stack/values.yaml
+
+# 3. Push and create MR — lint + validate run automatically
+git push -u origin feat/update-monitoring
+glab mr create --title "Update Prometheus stack" --target-branch main
+
+# 4. Merge — CI auto-pushes charts/bundles to Harbor, creates git tag
+glab mr merge
+
+# 5. Deploy — click the manual deploy-fleet job in GitLab CI
+# Or deploy from workstation: cd fleet-gitops/scripts && ./deploy.sh
+```
+
+### Phase 5: CSR Signing (First Deploy Only)
+
+The Vault intermediate CA CSR signing requires the offline Root CA key and must
+run from a workstation:
+
+```bash
+cd fleet-gitops
+./scripts/sign-csr-only.sh
+```
+
+This is only needed once per cluster lifecycle (intermediate CA has 15-year validity).
+Subsequent deploys skip this step automatically.
+
+### CI Tools Image
+
+The pipeline uses `harbor.dev.<DOMAIN>/library/fleet-deploy-tools:v1.0.0`.
+To rebuild:
+
+```bash
+cd fleet-gitops/ci
+docker build -t harbor.dev.<DOMAIN>/library/fleet-deploy-tools:v1.0.0 -f Dockerfile.tools .
+docker push harbor.dev.<DOMAIN>/library/fleet-deploy-tools:v1.0.0
+```
+
+### Rancher Token Rotation
+
+A GitLab scheduled pipeline runs every 60 days with `ROTATION_JOB=rancher-token`.
+It creates a new 90-day Rancher API token, updates Vault and the cluster-autoscaler
+secret, then deletes the old token. No manual intervention needed.
+
 ## Reference
 
+- [ArgoCD Deployment Patterns](argocd-deployment.md) — centralized GitOps platform-deployments model
 - [CI/CD Pipeline Architecture](../architecture/cicd-pipeline.md) — system design
 - [Secrets & Configuration](../architecture/secrets-configuration.md) — Vault paths
-- [microservice-demo](../../examples/microservice-demo/) — working example
+- [platform-deployments Repository](../../examples/platform-deployments/) — repository structure and conventions
+- [2026-03-16 Platform Deployments Migration](../communications/2026-03-16-platform-deployments-migration.md) — detailed migration guide
+- [Getting Started — Deployment section](../getting-started.md) — general deployment workflow
