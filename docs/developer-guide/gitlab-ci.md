@@ -290,16 +290,23 @@ deploy-prod:
 
 The template automatically:
 
-1. Authenticates to Vault and fetches the Group Deploy Token from `kv/services/ci/platform-deploy-token` (username + token)
-2. Clones `platform-deployments` via HTTPS using the token credentials
-2. Updates the image tag in the overlay's `kustomization.yaml`:
+1. Authenticates to Vault and fetches the SSH deploy key from `kv/services/ci/platform-deploy-key`
+2. Configures SSH and clones `platform-deployments` via SSH (`git@gitlab.<DOMAIN>:platform/platform-deployments.git`)
+3. Updates the image tag in the overlay's `kustomization.yaml`:
    ```bash
    cd ${DEPLOY_ENV}/${DEPLOY_TEAM}/${DEPLOY_APP}
    kustomize edit set image CHANGEME_IMAGE=harbor.dev.<DOMAIN>/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}
    ```
-3. Commits the change with message: `deploy: <app> <tag> to <env>`
-4. If `DEPLOY_CREATE_MR=true`: Creates an MR for team review
-5. If `DEPLOY_CREATE_MR=false`: Pushes directly (dev only)
+4. Commits the change with message: `deploy: <app> <tag> to <env>`
+5. Pushes to the target branch (dev = direct push, staging/prod = MR)
+
+**Why SSH?** Deploy keys never expire, are scoped to a single project, and
+don't require token rotation. The private key is stored in Vault and fetched
+by CI pipelines at runtime.
+
+**Fallback:** A Project Access Token (PAT) is also available at
+`kv/services/ci/platform-deploy-token` for HTTPS-based pushing. The PAT
+expires yearly and requires rotation.
 
 ### ArgoCD Auto-Sync Timeline
 
