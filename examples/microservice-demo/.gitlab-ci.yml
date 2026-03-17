@@ -86,7 +86,7 @@ deploy:dev:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   before_script:
-    - apk add --no-cache git curl jq
+    - apk add --no-cache git openssh-client curl jq
   script:
     - |
       # Auth to Vault
@@ -95,24 +95,30 @@ deploy:dev:
         --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/login" | jq -r '.auth.client_token')
 
-      # Fetch Group Deploy Token from Vault
-      GDT_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+      # Fetch SSH deploy key from Vault
+      DEPLOY_KEY=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
-        "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token")
-      GDT_USER=$(echo "${GDT_CREDS}" | jq -r '.data.data.username')
-      GDT_TOKEN=$(echo "${GDT_CREDS}" | jq -r '.data.data.token')
+        "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" | \
+        jq -r '.data.data["private-key"]')
 
-      if [ -z "${GDT_TOKEN}" ] || [ "${GDT_TOKEN}" = "null" ]; then
-        echo "ERROR: Could not fetch deploy token from Vault"
+      if [ -z "${DEPLOY_KEY}" ] || [ "${DEPLOY_KEY}" = "null" ]; then
+        echo "ERROR: Could not fetch deploy key from Vault"
         exit 1
       fi
-      echo "Deploy token loaded from Vault"
+      echo "Deploy key loaded from Vault"
 
-      # Clone platform-deployments (dev branch) via HTTPS
+      # Configure SSH
+      mkdir -p ~/.ssh
+      echo "${DEPLOY_KEY}" > ~/.ssh/deploy_key
+      chmod 600 ~/.ssh/deploy_key
+      ssh-keyscan gitlab.${DOMAIN} >> ~/.ssh/known_hosts 2>/dev/null
+      export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+
+      # Clone platform-deployments (dev branch) via SSH
       git config --global user.name "CI Deploy"
       git config --global user.email "ci@deploy.local"
       git clone --branch dev \
-        "https://${GDT_USER}:${GDT_TOKEN}@gitlab.${DOMAIN}/platform/platform-deployments.git" \
+        "git@gitlab.${DOMAIN}:platform/platform-deployments.git" \
         /tmp/deploy
 
       # Update image tag
