@@ -1286,9 +1286,9 @@ import json,sys
 # ============================================================
 # Auto-cleanup completed init Jobs before deploy
 # ============================================================
-# Kubernetes Jobs are immutable after completion. Fleet cannot patch
-# them, causing ErrApplied. Delete completed Jobs so Fleet recreates
-# them with the latest spec.
+# Kubernetes Jobs are immutable. Fleet cannot patch them, causing ErrApplied.
+# Delete completed, failed, or crash-looping Jobs so Fleet recreates them
+# with the latest spec. Crash-looping = 3+ restarts (stuck on old code).
 cleanup_completed_init_jobs() {
   # Map of group → "namespace/job-name" pairs (must match all Job manifests)
   declare -A GROUP_JOBS=(
@@ -1321,12 +1321,26 @@ cleanup_completed_init_jobs() {
     for entry in "${job_entries[@]}"; do
       local ns="${entry%%/*}"
       local job_name="${entry##*/}"
-      local status
-      status=$(kubectl get job "${job_name}" -n "${ns}" \
+      # Check for completed, failed, or crash-looping Jobs
+      # All must be deleted so Fleet can recreate with updated spec (Jobs are immutable)
+      local complete failed restarts
+      complete=$(kubectl get job "${job_name}" -n "${ns}" \
         -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
-      if [[ "${status}" == "True" ]]; then
+      failed=$(kubectl get job "${job_name}" -n "${ns}" \
+        -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
+      restarts=$(kubectl get pods -n "${ns}" -l "job-name=${job_name}" \
+        -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
+      if [[ "${complete}" == "True" ]]; then
         kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
         log_info "Deleted completed Job: ${ns}/${job_name}"
+        cleaned=$((cleaned + 1))
+      elif [[ "${failed}" == "True" ]]; then
+        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+        log_info "Deleted failed Job: ${ns}/${job_name}"
+        cleaned=$((cleaned + 1))
+      elif [[ "${restarts}" -gt 3 ]]; then
+        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+        log_info "Deleted crash-looping Job (${restarts} restarts): ${ns}/${job_name}"
         cleaned=$((cleaned + 1))
       fi
     done
