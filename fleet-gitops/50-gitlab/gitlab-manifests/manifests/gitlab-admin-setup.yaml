@@ -343,7 +343,13 @@ spec:
               if project
                 existing = project.deploy_keys.find_by(title: 'ci-deploy-push')
                 if existing
-                  puts "Deploy key 'ci-deploy-push' already registered"
+                  dkp = project.deploy_keys_projects.find_by(deploy_key: existing)
+                  if dkp && !dkp.can_push
+                    dkp.update!(can_push: true)
+                    puts "Deploy key updated to write access"
+                  else
+                    puts "Deploy key already registered with write access"
+                  end
                 else
                   dk = DeployKey.new(title: 'ci-deploy-push', key: "${DEPLOY_PUBKEY}")
                   dk.save!
