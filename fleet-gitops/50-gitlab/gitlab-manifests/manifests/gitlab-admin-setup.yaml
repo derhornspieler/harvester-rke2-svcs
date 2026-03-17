@@ -313,12 +313,11 @@ spec:
                 log "  ${line}"
               done
 
-              # --- Register SSH Deploy Key for CI push (public key from Vault) ---
-              # The SSH key pair is created by the operator and seeded to Vault via
-              # deploy.sh seed_ci_secrets (GITLAB_DEPLOY_KEY_FILE in .env).
-              # This step reads the public key from Vault and registers it as a
-              # Deploy Key with write access on platform-deployments.
-              log "Checking deploy key for platform-deployments..."
+              # --- Create Group Deploy Token (GDT) for CI push to platform-deployments ---
+              # GDT on the 'platform' group: read_repository + write_repository, no expiration.
+              # CI pipelines fetch username+token from Vault and use HTTPS to clone/push.
+              # No SSH keys needed — simple HTTPS auth.
+              log "Checking platform group deploy token..."
               SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
               VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
               V_TOKEN=$(curl -sfk --request POST \
@@ -326,46 +325,71 @@ spec:
                 "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null | \
                 python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null) || V_TOKEN=""
 
-              DEPLOY_PUBKEY=""
+              # Check if GDT already in Vault
+              EXISTING_GDT=""
               if [[ -n "${V_TOKEN}" ]]; then
-                DEPLOY_PUBKEY=$(curl -sf \
+                EXISTING_GDT=$(curl -sf \
                   -H "X-Vault-Token: ${V_TOKEN}" \
-                  "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" 2>/dev/null | \
-                  python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('public-key',''))" 2>/dev/null) || DEPLOY_PUBKEY=""
+                  "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null | \
+                  python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('token','')[:10])" 2>/dev/null) || EXISTING_GDT=""
               fi
 
-              if [[ -z "${DEPLOY_PUBKEY}" ]]; then
-                log "No deploy key in Vault — add GITLAB_DEPLOY_KEY_FILE to .env and re-run deploy.sh"
+              if [[ -n "${EXISTING_GDT}" ]]; then
+                log "Platform GDT already in Vault — skipping"
               else
-                # Register in GitLab via Rails
-                cat > /tmp/register-deploy-key.rb << DKEOF
-              project = Project.find_by_full_path('platform/platform-deployments')
-              if project
-                existing = project.deploy_keys.find_by(title: 'ci-deploy-push')
-                if existing
-                  dkp = project.deploy_keys_projects.find_by(deploy_key: existing)
-                  if dkp && !dkp.can_push
-                    dkp.update!(can_push: true)
-                    puts "Deploy key updated to write access"
-                  else
-                    puts "Deploy key already registered with write access"
-                  end
-                else
-                  dk = DeployKey.new(title: 'ci-deploy-push', key: "${DEPLOY_PUBKEY}")
-                  dk.save!
-                  project.deploy_keys_projects.create!(deploy_key: dk, can_push: true)
-                  puts "Deploy key registered with write access"
-                end
-              else
-                puts "platform-deployments project not found — skipping deploy key"
+                # Create GDT via Rails
+                cat > /tmp/create-gdt.rb << 'GDTEOF'
+              group = Group.find_by_full_path('platform')
+              unless group
+                puts "GDT_ERROR=platform group not found"
+                exit 0
               end
-              DKEOF
-                kubectl cp /tmp/register-deploy-key.rb "gitlab/${TOOLBOX_POD}:/tmp/register-deploy-key.rb"
-                DK_OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
-                  gitlab-rails runner /tmp/register-deploy-key.rb 2>&1) || true
-                echo "${DK_OUTPUT}" | grep -v Defaulted | while IFS= read -r line; do
-                  log "  ${line}"
-                done
+              existing = group.deploy_tokens.active.find_by(name: 'ci-platform-deploy')
+              if existing
+                puts "GDT_EXISTS=true"
+                puts "GDT_NOTE=Token exists but value is hashed"
+              else
+                group.deploy_tokens.where(name: 'ci-platform-deploy').find_each(&:destroy!)
+                gdt = group.deploy_tokens.create!(
+                  name: 'ci-platform-deploy',
+                  read_repository: true,
+                  write_repository: true,
+                  expires_at: nil
+                )
+                puts "GDT_EXISTS=false"
+                puts "GDT_USERNAME=#{gdt.username}"
+                puts "GDT_TOKEN=#{gdt.token}"
+              end
+              GDTEOF
+                kubectl cp /tmp/create-gdt.rb "gitlab/${TOOLBOX_POD}:/tmp/create-gdt.rb"
+                GDT_OUTPUT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
+                  gitlab-rails runner /tmp/create-gdt.rb 2>&1) || true
+
+                GDT_TOKEN_VAL=$(echo "${GDT_OUTPUT}" | grep '^GDT_TOKEN=' | cut -d= -f2-)
+                GDT_USER_VAL=$(echo "${GDT_OUTPUT}" | grep '^GDT_USERNAME=' | cut -d= -f2-)
+                GDT_EXISTS=$(echo "${GDT_OUTPUT}" | grep '^GDT_EXISTS=' | cut -d= -f2)
+                GDT_ERROR=$(echo "${GDT_OUTPUT}" | grep '^GDT_ERROR=' | cut -d= -f2-)
+
+                if [[ -n "${GDT_ERROR}" ]]; then
+                  log "WARNING: ${GDT_ERROR}"
+                elif [[ -n "${GDT_TOKEN_VAL}" ]]; then
+                  # Seed to Vault
+                  ESCAPED_TOKEN=$(python3 -c "import json; print(json.dumps('${GDT_TOKEN_VAL}'))")
+                  ESCAPED_USER=$(python3 -c "import json; print(json.dumps('${GDT_USER_VAL}'))")
+                  HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+                    -H "X-Vault-Token: ${V_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -X POST \
+                    -d "{\"data\":{\"username\":${ESCAPED_USER},\"token\":${ESCAPED_TOKEN}}}" \
+                    "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null)
+                  if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "204" ]]; then
+                    log "Platform GDT created and seeded to Vault (services/ci/platform-deploy-token)"
+                  else
+                    log "WARNING: GDT created but failed to seed to Vault (HTTP ${HTTP_CODE})"
+                  fi
+                elif [[ "${GDT_EXISTS}" == "true" ]]; then
+                  log "GDT exists in GitLab but not in Vault — delete 'ci-platform-deploy' in GitLab and re-run"
+                fi
               fi
           securityContext:
             allowPrivilegeEscalation: false

@@ -290,7 +290,8 @@ deploy-prod:
 
 The template automatically:
 
-1. Authenticates to Vault and fetches SSH deploy key from kv/services/ci/platform-deploy-key, then clones platform-deployments via SSH
+1. Authenticates to Vault and fetches the Group Deploy Token from `kv/services/ci/platform-deploy-token` (username + token)
+2. Clones `platform-deployments` via HTTPS using the token credentials
 2. Updates the image tag in the overlay's `kustomization.yaml`:
    ```bash
    cd ${DEPLOY_ENV}/${DEPLOY_TEAM}/${DEPLOY_APP}
@@ -355,7 +356,7 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 ### Deploy stage fails with "git clone failed"
 
 - Verify your app folders exist in `platform-deployments`: `dev/<team>/<app>/`, `staging/<team>/<app>/`, etc.
-- Check that SSH deploy key is in Vault: vault kv get kv/services/ci/platform-deploy-key in the deploy job (should be automatic)
+- Check that the Group Deploy Token is in Vault: `vault kv get kv/services/ci/platform-deploy-token`
 - Verify the GitLab CI JOB_TOKEN has access to the `platform-deployments` repo (usually inherited from the platform group)
 
 ### "kustomize edit set image" command fails
