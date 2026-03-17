@@ -375,24 +375,31 @@ spec:
                 GDT_EXISTS=$(echo "${GDT_OUTPUT}" | grep '^GDT_EXISTS=' | cut -d= -f2)
                 GDT_ERROR=$(echo "${GDT_OUTPUT}" | grep '^GDT_ERROR=' | cut -d= -f2-)
 
-                if [[ -n "${GDT_ERROR}" ]]; then
+                if [[ -n "${GDT_ERROR:-}" ]]; then
                   log "WARNING: ${GDT_ERROR}"
-                elif [[ -n "${GDT_TOKEN_VAL}" ]]; then
-                  # Seed to Vault
-                  ESCAPED_TOKEN=$(python3 -c "import json; print(json.dumps('${GDT_TOKEN_VAL}'))")
-                  ESCAPED_USER=$(python3 -c "import json; print(json.dumps('${GDT_USER_VAL}'))")
-                  HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
-                    -H "X-Vault-Token: ${V_TOKEN}" \
-                    -H "Content-Type: application/json" \
-                    -X POST \
-                    -d "{\"data\":{\"username\":${ESCAPED_USER},\"token\":${ESCAPED_TOKEN}}}" \
-                    "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null)
-                  if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "204" ]]; then
-                    log "Platform GDT created and seeded to Vault (services/ci/platform-deploy-token)"
+                elif [[ -n "${GDT_TOKEN_VAL:-}" ]]; then
+                  # Seed to Vault — use python3 stdin to avoid shell injection
+                  if [[ -n "${V_TOKEN:-}" ]]; then
+                    VAULT_PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'data':{'username':sys.argv[1],'token':sys.argv[2]}}))" "${GDT_USER_VAL}" "${GDT_TOKEN_VAL}")
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                      -H "X-Vault-Token: ${V_TOKEN}" \
+                      -H "Content-Type: application/json" \
+                      -X POST \
+                      -d "${VAULT_PAYLOAD}" \
+                      "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null) || HTTP_CODE="000"
+                    if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "204" ]]; then
+                      log "Platform GDT created and seeded to Vault (services/ci/platform-deploy-token)"
+                    else
+                      log "WARNING: GDT created but failed to seed to Vault (HTTP ${HTTP_CODE})"
+                      log "GDT username: ${GDT_USER_VAL}"
+                      log "Seed manually: vault kv put kv/services/ci/platform-deploy-token username=<user> token=<token>"
+                    fi
                   else
-                    log "WARNING: GDT created but failed to seed to Vault (HTTP ${HTTP_CODE})"
+                    log "WARNING: GDT created but Vault auth failed — cannot seed"
+                    log "GDT username: ${GDT_USER_VAL}"
+                    log "Seed manually: vault kv put kv/services/ci/platform-deploy-token username=<user> token=<token>"
                   fi
-                elif [[ "${GDT_EXISTS}" == "true" ]]; then
+                elif [[ "${GDT_EXISTS:-}" == "true" ]]; then
                   log "GDT exists in GitLab but not in Vault — delete 'ci-platform-deploy' in GitLab and re-run"
                 fi
               fi
