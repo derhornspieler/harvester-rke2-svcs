@@ -318,20 +318,25 @@ spec:
               # CI pipelines fetch username+token from Vault and use HTTPS to clone/push.
               # No SSH keys needed — simple HTTPS auth.
               log "Checking platform group deploy token..."
-              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
               VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
-              V_TOKEN=$(curl -sfk --request POST \
+              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              V_TOKEN=""
+              V_RESP=$(curl -sk --request POST \
                 --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"gitlab-admin-setup\"}" \
-                "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null | \
-                python3 -c "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null) || V_TOKEN=""
+                "${VAULT_ADDR}/v1/auth/kubernetes/login" 2>/dev/null) || true
+              if [[ -n "${V_RESP}" ]]; then
+                V_TOKEN=$(echo "${V_RESP}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('auth',{}).get('client_token',''))" 2>/dev/null) || V_TOKEN=""
+              fi
 
               # Check if GDT already in Vault
               EXISTING_GDT=""
               if [[ -n "${V_TOKEN}" ]]; then
-                EXISTING_GDT=$(curl -sf \
+                GDT_RESP=$(curl -s \
                   -H "X-Vault-Token: ${V_TOKEN}" \
-                  "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null | \
-                  python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('token','')[:10])" 2>/dev/null) || EXISTING_GDT=""
+                  "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-token" 2>/dev/null) || true
+                if [[ -n "${GDT_RESP}" ]]; then
+                  EXISTING_GDT=$(echo "${GDT_RESP}" | python3 -c "import json,sys; d=json.load(sys.stdin).get('data',{}).get('data',{}); print(d.get('token','')[:10] if d.get('token') else '')" 2>/dev/null) || EXISTING_GDT=""
+                fi
               fi
 
               if [[ -n "${EXISTING_GDT}" ]]; then
