@@ -304,9 +304,9 @@ The template automatically:
 don't require token rotation. The private key is stored in Vault and fetched
 by CI pipelines at runtime.
 
-**Fallback:** A Project Access Token (PAT) is also available at
-`kv/services/ci/platform-deploy-token` for HTTPS-based pushing. The PAT
-expires yearly and requires rotation.
+The SSH deploy key is owned by the `gitlab-ci` service account (a Keycloak
+user with Developer access on the `platform` group). Keys are provided via
+`.env` and uploaded to GitLab by the `gitlab-admin-setup` Job.
 
 ### ArgoCD Auto-Sync Timeline
 
@@ -363,7 +363,7 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 ### Deploy stage fails with "git clone failed"
 
 - Verify your app folders exist in `platform-deployments`: `dev/<team>/<app>/`, `staging/<team>/<app>/`, etc.
-- Check that the Group Deploy Token is in Vault: `vault kv get kv/services/ci/platform-deploy-token`
+- Check that the SSH deploy key is in Vault: `vault kv get kv/services/ci/platform-deploy-key`
 - Verify the GitLab CI JOB_TOKEN has access to the `platform-deployments` repo (usually inherited from the platform group)
 
 ### "kustomize edit set image" command fails
