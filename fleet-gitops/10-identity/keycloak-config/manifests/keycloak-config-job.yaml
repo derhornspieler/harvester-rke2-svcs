@@ -307,6 +307,41 @@ spec:
                 email="${SENIOR_DEV_EMAIL}"
               log "[INFO] Senior developer user created"
 
+              # =============== Phase 2c: Create CI service account ===============
+              CI_SERVICE_USER="${CI_SERVICE_USER}"
+              CI_SERVICE_EMAIL="${CI_SERVICE_EMAIL}"
+              CI_SERVICE_NAME="${CI_SERVICE_NAME}"
+
+              log "[INFO] Creating CI service account '${CI_SERVICE_USER}'..."
+              _ci_first=$(echo "${CI_SERVICE_NAME}" | cut -d' ' -f1)
+              _ci_last=$(echo "${CI_SERVICE_NAME}" | cut -d' ' -f2-)
+              [[ -n "${_ci_last}" ]] || _ci_last="CI"
+
+              CI_SERVICE_PASS=$(vault kv get -field=password kv/services/keycloak/gitlab-ci 2>/dev/null) || CI_SERVICE_PASS=""
+              if [[ -z "${CI_SERVICE_PASS}" ]]; then
+                CI_SERVICE_PASS=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+                log "[INFO] Generated CI service account password"
+              else
+                log "[INFO] Using CI service account password from Vault"
+              fi
+
+              _ci_json=$(jq -n \
+                --arg user "${CI_SERVICE_USER}" \
+                --arg email "${CI_SERVICE_EMAIL}" \
+                --arg first "${_ci_first}" \
+                --arg last "${_ci_last}" \
+                --arg pass "${CI_SERVICE_PASS}" \
+                '{username:$user, email:$email, firstName:$first, lastName:$last,
+                  enabled:true, emailVerified:true,
+                  credentials:[{type:"password", value:$pass, temporary:false}]}')
+              kc_create POST "${KC_REALM}/users" -d "${_ci_json}"
+
+              vault_kv_put "services/keycloak/gitlab-ci" \
+                username="${CI_SERVICE_USER}" \
+                password="${CI_SERVICE_PASS}" \
+                email="${CI_SERVICE_EMAIL}"
+              log "[INFO] CI service account created"
+
               # =============== Phase 3: Create infra OIDC clients ===============
               # Only infra clients — per-service clients created by their init Jobs
               INFRA_CLIENTS="vault rancher traefik-oidc hubble-oidc"
@@ -419,6 +454,16 @@ spec:
                 if [[ -n "${_dev_grp_id}" ]]; then
                   kc_create PUT "${KC_REALM}/users/${_dev_id}/groups/${_dev_grp_id}"
                   log "[INFO] ${SENIOR_DEV_USER} assigned to ${RBAC_GROUP_SENIOR_DEVS}"
+                fi
+              fi
+
+              # Assign CI service account to developers group
+              _ci_id=$(kc_api GET "${KC_REALM}/users?username=${CI_SERVICE_USER}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+              if [[ -n "${_ci_id}" ]]; then
+                _devs_grp_id=$(kc_api GET "${KC_REALM}/groups?search=${RBAC_GROUP_DEVS}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+                if [[ -n "${_devs_grp_id}" ]]; then
+                  kc_create PUT "${KC_REALM}/users/${_ci_id}/groups/${_devs_grp_id}"
+                  log "[INFO] ${CI_SERVICE_USER} assigned to ${RBAC_GROUP_DEVS}"
                 fi
               fi
 
