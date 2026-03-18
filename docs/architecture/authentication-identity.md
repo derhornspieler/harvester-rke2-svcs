@@ -164,6 +164,16 @@ Users gain access to services by membership in groups. Groups are managed in Key
 | `infra-engineers` | Infrastructure team | Prometheus, Alertmanager, Hubble, ArgoCD |
 | `network-engineers` | Network team | Hubble (network flows only) |
 
+### Service Accounts
+
+The platform creates service accounts in Keycloak for automated workflows:
+
+| Username | Email | Purpose | Created By |
+|----------|-------|---------|-----------|
+| `gitlab-ci` | `gitlab-ci@example.com` | CI pipeline operations: owns SSH deploy key on `platform/platform-deployments` (can_push=true), Developer access on `platform` group | `keycloak-config` Job (Phase 2c) |
+
+Service accounts are non-interactive users with credentials stored in Vault. The `gitlab-admin-setup` Job uses the `gitlab-ci` account to configure GitLab resources (deploy keys, project settings) via the GitLab REST API.
+
 To grant a user access to services:
 1. Create a user in Keycloak (username, email, password) — or, if FreeIPA federation is enabled, the user is automatically synced from FreeIPA's LDAP directory
 2. Add the user to the appropriate group (groups can also be mapped from FreeIPA LDAP groups)
@@ -263,6 +273,7 @@ All OIDC client credentials are stored in Vault and synced via ExternalSecrets O
 | `kv/oidc/gitlab-oidc` | GitLab (native OIDC) | `client-secret` |
 | `kv/services/keycloak/admin-secret` | Setup scripts | `KC_BOOTSTRAP_ADMIN_USERNAME`, `KC_BOOTSTRAP_ADMIN_PASSWORD` |
 | `kv/services/keycloak/platform-admin` | Keycloak users | `username`, `password`, `email` for primary admin |
+| `kv/services/keycloak/gitlab-ci` | GitLab admin setup | `username`, `password`, `email` for `gitlab-ci` service account |
 
 **Credential Lifecycle:**
 1. Credentials are generated during `setup-keycloak.sh` phase 3

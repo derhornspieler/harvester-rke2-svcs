@@ -172,6 +172,8 @@ When a credential needs to rotate (password reset, key rollover, token refresh),
 | **Grafana Admin** | `kv/services/monitoring/grafana-admin` | Password | Manual on admin reset | `deploy-monitoring.sh` |
 | **Grafana PostgreSQL** | `kv/services/database/grafana-pg` | Username + Password | Manual on DB rotation | `deploy-monitoring.sh` |
 | **ArgoCD OIDC** | `kv/services/argocd/oidc-secret` | Client Secret | Manual on reauth | `deploy-argo.sh` |
+| **CI Deploy Key** | `kv/services/ci/platform-deploy-key` | SSH Private Key | Manual on key rotation | `gitlab-admin-setup` Job |
+| **CI Service Account** | `kv/services/keycloak/gitlab-ci` | Username + Password | Manual on rotation | `keycloak-config` Job |
 | **Vault Init** | `vault-init.json` | Root + Unseal Tokens | Never rotated (offline backup) | Manual (offline) |
 
 ---
