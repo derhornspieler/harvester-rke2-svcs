@@ -253,7 +253,7 @@ CLOUDCFG
   local traefik_hcc="${SVCS_DIR}/services/traefik-dashboard/helmchartconfig.yaml"
   if [[ -f "${traefik_hcc}" ]]; then
     # Replace placeholder LB IP with actual value
-    sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/" "${traefik_hcc}" | \
+    sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/g" "${traefik_hcc}" | \
       kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" apply --server-side --force-conflicts -f -
     log_ok "Traefik HelmChartConfig applied (dashboard + Gateway API + CA trust)"
   else
@@ -413,8 +413,7 @@ EXTCONF
   kubectl --kubeconfig="${DOWNSTREAM_KUBECONFIG}" -n vault exec vault-0 -- \
     env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
     vault write "pki_int/roles/${domain_dot}" \
-      allowed_domains="${domain}" \
-      allowed_domains="cluster.local" \
+      allowed_domains="${domain},cluster.local" \
       allow_subdomains=true \
       allow_bare_domains=true \
       max_ttl=720h \
@@ -462,19 +461,17 @@ seed_manual_secrets() {
       vault "$@"
   }
 
-  # GitLab license activation code
-  if [[ -n "${GITLAB_LICENSE:-}" ]]; then
-    # Check if already seeded (don't overwrite)
-    local existing
-    existing=$(vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
-    if [[ -n "${existing}" ]]; then
-      log_warn "GitLab license already in Vault — skipping"
-    else
-      vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
-      log_ok "GitLab license seeded in Vault at services/gitlab"
-    fi
+  # GitLab license activation code (or empty placeholder so ESO doesn't fail)
+  local existing
+  existing=$(vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
+  if [[ -n "${existing}" ]]; then
+    log_warn "GitLab license already in Vault — skipping"
+  elif [[ -n "${GITLAB_LICENSE:-}" ]]; then
+    vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
+    log_ok "GitLab license seeded in Vault at services/gitlab"
   else
-    log_warn "GITLAB_LICENSE not set in .env — skipping GitLab license seeding"
+    vexec kv put kv/services/gitlab activation-code=""
+    log_warn "No GITLAB_LICENSE in .env — seeded empty placeholder (Community Edition)"
   fi
 
   # Harvester kubeconfig (used by golden-image-builder runner to orchestrate builds)
