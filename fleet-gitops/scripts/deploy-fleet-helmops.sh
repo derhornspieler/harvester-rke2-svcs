@@ -907,16 +907,17 @@ for c in json.load(sys.stdin).get('data',[]):
     fi
   fi
 
-  # Seed GitLab Enterprise license activation code
-  if [[ -n "${GITLAB_LICENSE:-}" ]]; then
-    local license_check
-    license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
-    if [[ -n "${license_check}" ]]; then
-      log_ok "GitLab license already in Vault"
-    else
-      _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
-      log_ok "Seeded GitLab license into Vault (services/gitlab)"
-    fi
+  # Seed GitLab Enterprise license activation code (or empty placeholder so ESO doesn't fail)
+  local license_check
+  license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
+  if [[ -n "${license_check}" ]]; then
+    log_ok "GitLab license already in Vault"
+  elif [[ -n "${GITLAB_LICENSE:-}" ]]; then
+    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
+    log_ok "Seeded GitLab license into Vault (services/gitlab)"
+  else
+    _vexec kv put kv/services/gitlab activation-code=""
+    log_warn "No GITLAB_LICENSE in .env — seeded empty placeholder (Community Edition)"
   fi
 
   # Seed GitHub mirror credentials (for sanitized push from CI)
@@ -1061,7 +1062,7 @@ import json,sys
     python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null
   [[ -s "${ds_kc}" ]] || { log_warn "Could not get downstream kubeconfig — skipping Traefik HelmChartConfig"; return 0; }
 
-  sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/" "${traefik_hcc}" | \
+  sed "s/CHANGEME_TRAEFIK_LB_IP/${TRAEFIK_LB_IP}/g" "${traefik_hcc}" | \
     kubectl --kubeconfig="${ds_kc}" apply --server-side --force-conflicts -f -
   log_ok "Traefik HelmChartConfig applied (dashboard + Gateway API + CA trust)"
 
@@ -1204,8 +1205,7 @@ EXTCONF
   kubectl --kubeconfig="${ds_kc}" -n vault exec vault-0 -- \
     env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${vault_root_token}" \
     vault write "pki_int/roles/${domain_dot}" \
-      allowed_domains="${domain}" \
-      allowed_domains="cluster.local" \
+      allowed_domains="${domain},cluster.local" \
       allow_subdomains=true \
       allow_bare_domains=true \
       max_ttl=720h \
