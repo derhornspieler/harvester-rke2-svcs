@@ -56,6 +56,9 @@ This script:
    - `TRAEFIK_LB_IP` — Traefik LoadBalancer IP
    - (Optional) `GITLAB_LICENSE` — GitLab license activation code
    - (Optional) `HARVESTER_KUBECONFIG_PATH` — path to Harvester kubeconfig for golden image builds
+   - `CI_SERVICE_USER`, `CI_SERVICE_NAME`, `CI_SERVICE_EMAIL` — CI service account identity (created in Keycloak)
+   - `CI_DEPLOY_PRIVATE_KEY_FILE` — path to SSH deploy key private key file
+   - `CI_DEPLOY_PUBLIC_KEY_FILE` — path to SSH deploy key public key file
 3. **Manages Rancher API token lifecycle** — logs in with username/password, deletes old `fleet-gitops-deploy` tokens, creates a new no-expiry global-scope API token
 4. **Validates** — Rancher API access, Harbor access, Root CA files
 

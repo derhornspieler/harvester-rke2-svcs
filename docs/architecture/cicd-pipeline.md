@@ -341,6 +341,17 @@ histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="<service
 
 All queries are evaluated by Argo Rollouts every 2 minutes during canary stages.
 
+### GitLab Admin Setup
+
+The `gitlab-admin-setup` Job configures GitLab after the webservice becomes ready. It uses a one-line Rails PAT bootstrap, then performs all remaining operations via the GitLab REST API:
+
+1. Bootstraps a Personal Access Token (PAT) via Rails runner (single command)
+2. Creates the `platform` group and `platform-deployments` project via GitLab API
+3. Uploads the SSH deploy key (public key from `.env`) to `platform/platform-deployments` as a deploy key owned by the `gitlab-ci` service account (can_push=true)
+4. Stores the SSH private key in Vault at `kv/services/ci/platform-deploy-key`
+
+The `gitlab-ci` service account is a Keycloak user created by the `keycloak-config` Job (Phase 2c) with Developer access on the `platform` group. SSH deploy keys are provided via `.env` variables (`CI_DEPLOY_PRIVATE_KEY_FILE`, `CI_DEPLOY_PUBLIC_KEY_FILE`) and never generated in-container.
+
 ### GitLab Bundle Structure (50-gitlab group)
 
 The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runners + golden image system:

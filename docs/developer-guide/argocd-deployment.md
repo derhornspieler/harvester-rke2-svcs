@@ -27,14 +27,14 @@ ArgoCD is deployed in HA mode (2 controller replicas, 2+ server replicas, redis-
 
 ArgoCD cannot connect to GitLab until GitLab is running. The `argocd-gitlab-setup` Job (deployed by Fleet in `40-gitops/argocd-manifests/manifests/argocd-gitlab-setup.yaml`) automates this bootstrap:
 
-1. Reads the GitLab root password from `gitlab-gitlab-initial-root-password`.
+1. Bootstraps a Personal Access Token (PAT) via a one-line Rails runner command.
 2. Waits for the GitLab API to become ready.
-3. Creates a **Group Deploy Token (GDT)** for the `platform` group with `read_repository` scope.
-4. Stores the GDT in Vault at `kv/services/argocd`.
+3. Uploads the SSH deploy key (public key) to `platform/platform-deployments` as a deploy key owned by the `gitlab-ci` service account (can_push=true).
+4. Stores the SSH private key in Vault at `kv/services/ci/platform-deploy-key`.
 5. Creates a `gitlab-repo-creds` Secret in the `argocd` namespace (labeled `argocd.argoproj.io/secret-type: repository-creds`) so ArgoCD can pull from the `platform-deployments` repo.
 6. Configures ArgoCD AppProjects: `developer-dev`, `developer-staging`, `developer-apps` (production).
 
-Group Deploy Tokens never expire and require no renewal, eliminating token management overhead.
+SSH deploy keys never expire, are scoped to a single project, and require no token rotation.
 
 This Job is idempotent -- if credentials already exist in Vault, it reuses them.
 
@@ -370,13 +370,13 @@ kubectl logs -n argocd job/argocd-gitlab-setup
 kubectl get secret gitlab-repo-creds -n argocd -o yaml
 ```
 
-Verify the Group Deploy Token in Vault is still valid:
+Verify the SSH deploy key in Vault is still valid:
 
 ```bash
-vault kv get kv/services/argocd
+vault kv get kv/services/ci/platform-deploy-key
 ```
 
-If the token is invalid, the `argocd-gitlab-setup` job will regenerate it on next run.
+If the key is missing, the `argocd-gitlab-setup` Job will re-upload it on next run.
 
 ### Manual sync if auto-sync stalls
 

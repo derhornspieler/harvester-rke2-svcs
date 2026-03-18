@@ -1050,13 +1050,22 @@ spec:
                 policies="argocd-gitlab-setup" \
                 ttl=1h
 
-              # Policy: gitlab-admin-setup — stores deploy keys and platform creds
+              # Policy: gitlab-admin-setup — GitLab API bootstrap, user setup, deploy keys
               write_policy gitlab-admin-setup <<'ENDPOLICY'
-              path "kv/data/services/ci/platform-deploy-token" {
+              # Root password — bootstrap API token via Rails one-liner
+              path "kv/data/services/gitlab/initial-root-password" {
+                capabilities = ["read"]
+              }
+              # CI service account credentials (created by keycloak-config)
+              path "kv/data/services/keycloak/gitlab-ci" {
+                capabilities = ["read"]
+              }
+              # SSH deploy key for CI push to platform-deployments
+              path "kv/data/services/ci/platform-deploy-key" {
                 capabilities = ["create", "read", "update"]
               }
-              path "kv/metadata/services/ci/platform-deploy-token" {
-                capabilities = ["create", "read"]
+              path "kv/metadata/services/ci/platform-deploy-key" {
+                capabilities = ["create", "read", "update"]
               }
               ENDPOLICY
 
