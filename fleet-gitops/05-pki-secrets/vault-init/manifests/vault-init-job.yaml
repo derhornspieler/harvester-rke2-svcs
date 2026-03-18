@@ -83,7 +83,7 @@ spec:
 
               DOMAIN="${DOMAIN}"
               DOMAIN_DOT="${DOMAIN//./-dot-}"
-              ORG="${ORG:-CHANGEME_ORG}"
+              ORG="${ORG}"
               REPLICAS=3
 
               log()  { echo "[$(date +%H:%M:%S)] $*"; }
@@ -99,13 +99,16 @@ spec:
 
               # --- Helper: write a Vault policy from heredoc ---
               # Usage: write_policy <policy-name> <<'EOF' ... EOF
+              # Pipes directly to vault CLI (single exec) to avoid race condition
+              # when vault-0 restarts between file write and policy read.
               write_policy() {
                 local name="$1"
                 local hcl
                 hcl=$(cat)
-                kubectl exec -i -n vault vault-0 -- sh -c \
-                  "cat > /tmp/${name}.hcl" <<< "${hcl}"
-                vexec policy write "${name}" "/tmp/${name}.hcl"
+                kubectl exec -i -n vault vault-0 -- env \
+                  VAULT_ADDR=http://127.0.0.1:8200 \
+                  VAULT_TOKEN="${ROOT_TOKEN}" \
+                  vault policy write "${name}" - <<< "${hcl}"
               }
 
               # --- Wait for vault-0 to be Running ---
