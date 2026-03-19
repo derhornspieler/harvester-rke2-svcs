@@ -22,7 +22,7 @@ spec:
       project: developer-dev
       source:
         repoURL: "https://${GITLAB_FQDN}/platform/platform-deployments.git"
-        targetRevision: main
+        targetRevision: dev
         path: '{{ "{{ .path.path }}" }}'
       destination:
         server: https://kubernetes.default.svc
