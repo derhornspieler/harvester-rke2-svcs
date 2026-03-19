@@ -412,7 +412,7 @@ The `ci-cache` project must exist in Harbor. Create it via Harbor UI if needed.
 
 ## Platform Deployment Pipeline (for platform operators)
 
-This section is for **platform operators managing the harvester-rke2-svcs repository**. Application developers should use the patterns in [Deploying to platform-deployments](#deploying-to-platformdeployments) above.
+This section is for **platform operators managing the harvester-rke2-svcs repository**. Application developers should use the patterns in [Deploying to platform-deployments](#deploying-to-platform-deployments) above.
 
 The `harvester-rke2-svcs` repository has its own GitLab CI pipeline for deploying
 platform services (Vault, Keycloak, GitLab, Prometheus, Harbor, ArgoCD) via Fleet GitOps.

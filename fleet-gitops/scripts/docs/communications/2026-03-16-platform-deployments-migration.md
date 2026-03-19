@@ -43,6 +43,7 @@ This is **not** a constraint—it's a clarity upgrade. Your code still lives in 
 ## How It Works: The New Flow
 
 ### Step 1: You Build Your Image (No Change)
+
 ```bash
 # In your repo (forge/svc-forge, identity-ui, etc.)
 $ docker build -t harbor.dev.aegisgroup.ch/forge/svc-forge:abc1234 .
@@ -50,6 +51,7 @@ $ docker push harbor.dev.aegisgroup.ch/forge/svc-forge:abc1234
 ```
 
 ### Step 2: Update the Image Tag (New Deploy Stage)
+
 Your CI/CD pipeline's **deploy stage** now updates a YAML file in `platform-deployments`:
 
 ```yaml
@@ -77,6 +79,7 @@ deploy-dev:
 ```
 
 ### Step 3: ArgoCD Auto-Syncs (Already Happens)
+
 When you push the image tag update to `platform-deployments`, ArgoCD sees the change and automatically deploys:
 
 - **Dev environment** → Auto-syncs immediately (self-service)
@@ -290,24 +293,31 @@ Done! ArgoCD will watch your new app folder and auto-sync within 3 minutes.
 ## FAQ
 
 ### Q: Do I need to change my git remote or clone a different repo?
+
 **A:** No. Your source repo (forge/svc-forge) stays the same. You'll clone `platform-deployments` only in your **deploy stage**, not your primary workflow.
 
 ### Q: What if I need to roll back?
+
 **A:** Revert the commit in `platform-deployments` that changed your image tag, or manually trigger ArgoCD to sync to the previous commit. Git history is your audit trail.
 
 ### Q: Can I deploy directly to staging/prod, or must I go through dev?
+
 **A:** You can deploy to staging/dev simultaneously (via multi-stage pipeline). Prod always requires an MR + approval. This is configurable—talk to platform team if your workflow needs adjustment.
 
 ### Q: What if platform-deployments gets too big?
+
 **A:** We can split into multiple repos later (platform-deployments-forge, platform-deployments-identity, etc.). But start with one central repo to establish the pattern.
 
 ### Q: Do I lose control over my deployment config?
+
 **A:** No. You own the Kustomize overlays for your app. You decide what goes in `base/`, `dev/`, `staging/`, and `prod/`. Platform team reviews structure, but you control the manifests.
 
 ### Q: Who can commit to platform-deployments?
+
 **A:** Dev env: your team (CODEOWNERS: `dev/*/`). Staging: your team + engineering lead. Prod: platform team. But if your team has a lead, they can approve staging merges.
 
 ### Q: Can multiple teams deploy to the same namespace?
+
 **A:** Not recommended. Each app gets its own namespace (`dev-forge`, `dev-identity`, etc.). Shared namespaces (shared services) are managed by platform team in a separate path.
 
 ---
