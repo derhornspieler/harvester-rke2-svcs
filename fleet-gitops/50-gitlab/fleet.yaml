@@ -8,5 +8,14 @@ dependsOn:
   - selector:
       matchLabels:
         fleet.cattle.io/bundle-name: 30-harbor
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      operations:
+        - op: remove
+          path: /spec/resources/requests/storage
+        - op: remove
+          path: /spec/resources/requests
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

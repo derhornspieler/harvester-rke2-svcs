@@ -1,5 +1,14 @@
 # Gateway API CRDs not bundled with the target cluster (TCPRoute, TLSRoute, UDPRoute)
 # Standard channel CRDs ship with the cluster; these additional route types must be added separately.
 defaultNamespace: kube-system
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      operations:
+        - op: remove
+          path: /spec/resources/requests/storage
+        - op: remove
+          path: /spec/resources/requests
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}
