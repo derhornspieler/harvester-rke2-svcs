@@ -279,8 +279,7 @@ if [[ $PHASE_FROM -le 3 && $PHASE_TO -ge 3 ]]; then
 
   # Configure signing role
   vault_exec "$root_token" write "pki_int/roles/${DOMAIN_DOT}" \
-    allowed_domains="${DOMAIN}" \
-    allowed_domains="cluster.local" \
+    allowed_domains="${DOMAIN},cluster.local" \
     allow_subdomains=true \
     allow_bare_domains=true \
     max_ttl=720h \

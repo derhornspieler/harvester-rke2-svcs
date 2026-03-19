@@ -69,6 +69,7 @@ spec:
               # Idempotent — safe to re-run.
 
               DOMAIN="${DOMAIN}"
+              KC_REALM="${KEYCLOAK_REALM}"
 
               ###################################################################
               # Inlined helper functions
@@ -201,7 +202,7 @@ spec:
                   return 1
                 fi
 
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local api="${keycloak_url}/admin/realms/${realm}/clients"
 
                 local existing_id
@@ -265,7 +266,7 @@ spec:
                 local keycloak_url="${KEYCLOAK_URL}"
                 local admin_pass
                 admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local max_wait=300
                 local elapsed=0
 
@@ -281,15 +282,23 @@ spec:
                     --data-urlencode "password=${admin_pass}" \
                     | jq -r '.access_token' 2>/dev/null || echo "")
 
-                  if [[ -n "${token}" && "${token}" != "null" ]]; then
-                    scope_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
-                      "${keycloak_url}/admin/realms/${realm}/client-scopes" \
-                      | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
-                    [[ -n "${scope_id}" ]] && break
+                  if [[ -z "${token}" || "${token}" == "null" ]]; then
+                    elapsed=$((elapsed + 10))
+                    log "[WARN] Keycloak auth failed (${elapsed}/${max_wait}s) — check keycloak-admin-bootstrap secret"
+                    sleep 10
+                    continue
                   fi
 
+                  local scopes_response
+                  scopes_response=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                    "${keycloak_url}/admin/realms/${realm}/client-scopes" 2>/dev/null || echo "")
+                  scope_id=$(echo "${scopes_response}" | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
+                  [[ -n "${scope_id}" ]] && break
+
                   elapsed=$((elapsed + 10))
-                  log "[INFO] groups scope not found yet (${elapsed}/${max_wait}s)..."
+                  local scope_count
+                  scope_count=$(echo "${scopes_response}" | jq 'length' 2>/dev/null || echo "?")
+                  log "[INFO] groups scope not found yet (${elapsed}/${max_wait}s, ${scope_count} scopes visible)"
                   sleep 10
                 done
 
@@ -334,7 +343,7 @@ spec:
                   return 0
                 fi
 
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local client_uuid
                 client_uuid=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
                   "${keycloak_url}/admin/realms/${realm}/clients?clientId=${client_id}" \

@@ -236,7 +236,7 @@ spec:
                   return 1
                 fi
 
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local api="${keycloak_url}/admin/realms/${realm}/clients"
 
                 # Check if client exists
@@ -303,7 +303,7 @@ spec:
                 local keycloak_url="${KEYCLOAK_URL}"
                 local admin_pass
                 admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local max_wait=300
                 local elapsed=0
 
@@ -408,6 +408,7 @@ spec:
               #################################################################
 
               DOMAIN="${DOMAIN}"
+              KC_REALM="${KEYCLOAK_REALM}"
 
               # --- Authenticate to Vault via K8s auth ---
               vault_k8s_login "bootstrap-keycloak-harbor"

@@ -1,6 +1,15 @@
 # Argo Workflows Helm Values
 # Domain tokens are replaced at deploy time by _subst_changeme()
 
+## ---- CRDs (Workflow, WorkflowTemplate, CronWorkflow, etc.) ----
+## Install via Helm templates so CRDs are updated on upgrade.
+## full: false uses minified CRDs bundled in templates (~OK for airgapped).
+## full: true spawns a Job that downloads ~7.4MB from GitHub — breaks airgapped.
+crds:
+  install: true
+  keep: true
+  full: false
+
 controller:
   replicas: 1
   resources:
