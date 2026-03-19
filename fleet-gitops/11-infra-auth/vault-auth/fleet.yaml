@@ -10,3 +10,8 @@ diff:
           path: /spec/resources/requests/storage
         - op: remove
           path: /spec/resources/requests
+    - apiVersion: batch/v1
+      kind: Job
+      operations:
+        - op: remove
+          path: /status
