@@ -112,6 +112,7 @@ Promote to prod:
 ## Files Created/Modified
 
 ### New files
+
 - `fleet-gitops/40-gitops/argocd-manifests/manifests/appproject-developer-dev.yaml`
 - `fleet-gitops/40-gitops/argocd-manifests/manifests/appproject-developer-staging.yaml`
 - `fleet-gitops/40-gitops/argocd-manifests/manifests/applicationset-dev.yaml`
@@ -121,6 +122,7 @@ Promote to prod:
 - `docs/communications/2026-03-16-platform-deployments-migration.md`
 
 ### Modified files
+
 - `fleet-gitops/40-gitops/argocd-gitlab-setup/manifests/argocd-gitlab-setup.yaml` (GDT-only)
 - `fleet-gitops/50-gitlab/gitlab-manifests/manifests/gitlab-admin-setup.yaml` (create platform group+project)
 - `fleet-gitops/scripts/deploy-fleet-helmops.sh` (GDT seeding, removed GAT)
@@ -131,6 +133,7 @@ Promote to prod:
 - `docs/developer-guide/gitlab-ci.md` (deploy stage updated)
 
 ### Non-destructive guarantees
+
 - Existing forge ApplicationSet preserved (deprecated, not deleted)
 - No changes to Harbor, GitLab, Vault, or Keycloak data
 - All changes are additive (new AppProjects, new ApplicationSets)
