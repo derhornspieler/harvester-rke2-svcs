@@ -15,6 +15,13 @@
 #   kubectl -n argocd get secret argocd-initial-admin-secret \
 #     -o jsonpath='{.data.password}' | base64 -d
 
+## ---- CRDs (Application, AppProject, ApplicationSet) ----
+## Install via Helm templates so CRDs are updated on upgrade.
+## Required for airgapped — avoids Helm crds/ directory (install-only).
+crds:
+  install: true
+  keep: true
+
 global:
   nodeSelector:
     workload-type: general

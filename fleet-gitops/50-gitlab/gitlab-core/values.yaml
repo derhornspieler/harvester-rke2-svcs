@@ -191,6 +191,13 @@ gitlab:
     maxReplicas: 10
     nodeSelector:
       workload-type: compute
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: webservice
     resources:
       requests:
         cpu: "1"
@@ -235,6 +242,13 @@ gitlab:
         targetAverageValue: 800m
     nodeSelector:
       workload-type: compute
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: sidekiq
     resources:
       requests:
         cpu: 500m
@@ -261,6 +275,15 @@ gitlab:
   gitaly:
     nodeSelector:
       workload-type: compute
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: [gitaly]
+            topologyKey: kubernetes.io/hostname
     resources:
       requests:
         cpu: "2"
@@ -276,6 +299,15 @@ gitlab:
   praefect:
     nodeSelector:
       workload-type: compute
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: [praefect]
+            topologyKey: kubernetes.io/hostname
     resources:
       requests:
         cpu: 100m
