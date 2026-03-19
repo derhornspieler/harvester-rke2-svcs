@@ -127,11 +127,35 @@ cmd_root() {
     openssl genrsa -out "$key_path" 4096 2>/dev/null
     chmod 600 "$key_path"
 
-    # Derive the DNS constraint domain from ORG (lowercase, spaces to hyphens, append .ch)
-    # Override with NAME_CONSTRAINT_DNS env var if needed
-    local dns_domain="${NAME_CONSTRAINT_DNS:-example.com}"
+    # Optional x509 nameConstraints via NAME_CONSTRAINT_DNS env var.
+    # Supports comma-separated domains (e.g. "tiger.net,otherdomain.com").
+    # A constraint of "tiger.net" permits all subdomains (vault.tiger.net, etc.).
+    # If unset, no name constraints are applied — domain restrictions are enforced
+    # at the Vault PKI role level (allowed_domains) instead.
+    local dns_domains="${NAME_CONSTRAINT_DNS:-}"
 
-    # Create OpenSSL config for root CA with nameConstraints
+    local nc_block=""
+    if [[ -n "$dns_domains" ]]; then
+        local dns_constraints=""
+        local dns_idx=0
+        IFS=',' read -ra _domains <<< "$dns_domains"
+        for _domain in "${_domains[@]}"; do
+            _domain=$(echo "$_domain" | xargs)  # trim whitespace
+            dns_constraints+="permitted;DNS.${dns_idx}  = ${_domain}"$'\n'
+            dns_idx=$((dns_idx + 1))
+        done
+        # Always include cluster.local for in-cluster services
+        dns_constraints+="permitted;DNS.${dns_idx}  = cluster.local"
+
+        nc_block="nameConstraints        = critical, @name_constraints
+
+[name_constraints]
+${dns_constraints}
+permitted;IP.0   = 10.0.0.0/255.0.0.0
+permitted;IP.1   = 172.16.0.0/255.240.0.0
+permitted;IP.2   = 192.168.0.0/255.255.0.0"
+    fi
+
     local conf_file
     conf_file=$(mktemp)
     cat > "$conf_file" <<EOF
@@ -148,14 +172,7 @@ CN = ${cn}
 basicConstraints       = critical, CA:true
 keyUsage               = critical, keyCertSign, cRLSign
 subjectKeyIdentifier   = hash
-nameConstraints        = critical, @name_constraints
-
-[name_constraints]
-permitted;DNS.0  = ${dns_domain}
-permitted;DNS.1  = cluster.local
-permitted;IP.0   = 10.0.0.0/255.0.0.0
-permitted;IP.1   = 172.16.0.0/255.240.0.0
-permitted;IP.2   = 192.168.0.0/255.255.0.0
+${nc_block}
 EOF
 
     # Create self-signed root CA certificate
