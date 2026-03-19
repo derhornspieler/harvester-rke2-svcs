@@ -12,6 +12,12 @@
 #                 -f services/argo/argo-rollouts/middleware-oauth2-proxy.yaml \
 #                 -f services/argo/argo-rollouts/httproute.yaml
 
+## ---- CRDs (Rollout, AnalysisTemplate, AnalysisRun, Experiment) ----
+## Install via Helm templates so CRDs are updated on upgrade.
+## Note: argo-rollouts uses top-level keys, not nested crds: block.
+installCRDs: true
+keepCRDs: true
+
 controller:
   replicas: 2
 

@@ -105,6 +105,9 @@ spec:
                 local name="$1"
                 local hcl
                 hcl=$(cat)
+                # Pipe directly to vault policy write via stdin (single exec)
+                # to avoid the fragile two-step file transfer that fails when
+                # vault-0 restarts between the write and read.
                 kubectl exec -i -n vault vault-0 -- env \
                   VAULT_ADDR=http://127.0.0.1:8200 \
                   VAULT_TOKEN="${ROOT_TOKEN}" \
