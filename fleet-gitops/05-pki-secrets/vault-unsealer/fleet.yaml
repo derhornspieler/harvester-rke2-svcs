@@ -5,3 +5,13 @@ helm:
   releaseName: pki-vault-unsealer
 dependsOn:
   - name: pki-vault-init
+
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      operations:
+        - op: remove
+          path: /spec/resources/requests/storage
+        - op: remove
+          path: /spec/resources/requests
