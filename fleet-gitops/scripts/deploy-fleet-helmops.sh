@@ -1372,7 +1372,6 @@ for entry in "${HELMOP_DEFS[@]}"; do
       harbor-*|minio) group="30-harbor" ;;
       gitops-*)     group="40-gitops" ;;
       gitlab-*)     group="50-gitlab" ;;
-      apps-*)       group="60-apps" ;;
       *)            group="unknown" ;;
     esac
     if [[ "${group}" != "${SINGLE_GROUP}" ]]; then
