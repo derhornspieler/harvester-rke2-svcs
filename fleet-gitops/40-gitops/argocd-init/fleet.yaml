@@ -2,5 +2,14 @@ defaultNamespace: argocd
 dependsOn:
   - name: identity-keycloak-config
   - name: pki-vault-bootstrap-store
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      operations:
+        - op: remove
+          path: /spec/resources/requests/storage
+        - op: remove
+          path: /spec/resources/requests
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}
