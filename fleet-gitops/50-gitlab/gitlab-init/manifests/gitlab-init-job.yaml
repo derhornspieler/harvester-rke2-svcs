@@ -110,6 +110,7 @@ spec:
               # Idempotent -- safe to re-run.
 
               DOMAIN="${DOMAIN}"
+              KC_REALM="${KEYCLOAK_REALM}"
 
               ###################################################################
               # Inlined helper functions (no init-lib.sh dependency)
@@ -255,7 +256,7 @@ spec:
                   return 1
                 fi
 
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local api="${keycloak_url}/admin/realms/${realm}/clients"
 
                 # Check if client exists
@@ -323,7 +324,7 @@ spec:
                 local keycloak_url="${KEYCLOAK_URL}"
                 local admin_pass
                 admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
-                local realm="platform"
+                local realm="${KC_REALM}"
                 local max_wait=300
                 local elapsed=0
 
@@ -444,41 +445,41 @@ spec:
               # --- Vault policies for gitlab namespace ---
               log "[INFO] Creating Vault policies for gitlab namespace..."
               vault policy write eso-reader-gitlab - <<'POLICY'
-              path "kv/data/services/gitlab/*" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/services/gitlab/*" {
-                capabilities = ["read", "list"]
-              }
-              path "kv/data/oidc/gitlab" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/oidc/gitlab" {
-                capabilities = ["read", "list"]
-              }
-              path "kv/data/oidc/gitlab-oidc" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/oidc/gitlab-oidc" {
-                capabilities = ["read", "list"]
-              }
-              path "kv/data/services/database/gitlab-postgresql" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/services/database/gitlab-postgresql" {
-                capabilities = ["read", "list"]
-              }
               path "kv/data/services/gitlab" {
-                capabilities = ["read"]
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/gitlab/*" {
+                capabilities = ["read", "list"]
               }
               path "kv/metadata/services/gitlab" {
                 capabilities = ["read", "list"]
               }
+              path "kv/metadata/services/gitlab/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
               POLICY
 
               vault policy write eso-writer-gitlab - <<'POLICY'
+              path "kv/data/services/gitlab" {
+                capabilities = ["create", "read", "update", "list"]
+              }
               path "kv/data/services/gitlab/*" {
-                capabilities = ["create", "read", "update"]
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/gitlab" {
+                capabilities = ["create", "update", "read", "list", "delete"]
               }
               path "kv/metadata/services/gitlab/*" {
                 capabilities = ["create", "update", "read", "list", "delete"]
@@ -487,29 +488,23 @@ spec:
                 capabilities = ["create", "read", "update"]
               }
               path "kv/metadata/oidc/gitlab" {
-                capabilities = ["create", "update", "read", "list", "delete"]
+                capabilities = ["read", "delete"]
               }
               path "kv/data/services/database/gitlab-postgresql" {
                 capabilities = ["create", "read", "update"]
               }
               path "kv/metadata/services/database/gitlab-postgresql" {
-                capabilities = ["create", "update", "read", "list", "delete"]
+                capabilities = ["read", "delete"]
               }
               POLICY
 
               # --- Vault policies for gitlab-runners namespace ---
               log "[INFO] Creating Vault policies for gitlab-runners namespace..."
-              vault policy write eso-gitlab-runners - <<'POLICY'
+              vault policy write eso-reader-gitlab-runners - <<'POLICY'
               path "kv/data/services/ci/*" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/services/ci/*" {
                 capabilities = ["read", "list"]
               }
-              path "kv/data/ci/*" {
-                capabilities = ["read"]
-              }
-              path "kv/metadata/ci/*" {
+              path "kv/metadata/services/ci/*" {
                 capabilities = ["read", "list"]
               }
               path "kv/data/services/harbor/ci-robot" {
@@ -522,15 +517,9 @@ spec:
 
               vault policy write eso-writer-gitlab-runners - <<'POLICY'
               path "kv/data/services/ci/*" {
-                capabilities = ["create", "read", "update"]
+                capabilities = ["create", "read", "update", "list"]
               }
               path "kv/metadata/services/ci/*" {
-                capabilities = ["create", "update", "read", "list", "delete"]
-              }
-              path "kv/data/ci/*" {
-                capabilities = ["create", "read", "update"]
-              }
-              path "kv/metadata/ci/*" {
                 capabilities = ["create", "update", "read", "list", "delete"]
               }
               POLICY

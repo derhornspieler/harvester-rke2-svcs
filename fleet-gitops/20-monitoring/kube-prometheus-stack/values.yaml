@@ -2,6 +2,14 @@
 # Migrated from raw kustomize manifests to Operator-based deployment
 # Domain substitution: _subst_changeme replaces CHANGEME_DOMAIN before helm install
 
+## ---- CRDs ----
+## Do NOT enable here — prometheus-operator-crds is deployed as a
+## standalone chart in 00-operators (operators-prometheus-crds HelmOp).
+## That dedicated chart must land first so ServiceMonitor / PrometheusRule
+## CRDs are available for every bundle that depends on them.
+# crds:
+#   enabled: false
+
 ## ---- Prometheus Operator ----
 prometheusOperator:
   enabled: true
