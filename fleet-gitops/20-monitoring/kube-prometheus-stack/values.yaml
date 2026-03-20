@@ -202,6 +202,8 @@ grafana:
   extraEmptyDirMounts:
     - name: grafana-tmp
       mountPath: /tmp
+    - name: grafana-plugins
+      mountPath: /var/lib/grafana/plugins
   nodeSelector:
     workload-type: general
   topologySpreadConstraints:
