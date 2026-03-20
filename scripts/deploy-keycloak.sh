@@ -429,9 +429,6 @@ extraVolumeMounts: |
   - name: ldap-ca
     mountPath: /opt/keycloak/certs
     readOnly: true
-extraPorts:
-  - name: management
-    containerPort: 9000
 startupProbe: |
   httpGet:
     path: /health/started
