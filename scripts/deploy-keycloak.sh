@@ -360,7 +360,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   # Install/upgrade Keycloak via Helm chart
   log_info "Installing Keycloak via codecentric/keycloakx Helm chart..."
   helm upgrade --install keycloak \
-    oci://ghcr.io/codecentric/helm-charts/keycloakx \
+    "${OCI_CHART_KEYCLOAKX:-oci://ghcr.io/codecentric/helm-charts/keycloakx}" \
     --version "${CHART_VER_KEYCLOAKX:-7.1.9}" \
     --namespace keycloak \
     --set fullnameOverride=keycloak \
