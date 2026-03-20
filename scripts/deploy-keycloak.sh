@@ -396,6 +396,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
     --set ingress.enabled=false \
     --set httpRoute.enabled=false \
     --set test.enabled=false \
+    --wait --timeout 10m \
     -f - <<'HELM_VALUES'
 extraEnv: |
   - name: KC_HOSTNAME
@@ -448,7 +449,6 @@ livenessProbe: |
   initialDelaySeconds: 60
   periodSeconds: 30
 HELM_VALUES
-  --wait --timeout 10m
 
   log_info "Verifying Keycloak health..."
   kubectl rollout status statefulset/keycloak -n keycloak --timeout=600s \
