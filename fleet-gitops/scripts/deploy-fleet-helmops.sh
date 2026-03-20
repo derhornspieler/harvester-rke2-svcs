@@ -118,9 +118,11 @@ HELMOP_DEFS=(
   "pki-external-secrets|${OCI_CHART_EXTERNAL_SECRETS}|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait,operators-prometheus-crds|05-pki-secrets/external-secrets/values.yaml"
   "pki-vault-bootstrap-store|oci://${HARBOR}/fleet/pki-vault-bootstrap-store|${BUNDLE_VERSION}|external-secrets|pki-vault-bootstrap-store|pki-external-secrets|"
 
-  # 10-identity (3 self-contained bundles, no shared init-lib.sh)
+  # 10-identity (keycloak-init → keycloakx Helm chart → manifests → config)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-vault-bootstrap-store,operators-cnpg|"
-  "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
+  "identity-keycloak-init|oci://${HARBOR}/fleet/identity-keycloak-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-init|identity-cnpg-keycloak,pki-vault-bootstrap-store|"
+  "identity-keycloak|${OCI_CHART_KEYCLOAKX}|${CHART_VER_KEYCLOAKX}|keycloak|keycloak|identity-keycloak-init,operators-prometheus-crds|10-identity/keycloak/values.yaml"
+  "identity-keycloak-manifests|oci://${HARBOR}/fleet/identity-keycloak-manifests|${BUNDLE_VERSION}|keycloak|identity-keycloak-manifests|identity-keycloak|"
   "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
 
   # 15-dns (depends on pki — FreeIPA must be running externally)

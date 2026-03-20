@@ -97,7 +97,9 @@ Pushed to `oci://${HARBOR_HOST}/fleet/<bundle-name>` at version `BUNDLE_VERSION`
 | 05-pki-secrets | pki-vault-pki-issuer | ClusterIssuer |
 | 05-pki-secrets | pki-vault-bootstrap-store | ClusterSecretStore |
 | 10-identity | identity-cnpg-keycloak | CNPG Cluster, init Job, SecretStore |
-| 10-identity | identity-keycloak | Keycloak StatefulSet, ExternalSecrets |
+| 10-identity | identity-keycloak-init | Init Job, ExternalSecrets, LDAP CA ConfigMap |
+| 10-identity | identity-keycloak | Helm chart (codecentric/keycloakx) |
+| 10-identity | identity-keycloak-manifests | Gateway, HTTPRoute, Grafana dashboards |
 | 10-identity | identity-keycloak-config | Realm/OIDC config Job |
 | 11-infra-auth | infra-auth-traefik | OAuth2-proxy, SecretStore, ExternalSecret |
 | 11-infra-auth | infra-auth-vault | OAuth2-proxy for Vault UI |

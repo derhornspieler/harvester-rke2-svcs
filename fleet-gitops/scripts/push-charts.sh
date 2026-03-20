@@ -40,6 +40,7 @@ CHARTS=(
 # OCI charts (already OCI, just re-tag to Harbor)
 OCI_CHARTS=(
   # chart-name|oci-source|version
+  "keycloakx|${OCI_SRC_KEYCLOAKX}|${CHART_VER_KEYCLOAKX}"
   "argo-cd|${OCI_SRC_ARGOCD}|${CHART_VER_ARGOCD}"
   "argo-rollouts|${OCI_SRC_ARGO_ROLLOUTS}|${CHART_VER_ARGO_ROLLOUTS}"
   "argo-workflows|${OCI_SRC_ARGO_WORKFLOWS}|${CHART_VER_ARGO_WORKFLOWS}"

@@ -63,8 +63,8 @@ Phases:
   2  Namespaces + Vault  Create namespaces, seed Vault, create SecretStores
   3  ESO + MinIO         Apply ExternalSecrets, deploy MinIO
   4  PostgreSQL CNPG     HA cluster (3 instances), scheduled backup
-  5  Keycloak            RBAC, services, deployment, health check
-  6  Gateway + HPA       Gateway, HTTPRoute, HPA, TLS verification
+  5  Keycloak            Helm chart (codecentric/keycloakx), health check
+  6  Gateway + HTTPRoute Gateway, HTTPRoute, TLS verification
   7  OAuth2-proxy        External secrets, deployments, middleware CRDs
   8  Monitoring + Verify Dashboards, alerts, ServiceMonitors
 EOF
@@ -330,14 +330,13 @@ if [[ $PHASE_FROM -le 4 && $PHASE_TO -ge 4 ]]; then
   end_phase "Phase 4: PostgreSQL CNPG"
 fi
 
-# Phase 5: Keycloak
+# Phase 5: Keycloak (Helm chart: codecentric/keycloakx)
 if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   start_phase "Phase 5: Keycloak"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/rbac.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/service.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/service-headless.yaml"
 
-  # LDAP private CA — enables LDAPS user federation with private CA trust
+  # Pre-deploy: ExternalSecrets and LDAP CA ConfigMap
+  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/external-secret.yaml"
+
   LDAP_CA_CERT="${LDAP_CA_CERT:-}"
   if [[ -n "$LDAP_CA_CERT" && -f "$LDAP_CA_CERT" ]]; then
     log_info "Creating keycloak-ldap-ca ConfigMap from ${LDAP_CA_CERT}..."
@@ -346,29 +345,125 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
       --from-file=ldap-ca.crt="$LDAP_CA_CERT" \
       --dry-run=client -o yaml | kubectl apply -f -
   else
-    log_info "LDAP_CA_CERT not set or file not found — skipping keycloak-ldap-ca ConfigMap"
+    log_info "LDAP_CA_CERT not set or file not found — applying placeholder ConfigMap"
+    kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/configmap-ldap-ca.yaml"
   fi
 
-  kube_apply_subst "${REPO_ROOT}/services/keycloak/keycloak/deployment.yaml"
-  wait_for_deployment keycloak keycloak 600s
+  # Wait for ExternalSecrets to sync
+  log_info "Waiting for ExternalSecrets to sync..."
+  sleep 10
 
-  # Health check (Keycloak image doesn't have curl; use wget or kubectl port-forward)
+  # Split IMAGE_KEYCLOAK into repo and tag for Helm chart
+  _kc_repo="${IMAGE_KEYCLOAK%%:*}"
+  _kc_tag="${IMAGE_KEYCLOAK##*:}"
+
+  # Install/upgrade Keycloak via Helm chart
+  log_info "Installing Keycloak via codecentric/keycloakx Helm chart..."
+  helm upgrade --install keycloak \
+    oci://ghcr.io/codecentric/helm-charts/keycloakx \
+    --version "${CHART_VER_KEYCLOAKX:-7.1.9}" \
+    --namespace keycloak \
+    --set fullnameOverride=keycloak \
+    --set "image.repository=${_kc_repo}" \
+    --set "image.tag=${_kc_tag}" \
+    --set "args={start}" \
+    --set http.relativePath=/ \
+    --set proxy.enabled=true \
+    --set proxy.mode=xforwarded \
+    --set proxy.http.enabled=true \
+    --set health.enabled=true \
+    --set metrics.enabled=true \
+    --set database.vendor=postgres \
+    --set "database.hostname=${KEYCLOAK_DB_HOST:-keycloak-pg-rw.database.svc.cluster.local}" \
+    --set database.port=5432 \
+    --set database.database=keycloak \
+    --set database.username=keycloak \
+    --set database.existingSecret=keycloak-postgres-secret \
+    --set database.existingSecretKey=POSTGRES_PASSWORD \
+    --set cache.stack=custom \
+    --set serviceAccount.create=true \
+    --set serviceAccount.name=keycloak \
+    --set serviceAccount.allowReadPods=true \
+    --set rbac.create=true \
+    --set "nodeSelector.workload-type=general" \
+    --set "resources.requests.cpu=500m" \
+    --set "resources.requests.memory=512Mi" \
+    --set service.httpPort=8080 \
+    --set autoscaling.enabled=true \
+    --set autoscaling.minReplicas=2 \
+    --set autoscaling.maxReplicas=4 \
+    --set serviceMonitor.enabled=true \
+    --set ingress.enabled=false \
+    --set httpRoute.enabled=false \
+    --set test.enabled=false \
+    -f - <<'HELM_VALUES'
+extraEnv: |
+  - name: KC_HOSTNAME
+    value: "${KEYCLOAK_FQDN:-keycloak.${DOMAIN}}"
+  - name: KC_CACHE
+    value: ispn
+  - name: KC_CACHE_STACK
+    value: kubernetes
+  - name: KC_TRUSTSTORE_PATHS
+    value: /opt/keycloak/certs/ldap-ca.crt
+  - name: JAVA_OPTS_APPEND
+    value: -Djgroups.dns.query=keycloak-headless.keycloak.svc.cluster.local
+  - name: KC_BOOTSTRAP_ADMIN_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin-secret
+        key: KC_BOOTSTRAP_ADMIN_USERNAME
+  - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin-secret
+        key: KC_BOOTSTRAP_ADMIN_PASSWORD
+extraVolumes: |
+  - name: ldap-ca
+    configMap:
+      name: keycloak-ldap-ca
+extraVolumeMounts: |
+  - name: ldap-ca
+    mountPath: /opt/keycloak/certs
+    readOnly: true
+extraPorts:
+  - name: management
+    containerPort: 9000
+startupProbe: |
+  httpGet:
+    path: /health/started
+    port: 9000
+  failureThreshold: 30
+  periodSeconds: 5
+readinessProbe: |
+  httpGet:
+    path: /health/ready
+    port: 9000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+livenessProbe: |
+  httpGet:
+    path: /health/live
+    port: 9000
+  initialDelaySeconds: 60
+  periodSeconds: 30
+HELM_VALUES
+  --wait --timeout 10m
+
   log_info "Verifying Keycloak health..."
-  kubectl exec -n keycloak deploy/keycloak -- \
-    sh -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e "GET /health/ready HTTP/1.1\r\nHost: localhost\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | grep -q "200" \
-    || log_warn "Keycloak health endpoint not yet responding (may need a moment)"
+  kubectl rollout status statefulset/keycloak -n keycloak --timeout=600s \
+    || log_warn "Keycloak StatefulSet not fully ready yet"
 
   end_phase "Phase 5: Keycloak"
 fi
 
-# Phase 6: Gateway + HTTPRoute + HPA
+# Phase 6: Gateway + HTTPRoute
 if [[ $PHASE_FROM -le 6 && $PHASE_TO -ge 6 ]]; then
-  start_phase "Phase 6: Gateway + HTTPRoute + HPA"
+  start_phase "Phase 6: Gateway + HTTPRoute"
   kube_apply_subst "${REPO_ROOT}/services/keycloak/gateway.yaml"
   kube_apply_subst "${REPO_ROOT}/services/keycloak/httproute.yaml"
-  kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/hpa.yaml"
   wait_for_tls_secret keycloak "keycloak-${DOMAIN_DASHED}-tls" 300
-  end_phase "Phase 6: Gateway + HTTPRoute + HPA"
+  end_phase "Phase 6: Gateway + HTTPRoute"
 fi
 
 # Phase 7: OAuth2-proxy (requires monitoring namespace from Bundle 3 + setup-keycloak.sh)
