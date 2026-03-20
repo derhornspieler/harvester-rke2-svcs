@@ -1,7 +1,7 @@
 defaultNamespace: argo-rollouts
 helm:
   releaseName: argo-rollouts
-  chart: ${OCI_HELM_PREFIX}/argo-rollouts
+  chart: ${OCI_CHART_ARGO_ROLLOUTS}
   version: "${CHART_VER_ARGO_ROLLOUTS}"
   valuesFiles:
     - values.yaml

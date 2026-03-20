@@ -1,7 +1,7 @@
 defaultNamespace: argo-workflows
 helm:
   releaseName: argo-workflows
-  chart: ${OCI_HELM_PREFIX}/argo-workflows
+  chart: ${OCI_CHART_ARGO_WORKFLOWS}
   version: "${CHART_VER_ARGO_WORKFLOWS}"
   valuesFiles:
     - values.yaml

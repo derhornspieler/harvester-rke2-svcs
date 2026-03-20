@@ -1,7 +1,7 @@
 defaultNamespace: vault
 helm:
   releaseName: vault
-  chart: ${OCI_HELM_PREFIX}/vault
+  chart: ${OCI_CHART_VAULT}
   version: "${CHART_VER_VAULT}"
   valuesFiles:
     - values.yaml

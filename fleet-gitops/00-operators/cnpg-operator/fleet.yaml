@@ -1,7 +1,7 @@
 defaultNamespace: cnpg-system
 helm:
   releaseName: cnpg
-  chart: ${OCI_HELM_PREFIX}/cloudnative-pg
+  chart: ${OCI_CHART_CNPG}
   version: "${CHART_VER_CNPG}"
   valuesFiles:
     - values.yaml

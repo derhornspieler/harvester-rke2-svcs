@@ -1,7 +1,7 @@
 defaultNamespace: external-dns
 helm:
   releaseName: external-dns
-  chart: ${OCI_HELM_PREFIX}/external-dns
+  chart: ${OCI_CHART_EXTERNAL_DNS}
   version: "${CHART_VER_EXTERNAL_DNS}"
   valuesFiles:
     - values.yaml

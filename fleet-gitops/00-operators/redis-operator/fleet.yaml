@@ -1,7 +1,7 @@
 defaultNamespace: redis-operator
 helm:
   releaseName: redis-operator
-  chart: ${OCI_HELM_PREFIX}/redis-operator
+  chart: ${OCI_CHART_REDIS_OPERATOR}
   version: "${CHART_VER_REDIS_OPERATOR}"
   valuesFiles:
     - values.yaml

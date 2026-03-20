@@ -1,7 +1,7 @@
 defaultNamespace: argocd
 helm:
   releaseName: argocd
-  chart: ${OCI_HELM_PREFIX}/argo-cd
+  chart: ${OCI_CHART_ARGOCD}
   version: "${CHART_VER_ARGOCD}"
   valuesFiles:
     - values.yaml

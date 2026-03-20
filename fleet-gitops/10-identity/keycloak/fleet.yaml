@@ -1,7 +1,7 @@
 defaultNamespace: keycloak
 helm:
   releaseName: keycloak
-  chart: ${OCI_HELM_PREFIX}/keycloakx
+  chart: ${OCI_CHART_KEYCLOAKX}
   version: "${CHART_VER_KEYCLOAKX}"
   valuesFiles:
     - values.yaml

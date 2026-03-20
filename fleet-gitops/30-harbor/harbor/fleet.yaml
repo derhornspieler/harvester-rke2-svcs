@@ -1,7 +1,7 @@
 defaultNamespace: harbor
 helm:
   releaseName: harbor
-  chart: ${OCI_HELM_PREFIX}/harbor
+  chart: ${OCI_CHART_HARBOR}
   version: "${CHART_VER_HARBOR}"
   valuesFiles:
     - values.yaml

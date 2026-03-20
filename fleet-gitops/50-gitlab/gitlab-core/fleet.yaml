@@ -1,7 +1,7 @@
 defaultNamespace: gitlab
 helm:
   releaseName: gitlab
-  chart: ${OCI_HELM_PREFIX}/gitlab
+  chart: ${OCI_CHART_GITLAB}
   version: "${CHART_VER_GITLAB}"
   valuesFiles:
     - values.yaml

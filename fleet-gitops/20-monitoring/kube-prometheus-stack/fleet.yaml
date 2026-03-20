@@ -1,7 +1,7 @@
 defaultNamespace: monitoring
 helm:
   releaseName: kube-prometheus-stack
-  chart: ${OCI_HELM_PREFIX}/kube-prometheus-stack
+  chart: ${OCI_CHART_PROMETHEUS_STACK}
   version: "${CHART_VER_PROMETHEUS_STACK}"
   valuesFiles:
     - values.yaml

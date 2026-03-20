@@ -1,7 +1,7 @@
 defaultNamespace: gitlab-runners
 helm:
   releaseName: gitlab-runner-golden-image
-  chart: ${OCI_HELM_PREFIX}/gitlab-runner
+  chart: ${OCI_CHART_GITLAB_RUNNER}
   version: "${CHART_VER_GITLAB_RUNNER}"
   valuesFiles:
     - values.yaml

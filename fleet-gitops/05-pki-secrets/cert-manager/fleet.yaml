@@ -1,7 +1,7 @@
 defaultNamespace: cert-manager
 helm:
   releaseName: cert-manager
-  chart: ${OCI_HELM_PREFIX}/cert-manager
+  chart: ${OCI_CHART_CERT_MANAGER}
   version: "${CHART_VER_CERT_MANAGER}"
   valuesFiles:
     - values.yaml

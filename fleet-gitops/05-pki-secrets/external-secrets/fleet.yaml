@@ -1,7 +1,7 @@
 defaultNamespace: external-secrets
 helm:
   releaseName: external-secrets
-  chart: ${OCI_HELM_PREFIX}/external-secrets
+  chart: ${OCI_CHART_EXTERNAL_SECRETS}
   version: "${CHART_VER_EXTERNAL_SECRETS}"
   valuesFiles:
     - values.yaml
