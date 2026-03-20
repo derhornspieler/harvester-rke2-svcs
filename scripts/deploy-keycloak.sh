@@ -29,6 +29,7 @@ export KC_REALM
 
 # Validate required env vars (all sourced from .env — no fallbacks)
 require_env DOMAIN HELM_CHART_CNPG HELM_VERSION_CNPG \
+  HELM_CHART_KEYCLOAKX HELM_VERSION_KEYCLOAKX IMAGE_KEYCLOAK \
   KC_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD
 
 # Validate vendored CNPG CRDs exist for the configured version
@@ -360,8 +361,8 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   # Install/upgrade Keycloak via Helm chart
   log_info "Installing Keycloak via codecentric/keycloakx Helm chart..."
   helm upgrade --install keycloak \
-    "${OCI_CHART_KEYCLOAKX:-oci://ghcr.io/codecentric/helm-charts/keycloakx}" \
-    --version "${CHART_VER_KEYCLOAKX:-7.1.9}" \
+    "${HELM_CHART_KEYCLOAKX}" \
+    --version "${HELM_VERSION_KEYCLOAKX}" \
     --namespace keycloak \
     --set fullnameOverride=keycloak \
     --set "image.repository=${_kc_repo}" \
