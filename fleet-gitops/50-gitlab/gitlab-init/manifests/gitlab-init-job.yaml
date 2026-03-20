@@ -531,7 +531,7 @@ spec:
               vault write "auth/kubernetes/role/eso-reader-gitlab-runners" \
                 bound_service_account_names="external-secrets,eso-secrets" \
                 bound_service_account_namespaces="gitlab-runners" \
-                policies="eso-gitlab-runners" \
+                policies="eso-reader-gitlab-runners" \
                 ttl=1h
 
               vault write "auth/kubernetes/role/eso-writer-gitlab-runners" \
