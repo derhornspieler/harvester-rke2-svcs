@@ -336,6 +336,19 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
   kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/rbac.yaml"
   kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/service.yaml"
   kubectl apply -f "${REPO_ROOT}/services/keycloak/keycloak/service-headless.yaml"
+
+  # LDAP private CA — enables LDAPS user federation with private CA trust
+  LDAP_CA_CERT="${LDAP_CA_CERT:-}"
+  if [[ -n "$LDAP_CA_CERT" && -f "$LDAP_CA_CERT" ]]; then
+    log_info "Creating keycloak-ldap-ca ConfigMap from ${LDAP_CA_CERT}..."
+    kubectl create configmap keycloak-ldap-ca \
+      --namespace=keycloak \
+      --from-file=ldap-ca.crt="$LDAP_CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    log_info "LDAP_CA_CERT not set or file not found — skipping keycloak-ldap-ca ConfigMap"
+  fi
+
   kube_apply_subst "${REPO_ROOT}/services/keycloak/keycloak/deployment.yaml"
   wait_for_deployment keycloak keycloak 600s
 

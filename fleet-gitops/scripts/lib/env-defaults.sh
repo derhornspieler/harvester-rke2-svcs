@@ -214,6 +214,19 @@ else
   export ROOT_CA_PEM_INDENT8="${ROOT_CA_PEM_INDENT8:-}"
 fi
 
+# --- LDAP CA cert content (optional, for LDAPS user federation in Keycloak) ---
+if [[ -n "${LDAP_CA_PEM_FILE:-}" && "${LDAP_CA_PEM_FILE}" != /* ]]; then
+  _ENV_DEFAULTS_DIR="${_ENV_DEFAULTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  _FLEET_DIR="${_FLEET_DIR:-$(dirname "$(dirname "${_ENV_DEFAULTS_DIR}")")}"
+  LDAP_CA_PEM_FILE="${_FLEET_DIR}/${LDAP_CA_PEM_FILE#./}"
+fi
+if [[ -n "${LDAP_CA_PEM_FILE:-}" && -f "${LDAP_CA_PEM_FILE}" ]]; then
+  export LDAP_CA_PEM_INDENT4
+  LDAP_CA_PEM_INDENT4="$(sed 's/^/    /' "${LDAP_CA_PEM_FILE}")"
+else
+  export LDAP_CA_PEM_INDENT4="${LDAP_CA_PEM_INDENT4:-}"
+fi
+
 # --- ENVSUBST variable list ---
 # Explicit list of variables that render-templates.sh will substitute.
 # Any $VAR not in this list is LEFT AS-IS (critical for embedded bash in Jobs).
@@ -276,6 +289,7 @@ ${CHART_VER_HARBOR} ${CHART_VER_ARGOCD} ${CHART_VER_ARGO_ROLLOUTS}
 ${CHART_VER_ARGO_WORKFLOWS} ${CHART_VER_GITLAB} ${CHART_VER_GITLAB_RUNNER}
 ${ROOT_CA_PEM_CONTENT} ${ROOT_CA_PEM_B64}
 ${ROOT_CA_PEM_INDENT2} ${ROOT_CA_PEM_INDENT4} ${ROOT_CA_PEM_INDENT8}
+${LDAP_CA_PEM_INDENT4}
 ${VAULT_PKI_MOUNT}
 ${ORG}
 ${RANCHER_FQDN}
