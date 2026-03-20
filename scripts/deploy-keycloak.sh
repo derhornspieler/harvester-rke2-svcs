@@ -368,6 +368,7 @@ if [[ $PHASE_FROM -le 5 && $PHASE_TO -ge 5 ]]; then
     --set "image.tag=${_kc_tag}" \
     --set "args={start}" \
     --set http.relativePath=/ \
+    --set http.internalPort=management \
     --set proxy.enabled=true \
     --set proxy.mode=xforwarded \
     --set proxy.http.enabled=true \

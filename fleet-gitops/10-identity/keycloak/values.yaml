@@ -18,6 +18,7 @@ args:
 ## ---- HTTP / Proxy ----
 http:
   relativePath: "/"
+  internalPort: management
 
 proxy:
   enabled: true
@@ -160,11 +161,6 @@ service:
   type: ClusterIP
   httpPort: 8080
   httpsPort: 8443
-  extraPorts:
-    - name: management
-      port: 9000
-      targetPort: 9000
-      protocol: TCP
 
 serviceHeadless:
   extraPorts:
