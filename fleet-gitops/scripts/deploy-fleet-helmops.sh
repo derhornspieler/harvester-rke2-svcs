@@ -545,7 +545,7 @@ purge_harbor_oci() {
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-init-wait pki-vault-unsealer pki-vault-pki-issuer pki-vault-bootstrap-store
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    identity-cnpg-keycloak identity-keycloak-init identity-keycloak-manifests identity-keycloak-config
     infra-auth-traefik infra-auth-vault infra-auth-hubble
     dns-external-dns-secrets
     monitoring-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
@@ -571,7 +571,7 @@ purge_harbor_oci() {
   # Delete upstream Helm chart repos from helm/ project
   local chart_names=(
     cloudnative-pg redis-operator cert-manager vault external-secrets
-    kube-prometheus-stack harbor argo-cd argo-rollouts argo-workflows gitlab
+    kube-prometheus-stack keycloakx harbor argo-cd argo-rollouts argo-workflows gitlab
   )
 
   for repo in "${chart_names[@]}"; do

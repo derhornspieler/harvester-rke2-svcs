@@ -13,7 +13,7 @@ All artifacts are stored in a single OCI-compatible registry. Change
 | `oci://${HARBOR_HOST}/helm/<chart>` | Helm charts (pushed by push-charts.sh) |
 | `oci://${HARBOR_HOST}/fleet/<bundle>` | Raw manifest bundles (pushed by push-bundles.sh) |
 
-## Helm Charts (15)
+## Helm Charts (16)
 
 | Chart | Version Variable | Upstream Source | Deploy Namespace |
 |---|---|---|---|
@@ -25,6 +25,7 @@ All artifacts are stored in a single OCI-compatible registry. Change
 | external-secrets | `CHART_VER_EXTERNAL_SECRETS` | `HELM_REPO_EXTERNAL_SECRETS` | external-secrets |
 | external-dns | `CHART_VER_EXTERNAL_DNS` | `HELM_REPO_EXTERNAL_DNS` | external-dns |
 | kube-prometheus-stack | `CHART_VER_PROMETHEUS_STACK` | `HELM_REPO_PROMETHEUS` | monitoring |
+| keycloakx | `CHART_VER_KEYCLOAKX` | `OCI_SRC_KEYCLOAKX` (OCI-native) | keycloak |
 | harbor | `CHART_VER_HARBOR` | `HELM_REPO_HARBOR` | harbor |
 | argo-cd | `CHART_VER_ARGOCD` | `OCI_SRC_ARGOCD` (OCI-native) | argocd |
 | argo-rollouts | `CHART_VER_ARGO_ROLLOUTS` | `OCI_SRC_ARGO_ROLLOUTS` (OCI-native) | argo-rollouts |
@@ -42,7 +43,7 @@ raw manifest bundles (Jobs, DaemonSets, CronJobs, StatefulSets).
 |---|---|---|
 | `IMAGE_ALPINE_K8S` | docker.io/alpine/k8s:1.32.4 | All init Jobs |
 | `IMAGE_CURL` | curlimages/curl:8.12.1 | Health check Jobs |
-| `IMAGE_KEYCLOAK` | quay.io/keycloak/keycloak:26.0.8 | Keycloak StatefulSet |
+| `IMAGE_KEYCLOAK` | quay.io/keycloak/keycloak:26.0.8 | Keycloak Deployment (keycloakx Helm chart) |
 | `IMAGE_POSTGRESQL_17` | ghcr.io/cloudnative-pg/postgresql:17.6 | CNPG clusters (gitlab, harbor) |
 | `IMAGE_POSTGRESQL_16` | ghcr.io/cloudnative-pg/postgresql:16.6 | CNPG clusters (keycloak, grafana) |
 | `IMAGE_REDIS` | quay.io/opstree/redis:v7.0.15 | OpsTree Redis instances |
@@ -80,7 +81,7 @@ Additional images are pulled by Helm charts at their pinned chart versions
 | Argo Workflows chart | Workflow, CronWorkflow, WorkflowTemplate, ClusterWorkflowTemplate |
 | GitLab chart | Runner (gitlab-runner subchart) |
 
-## Raw Manifest Bundles (43)
+## Raw Manifest Bundles (42)
 
 Pushed to `oci://${HARBOR_HOST}/fleet/<bundle-name>` at version `BUNDLE_VERSION`.
 
@@ -98,7 +99,6 @@ Pushed to `oci://${HARBOR_HOST}/fleet/<bundle-name>` at version `BUNDLE_VERSION`
 | 05-pki-secrets | pki-vault-bootstrap-store | ClusterSecretStore |
 | 10-identity | identity-cnpg-keycloak | CNPG Cluster, init Job, SecretStore |
 | 10-identity | identity-keycloak-init | Init Job, ExternalSecrets, LDAP CA ConfigMap |
-| 10-identity | identity-keycloak | Helm chart (codecentric/keycloakx) |
 | 10-identity | identity-keycloak-manifests | Gateway, HTTPRoute, Grafana dashboards |
 | 10-identity | identity-keycloak-config | Realm/OIDC config Job |
 | 11-infra-auth | infra-auth-traefik | OAuth2-proxy, SecretStore, ExternalSecret |
