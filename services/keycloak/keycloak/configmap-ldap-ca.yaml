@@ -1,0 +1,12 @@
+# Private CA certificate for Keycloak to trust LDAPS connections
+# Keycloak 24+ reads PEM files directly via KC_TRUSTSTORE_PATHS
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-ldap-ca
+  namespace: keycloak
+data:
+  ldap-ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    # Replace with your LDAP server's private CA certificate (PEM-encoded)
+    -----END CERTIFICATE-----

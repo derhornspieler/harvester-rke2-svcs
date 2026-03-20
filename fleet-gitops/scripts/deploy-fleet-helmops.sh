@@ -118,9 +118,11 @@ HELMOP_DEFS=(
   "pki-external-secrets|${OCI_CHART_EXTERNAL_SECRETS}|${CHART_VER_EXTERNAL_SECRETS}|external-secrets|external-secrets|pki-vault-init-wait,operators-prometheus-crds|05-pki-secrets/external-secrets/values.yaml"
   "pki-vault-bootstrap-store|oci://${HARBOR}/fleet/pki-vault-bootstrap-store|${BUNDLE_VERSION}|external-secrets|pki-vault-bootstrap-store|pki-external-secrets|"
 
-  # 10-identity (3 self-contained bundles, no shared init-lib.sh)
+  # 10-identity (keycloak-init → keycloakx Helm chart → manifests → config)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-vault-bootstrap-store,operators-cnpg|"
-  "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
+  "identity-keycloak-init|oci://${HARBOR}/fleet/identity-keycloak-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-init|identity-cnpg-keycloak,pki-vault-bootstrap-store|"
+  "identity-keycloak|${OCI_CHART_KEYCLOAKX}|${CHART_VER_KEYCLOAKX}|keycloak|keycloak|identity-keycloak-init,operators-prometheus-crds|10-identity/keycloak/values.yaml"
+  "identity-keycloak-manifests|oci://${HARBOR}/fleet/identity-keycloak-manifests|${BUNDLE_VERSION}|keycloak|identity-keycloak-manifests|identity-keycloak|"
   "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
 
   # 15-dns (depends on pki — FreeIPA must be running externally)
@@ -543,7 +545,7 @@ purge_harbor_oci() {
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-init-wait pki-vault-unsealer pki-vault-pki-issuer pki-vault-bootstrap-store
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    identity-cnpg-keycloak identity-keycloak-init identity-keycloak-manifests identity-keycloak-config
     infra-auth-traefik infra-auth-vault infra-auth-hubble
     dns-external-dns-secrets
     monitoring-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
@@ -569,7 +571,7 @@ purge_harbor_oci() {
   # Delete upstream Helm chart repos from helm/ project
   local chart_names=(
     cloudnative-pg redis-operator cert-manager vault external-secrets
-    kube-prometheus-stack harbor argo-cd argo-rollouts argo-workflows gitlab
+    kube-prometheus-stack keycloakx harbor argo-cd argo-rollouts argo-workflows gitlab
   )
 
   for repo in "${chart_names[@]}"; do

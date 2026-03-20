@@ -1,12 +1,8 @@
 defaultNamespace: keycloak
-helm:
-  releaseName: keycloak
-  chart: ${OCI_HELM_PREFIX}/keycloakx
-  version: "${CHART_VER_KEYCLOAKX}"
-  valuesFiles:
-    - values.yaml
 dependsOn:
-  - name: identity-keycloak-init
+  - selector:
+      matchLabels:
+        fleet.cattle.io/bundle-name: identity-keycloak
 diff:
   comparePatches:
     - apiVersion: v1
@@ -16,10 +12,5 @@ diff:
           path: /spec/resources/requests/storage
         - op: remove
           path: /spec/resources/requests
-    - apiVersion: batch/v1
-      kind: Job
-      operations:
-        - op: remove
-          path: /status
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

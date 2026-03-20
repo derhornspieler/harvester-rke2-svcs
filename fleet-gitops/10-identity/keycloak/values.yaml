@@ -1,0 +1,295 @@
+# codecentric/keycloakx Helm chart values
+# Chart: oci://ghcr.io/codecentric/helm-charts/keycloakx
+#
+# Migrated from raw manifests to Helm chart for consistency and maintainability.
+# LDAP private CA trust is provided via configmap-ldap-ca (keycloak-init bundle).
+
+fullnameOverride: keycloak
+
+replicas: 2
+
+image:
+  repository: "${IMAGE_KEYCLOAK_REPO}"
+  tag: "${IMAGE_KEYCLOAK_TAG}"
+
+args:
+  - start
+
+## ---- HTTP / Proxy ----
+http:
+  relativePath: "/"
+
+proxy:
+  enabled: true
+  mode: xforwarded
+  http:
+    enabled: true
+
+health:
+  enabled: true
+
+metrics:
+  enabled: true
+
+## ---- Database (external CNPG PostgreSQL) ----
+database:
+  vendor: postgres
+  hostname: ${KEYCLOAK_DB_HOST}
+  port: 5432
+  database: ${KEYCLOAK_DB_NAME}
+  username: keycloak
+  existingSecret: keycloak-postgres-secret
+  existingSecretKey: POSTGRES_PASSWORD
+
+## ---- Cache / Clustering (KUBE_PING via DNS) ----
+cache:
+  stack: custom
+
+## ---- Service Account & RBAC (pod-reader for KUBE_PING) ----
+serviceAccount:
+  create: true
+  name: keycloak
+  allowReadPods: true
+
+rbac:
+  create: true
+  rules:
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get", "list"]
+
+## ---- Security ----
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsUser: 1000
+  runAsNonRoot: true
+
+## ---- Scheduling ----
+nodeSelector:
+  workload-type: general
+
+topologySpreadConstraints: |
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        {{- include "keycloak.selectorLabels" . | nindent 6 }}
+
+affinity: |
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              {{- include "keycloak.selectorLabels" . | nindent 12 }}
+          topologyKey: kubernetes.io/hostname
+
+## ---- Resources ----
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+## ---- Extra environment variables ----
+extraEnv: |
+  - name: KC_HOSTNAME
+    value: "${KEYCLOAK_FQDN}"
+  - name: KC_CACHE
+    value: ispn
+  - name: KC_CACHE_STACK
+    value: kubernetes
+  - name: KC_TRUSTSTORE_PATHS
+    value: /opt/keycloak/certs/ldap-ca.crt
+  - name: JAVA_OPTS_APPEND
+    value: -Djgroups.dns.query=keycloak-headless.keycloak.svc.cluster.local
+  - name: KC_BOOTSTRAP_ADMIN_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin-secret
+        key: KC_BOOTSTRAP_ADMIN_USERNAME
+  - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin-secret
+        key: KC_BOOTSTRAP_ADMIN_PASSWORD
+
+## ---- LDAP private CA volume (mounted from keycloak-init bundle) ----
+extraVolumes: |
+  - name: ldap-ca
+    configMap:
+      name: keycloak-ldap-ca
+
+extraVolumeMounts: |
+  - name: ldap-ca
+    mountPath: /opt/keycloak/certs
+    readOnly: true
+
+## ---- Management port for health/metrics (Keycloak 24+) ----
+extraPorts:
+  - name: management
+    containerPort: 9000
+
+## ---- Probes (use management port 9000 for Keycloak 24+) ----
+startupProbe: |
+  httpGet:
+    path: /health/started
+    port: 9000
+  failureThreshold: 30
+  periodSeconds: 5
+
+readinessProbe: |
+  httpGet:
+    path: /health/ready
+    port: 9000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+livenessProbe: |
+  httpGet:
+    path: /health/live
+    port: 9000
+  initialDelaySeconds: 60
+  periodSeconds: 30
+
+## ---- Services ----
+service:
+  type: ClusterIP
+  httpPort: 8080
+  httpsPort: 8443
+  extraPorts:
+    - name: management
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+
+serviceHeadless:
+  extraPorts:
+    - name: jgroups
+      port: 7800
+      targetPort: 7800
+      protocol: TCP
+
+## ---- Ingress (disabled — we use Gateway API via keycloak-manifests bundle) ----
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: false
+
+## ---- Autoscaling ----
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300
+
+## ---- Monitoring ----
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  port: management
+
+prometheusRule:
+  enabled: true
+  rules:
+    - alert: KeycloakDown
+      expr: up{job="keycloak"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Keycloak is down"
+        description: 'Keycloak instance {{ "{{ $labels.instance }}" }} has been unreachable for more than 5 minutes.'
+
+    - alert: KeycloakHighLoginFailureRate
+      expr: |
+        (
+          sum(rate(http_server_requests_seconds_count{job="keycloak",uri=~".*/protocol/openid-connect/token",status=~"4.."}[5m]))
+          / sum(rate(http_server_requests_seconds_count{job="keycloak",uri=~".*/protocol/openid-connect/token"}[5m]))
+        ) > 0.3
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Keycloak login failure rate > 30%"
+        description: '{{ "{{ $value | humanizePercentage }}" }} of OIDC token requests are failing (4xx).'
+
+    - alert: KeycloakHighTokenLatency
+      expr: |
+        histogram_quantile(0.99,
+          sum(rate(http_server_requests_seconds_bucket{job="keycloak",uri=~".*/protocol/openid-connect/token"}[5m])) by (le)
+        ) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Keycloak token request p99 latency > 2s"
+        description: 'Keycloak OIDC token request p99 latency is {{ "{{ $value | humanizeDuration }}" }}.'
+
+    - alert: KeycloakAllReplicasDown
+      expr: |
+        sum(up{job="keycloak"}) == 0
+        and count(up{job="keycloak"}) > 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "All Keycloak replicas are down"
+        description: "No Keycloak replicas are responding. All OIDC authentication is unavailable."
+
+    - alert: KeycloakHighServerErrorRate
+      expr: |
+        sum(rate(http_server_requests_seconds_count{job="keycloak",status=~"5.."}[5m])) > 1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Keycloak returning server errors"
+        description: 'Keycloak is returning {{ "{{ $value | humanize }}" }} server errors per second (5xx).'
+
+    - alert: KeycloakJvmHeapPressure
+      expr: |
+        (jvm_memory_used_bytes{job="keycloak",area="heap"}
+        / jvm_memory_max_bytes{job="keycloak",area="heap"}) > 0.9
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Keycloak JVM heap usage > 90%"
+        description: 'Keycloak instance {{ "{{ $labels.instance }}" }} heap is at {{ "{{ $value | humanizePercentage }}" }}.'
+
+    - alert: KeycloakHighGCPause
+      expr: |
+        rate(jvm_gc_pause_seconds_sum{job="keycloak"}[5m])
+        / rate(jvm_gc_pause_seconds_count{job="keycloak"}[5m]) > 0.5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Keycloak GC pauses averaging > 500ms"
+        description: 'Keycloak instance {{ "{{ $labels.instance }}" }} average GC pause is {{ "{{ $value | humanizeDuration }}" }}.'
+
+## ---- Tests ----
+test:
+  enabled: false
