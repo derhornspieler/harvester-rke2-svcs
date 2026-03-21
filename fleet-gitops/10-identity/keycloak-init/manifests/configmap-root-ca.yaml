@@ -1,0 +1,10 @@
+# Platform root CA certificate for Keycloak to trust internal TLS (OIDC discovery, etc.)
+# Keycloak 24+ reads PEM files directly via KC_TRUSTSTORE_PATHS
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-root-ca
+  namespace: keycloak
+data:
+  ca.crt: |
+${ROOT_CA_PEM_INDENT4}
