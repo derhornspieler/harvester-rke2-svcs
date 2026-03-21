@@ -89,7 +89,7 @@ spec:
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
             - name: KEYCLOAK_URL
-              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+              value: "http://keycloak-http.keycloak.svc.cluster.local:8080"
             - name: MINIO_ENDPOINT
               value: "${MINIO_INTERNAL_URL}"
             - name: MINIO_ROOT_USER
@@ -212,7 +212,7 @@ spec:
               }
 
               wait_for_keycloak() {
-                local keycloak_url="${KEYCLOAK_URL:-http://keycloak.keycloak.svc.cluster.local:8080}"
+                local keycloak_url="${KEYCLOAK_URL:-http://keycloak-http.keycloak.svc.cluster.local:8080}"
                 local max_attempts="${1:-60}"
                 local interval="${2:-10}"
 

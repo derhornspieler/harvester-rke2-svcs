@@ -81,7 +81,7 @@ spec:
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
             - name: KEYCLOAK_URL
-              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+              value: "http://keycloak-http.keycloak.svc.cluster.local:8080"
             - name: MINIO_ENDPOINT
               value: "${MINIO_INTERNAL_URL}"
             - name: MINIO_ROOT_USER

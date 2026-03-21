@@ -68,7 +68,7 @@ spec:
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
             - name: KEYCLOAK_URL
-              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+              value: "http://keycloak-http.keycloak.svc.cluster.local:8080"
           command: ["/bin/bash", "-euo", "pipefail", "-c"]
           args:
             - |
