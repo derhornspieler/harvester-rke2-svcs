@@ -104,7 +104,7 @@ extraEnv: |
   - name: KC_CACHE_STACK
     value: kubernetes
   - name: KC_TRUSTSTORE_PATHS
-    value: /opt/keycloak/certs/ldap-ca.crt
+    value: /opt/keycloak/certs/ldap-ca.crt,/opt/keycloak/certs/root-ca.crt
   - name: JAVA_OPTS_APPEND
     value: -Djgroups.dns.query=keycloak-headless.keycloak.svc.cluster.local
   - name: KC_BOOTSTRAP_ADMIN_USERNAME
@@ -123,10 +123,18 @@ extraVolumes: |
   - name: ldap-ca
     configMap:
       name: keycloak-ldap-ca
+  - name: root-ca
+    configMap:
+      name: vault-root-ca
 
 extraVolumeMounts: |
   - name: ldap-ca
-    mountPath: /opt/keycloak/certs
+    mountPath: /opt/keycloak/certs/ldap-ca.crt
+    subPath: ca.crt
+    readOnly: true
+  - name: root-ca
+    mountPath: /opt/keycloak/certs/root-ca.crt
+    subPath: ca.crt
     readOnly: true
 
 ## ---- Management port for health/metrics (Keycloak 24+) ----
