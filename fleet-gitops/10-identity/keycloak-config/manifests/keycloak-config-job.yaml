@@ -192,15 +192,18 @@ spec:
               DEFAULT_PLATFORM_ADMIN_PASS="$(head -c 24 /dev/urandom | base64)"
 
               # --- Wait for Keycloak to be reachable ---
-              KC_HEALTH_URL="http://keycloak.keycloak.svc.cluster.local:9000"
-              log "[INFO] Waiting for Keycloak health at ${KC_HEALTH_URL}..."
+              # Health endpoints are on the management port (9000) which is only
+              # exposed as a container port for kubelet probes, NOT via the Service.
+              # Use the OIDC discovery endpoint on the main HTTP port instead.
+              KC_READY_URL="${KC_URL}/realms/master/.well-known/openid-configuration"
+              log "[INFO] Waiting for Keycloak at ${KC_READY_URL}..."
               for i in $(seq 1 60); do
-                if curl -sf --http1.1 --connect-timeout 5 "${KC_HEALTH_URL}/health/ready" >/dev/null 2>&1; then
+                if curl -sf --http1.1 --connect-timeout 5 "${KC_READY_URL}" >/dev/null 2>&1; then
                   break
                 fi
                 sleep 5
               done
-              curl -sf --http1.1 --connect-timeout 5 "${KC_HEALTH_URL}/health/ready" >/dev/null || die "Keycloak not reachable after 5 minutes"
+              curl -sf --http1.1 --connect-timeout 5 "${KC_READY_URL}" >/dev/null || die "Keycloak not reachable after 5 minutes"
               log "[INFO] Keycloak is ready"
 
               # =============== Phase 1: Create realm ===============
