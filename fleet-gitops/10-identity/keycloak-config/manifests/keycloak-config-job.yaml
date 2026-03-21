@@ -91,7 +91,7 @@ spec:
 
               DOMAIN="${DOMAIN}"
               KC_REALM="${KEYCLOAK_REALM}"
-              KC_URL="http://keycloak-http.keycloak.svc.cluster.local:8080"
+              KC_URL="${KEYCLOAK_INTERNAL_URL}"
               PLATFORM_ADMIN_USER="${PLATFORM_ADMIN_USER}"
               PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_USER}@${DOMAIN}"
 
