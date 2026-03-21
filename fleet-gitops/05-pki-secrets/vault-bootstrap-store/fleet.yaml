@@ -1,6 +1,4 @@
 defaultNamespace: external-secrets
-helm:
-  releaseName: pki-vault-bootstrap-store
 dependsOn:
   - selector:
       matchLabels:
