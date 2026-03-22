@@ -12,7 +12,7 @@ spec:
 
   bootstrap:
     initdb:
-      database: keycloak
+      database: ${KEYCLOAK_DB_NAME}
       owner: keycloak
       secret:
         name: keycloak-pg-credentials

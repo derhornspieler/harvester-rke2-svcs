@@ -30,8 +30,8 @@ spec:
       syncPolicy:
         managedNamespaceMetadata:
           labels:
-            platform.example.com/environment: production
-            platform.example.com/managed-by: argocd
+            ${LABEL_PREFIX}/environment: production
+            ${LABEL_PREFIX}/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true

@@ -249,6 +249,10 @@ main() {
   log "Rendering templates..."
   "${SCRIPT_DIR}/render-templates.sh"
 
+  # Inject spec-hash annotations into rendered Job manifests
+  log "Computing Job spec hashes..."
+  "${SCRIPT_DIR}/compute-job-hashes.sh"
+
   ensure_harbor_project
   helm_login
 

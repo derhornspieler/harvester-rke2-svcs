@@ -81,7 +81,7 @@ spec:
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
             - name: KEYCLOAK_URL
-              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+              value: "${KEYCLOAK_INTERNAL_URL}"
             - name: MINIO_ENDPOINT
               value: "${MINIO_INTERNAL_URL}"
             - name: MINIO_ROOT_USER
@@ -435,10 +435,10 @@ spec:
               mc alias set myminio "${MINIO_ENDPOINT}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api S3v4
               log "[INFO] MinIO alias configured"
 
-              mc mb --ignore-existing "myminio/harbor"
-              log "[INFO] Ensured bucket exists: harbor"
+              mc mb --ignore-existing "myminio/${MINIO_BUCKET_HARBOR}"
+              log "[INFO] Ensured bucket exists: ${MINIO_BUCKET_HARBOR}"
 
-              minio_create_service_user "harbor-sa" "harbor" "services/harbor"
+              minio_create_service_user "harbor-sa" "${MINIO_BUCKET_HARBOR}" "services/harbor"
 
               # Re-store MinIO credentials with field names expected by Harbor
               # external-secrets (minio-access-key / minio-secret-key)

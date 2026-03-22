@@ -7,7 +7,7 @@ metadata:
 spec:
   target:
     pvcName: minio-data
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 500Gi
   increasePercent: 20
@@ -25,7 +25,7 @@ spec:
     selector:
       matchLabels:
         cnpg.io/cluster: harbor-pg
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 100Gi
   increasePercent: 25
@@ -43,7 +43,7 @@ spec:
     selector:
       matchLabels:
         app: harbor-redis
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 10Gi
   increasePercent: 25

@@ -14,7 +14,7 @@ data:
     // Loki write endpoint
     loki.write "default" {
       endpoint {
-        url = "http://loki.monitoring.svc:3100/loki/api/v1/push"
+        url = "${LOKI_INTERNAL_URL}/loki/api/v1/push"
       }
       external_labels = {
         cluster = "${FLEET_TARGET_CLUSTER}",

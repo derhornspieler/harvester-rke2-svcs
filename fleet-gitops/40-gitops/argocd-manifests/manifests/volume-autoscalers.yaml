@@ -9,7 +9,7 @@ spec:
     selector:
       matchLabels:
         app: redis-ha
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 30Gi
   increasePercent: 25

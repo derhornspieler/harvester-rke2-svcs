@@ -17,7 +17,7 @@ spec:
       failureLimit: 2
       provider:
         prometheus:
-          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          address: ${PROMETHEUS_INTERNAL_URL}
           query: |
             histogram_quantile(0.99,
               sum(rate(http_request_duration_seconds_bucket{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}"}[2m])) by (le)

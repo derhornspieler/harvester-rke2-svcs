@@ -17,7 +17,7 @@ spec:
       failureLimit: 2
       provider:
         prometheus:
-          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          address: ${PROMETHEUS_INTERNAL_URL}
           query: |
             sum(rate(http_requests_total{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}",code=~"5.."}[2m]))
             /

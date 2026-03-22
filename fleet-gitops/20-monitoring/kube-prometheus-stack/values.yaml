@@ -243,7 +243,7 @@ grafana:
         - name: Loki
           type: loki
           uid: loki
-          url: http://loki.monitoring.svc:3100
+          url: ${LOKI_INTERNAL_URL}
           access: proxy
           isDefault: false
           editable: false
