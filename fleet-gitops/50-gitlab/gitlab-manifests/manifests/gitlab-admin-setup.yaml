@@ -200,11 +200,83 @@ spec:
                 echo "${user_id}"
               }
 
+              # Get or create a group, returns group ID
+              ensure_group() {
+                local path="$1" name="$2" visibility="${3:-internal}"
+                local group_id
+                group_id=$(gl_api GET "/groups?search=${path}" 2>/dev/null | \
+                  python3 -c "import json,sys; gs=[g for g in json.load(sys.stdin) if g['full_path']=='${path}']; print(gs[0]['id'] if gs else '')" 2>/dev/null || true)
+                if [[ -n "${group_id}" ]]; then
+                  log "Group ${path} exists (ID: ${group_id})"
+                else
+                  log "Creating group ${path}..."
+                  local resp
+                  resp=$(gl_api POST "/groups" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'name': sys.argv[1],
+                      'path': sys.argv[2],
+                      'visibility': sys.argv[3]
+                    }))" "${name}" "${path}" "${visibility}")") || die "Failed to create group ${path}"
+                  group_id=$(echo "${resp}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+                  log "Created group ${path} (ID: ${group_id})"
+                fi
+                echo "${group_id}"
+              }
+
               # Get group ID by path, returns empty if not found
               get_group_id() {
                 local path="$1"
                 gl_api GET "/groups?search=${path}" 2>/dev/null | \
                   python3 -c "import json,sys; gs=[g for g in json.load(sys.stdin) if g['full_path']=='${path}']; print(gs[0]['id'] if gs else '')" 2>/dev/null || true
+              }
+
+              # Get or create a project under a group, returns project ID
+              ensure_project() {
+                local group_id="$1" project_path="$2" project_name="$3" full_path="$4"
+                local project_id
+                project_id=$(gl_api GET "/projects?search=${project_path}&search_namespaces=true" 2>/dev/null | \
+                  python3 -c "import json,sys; ps=[p for p in json.load(sys.stdin) if p['path_with_namespace']=='${full_path}']; print(ps[0]['id'] if ps else '')" 2>/dev/null || true)
+                if [[ -n "${project_id}" ]]; then
+                  log "Project ${full_path} exists (ID: ${project_id})"
+                else
+                  log "Creating project ${full_path}..."
+                  local resp
+                  resp=$(gl_api POST "/projects" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'name': sys.argv[1],
+                      'path': sys.argv[2],
+                      'namespace_id': int(sys.argv[3]),
+                      'visibility': 'internal',
+                      'default_branch': 'main',
+                      'initialize_with_readme': False
+                    }))" "${project_name}" "${project_path}" "${group_id}")") || die "Failed to create project ${full_path}"
+                  project_id=$(echo "${resp}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+                  log "Created project ${full_path} (ID: ${project_id})"
+
+                  # Initialize with scaffold commit (dev/staging/production dirs + README)
+                  log "Initializing ${full_path} with directory scaffold..."
+                  gl_api POST "/projects/${project_id}/repository/commits" \
+                    -d "$(python3 -c "
+              import json
+              actions = [
+                  {'action':'create','file_path':'README.md','content':'# platform-deployments\n\nArgoCD-managed application deployments.\n\n## Structure\n\n- \`dev/<team>/<app>/\` — Development (auto-sync from dev branch)\n- \`staging/<team>/<app>/\` — Staging (auto-sync from main)\n- \`production/<team>/<app>/\` — Production (manual sync from main)\n'},
+                  {'action':'create','file_path':'dev/.gitkeep','content':''},
+                  {'action':'create','file_path':'staging/.gitkeep','content':''},
+                  {'action':'create','file_path':'production/.gitkeep','content':''},
+              ]
+              print(json.dumps({
+                  'branch': 'main',
+                  'commit_message': 'chore: initialize platform-deployments scaffold',
+                  'actions': actions
+              }))
+              ")" >/dev/null 2>&1 || log "WARNING: scaffold commit failed (repo may already have content)"
+
+                  # Create dev branch from main
+                  gl_api POST "/projects/${project_id}/repository/branches" \
+                    -d '{"branch":"dev","ref":"main"}' >/dev/null 2>&1 || log "WARNING: dev branch creation failed (may already exist)"
+                  log "Created dev branch"
+                fi
+                echo "${project_id}"
               }
 
               # Add member to group (idempotent)
@@ -325,8 +397,8 @@ spec:
               ###############################################################
               # Phase 3: Group memberships
               ###############################################################
-              INFRA_GROUP_ID=$(get_group_id "infra_and_platform_services")
-              PLATFORM_GROUP_ID=$(get_group_id "platform")
+              INFRA_GROUP_ID=$(ensure_group "infra_and_platform_services" "Infra and Platform Services" "internal")
+              PLATFORM_GROUP_ID=$(ensure_group "platform" "Platform" "internal")
               FORGE_GROUP_ID=$(get_group_id "forge")
 
               # infra_and_platform_services group access
@@ -359,11 +431,9 @@ spec:
               fi
 
               ###############################################################
-              # Phase 4: CI job token access for platform-deployments
+              # Phase 4: Create platform-deployments + CI job token access
               ###############################################################
-              # Find platform-deployments project
-              DEPLOY_PROJECT_ID=$(gl_api GET "/projects?search=platform-deployments&search_namespaces=true" 2>/dev/null | \
-                python3 -c "import json,sys; ps=[p for p in json.load(sys.stdin) if p['path_with_namespace']=='platform/platform-deployments']; print(ps[0]['id'] if ps else '')" 2>/dev/null || true)
+              DEPLOY_PROJECT_ID=$(ensure_project "${PLATFORM_GROUP_ID}" "platform-deployments" "Platform Deployments" "platform/platform-deployments")
 
               if [[ -n "${DEPLOY_PROJECT_ID}" ]]; then
                 log "platform-deployments project ID: ${DEPLOY_PROJECT_ID}"
@@ -391,7 +461,7 @@ spec:
                   fi
                 done
               else
-                log "WARNING: platform/platform-deployments not found — skipping CI token config"
+                log "WARNING: platform-deployments project ID is empty — skipping CI token config"
               fi
 
               ###############################################################
