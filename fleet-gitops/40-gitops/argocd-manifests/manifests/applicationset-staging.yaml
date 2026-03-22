@@ -32,8 +32,8 @@ spec:
           prune: true
         managedNamespaceMetadata:
           labels:
-            platform.aegisgroup.ch/environment: staging
-            platform.aegisgroup.ch/managed-by: argocd
+            ${LABEL_PREFIX}/environment: staging
+            ${LABEL_PREFIX}/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true

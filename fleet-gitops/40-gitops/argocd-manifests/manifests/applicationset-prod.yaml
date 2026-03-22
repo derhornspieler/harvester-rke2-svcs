@@ -30,8 +30,8 @@ spec:
       syncPolicy:
         managedNamespaceMetadata:
           labels:
-            platform.aegisgroup.ch/environment: production
-            platform.aegisgroup.ch/managed-by: argocd
+            ${LABEL_PREFIX}/environment: production
+            ${LABEL_PREFIX}/managed-by: argocd
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true

@@ -35,8 +35,8 @@ server:
   enabled: true
 
   image:
-    repository: hashicorp/vault
-    tag: "1.21.2"
+    repository: ${IMAGE_VAULT_REPO}
+    tag: "${IMAGE_VAULT_TAG}"
 
   # Schedule on database pool (stateful workload)
   nodeSelector:

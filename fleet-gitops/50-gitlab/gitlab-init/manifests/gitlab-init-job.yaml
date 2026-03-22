@@ -89,7 +89,7 @@ spec:
             - name: VAULT_ADDR
               value: "${VAULT_INTERNAL_URL}"
             - name: KEYCLOAK_URL
-              value: "http://keycloak.keycloak.svc.cluster.local:8080"
+              value: "${KEYCLOAK_INTERNAL_URL}"
             - name: MINIO_ENDPOINT
               value: "${MINIO_INTERNAL_URL}"
             - name: MINIO_ROOT_USER
@@ -169,7 +169,7 @@ spec:
 
               vault_create_secretstore() {
                 local namespace="$1"
-                local vault_url="${VAULT_ADDR:-http://vault.vault.svc.cluster.local:8200}"
+                local vault_url="${VAULT_ADDR}"
 
                 kubectl apply -f - <<SSEOF
               apiVersion: external-secrets.io/v1
@@ -212,7 +212,7 @@ spec:
               }
 
               wait_for_keycloak() {
-                local keycloak_url="${KEYCLOAK_URL:-http://keycloak.keycloak.svc.cluster.local:8080}"
+                local keycloak_url="${KEYCLOAK_URL}"
                 local max_attempts="${1:-60}"
                 local interval="${2:-10}"
 
@@ -531,7 +531,7 @@ spec:
               vault write "auth/kubernetes/role/eso-reader-gitlab-runners" \
                 bound_service_account_names="external-secrets,eso-secrets" \
                 bound_service_account_namespaces="gitlab-runners" \
-                policies="eso-gitlab-runners" \
+                policies="eso-reader-gitlab-runners" \
                 ttl=1h
 
               vault write "auth/kubernetes/role/eso-writer-gitlab-runners" \
@@ -559,15 +559,15 @@ spec:
               # --- MinIO: setup alias, create buckets, create service user ---
               log "[INFO] Configuring MinIO for GitLab..."
               minio_setup_alias
-              minio_create_bucket "gitlab-lfs"
-              minio_create_bucket "gitlab-artifacts"
-              minio_create_bucket "gitlab-uploads"
-              minio_create_bucket "gitlab-packages"
-              minio_create_bucket "gitlab-pages"
-              minio_create_bucket "gitlab-mr-diffs"
-              minio_create_bucket "gitlab-terraform"
-              minio_create_bucket "gitlab-ci-secure-files"
-              minio_create_bucket "gitlab-dependency-proxy"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_LFS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_ARTIFACTS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_UPLOADS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_PACKAGES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_PAGES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_MR_DIFFS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_TERRAFORM}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_CI_SECURE_FILES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_DEPENDENCY_PROXY}"
               minio_create_service_user "gitlab-sa" "gitlab-*" "services/gitlab/minio-storage"
               log "[INFO] MinIO configuration complete"
 

@@ -268,7 +268,7 @@ spec:
                     "s3:ListBucket",
                     "s3:ListBucketMultipartUploads"
                   ],
-                  "Resource": ["arn:aws:s3:::cnpg-backups"]
+                  "Resource": ["arn:aws:s3:::${MINIO_BUCKET_CNPG_BACKUPS}"]
                 }, {
                   "Effect": "Allow",
                   "Action": [
@@ -278,7 +278,7 @@ spec:
                     "s3:ListMultipartUploadParts",
                     "s3:AbortMultipartUpload"
                   ],
-                  "Resource": ["arn:aws:s3:::cnpg-backups/*"]
+                  "Resource": ["arn:aws:s3:::${MINIO_BUCKET_CNPG_BACKUPS}/*"]
                 }]
               }
               POLICYJSON

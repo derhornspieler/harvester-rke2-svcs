@@ -9,7 +9,7 @@ spec:
 
   bootstrap:
     initdb:
-      database: grafana
+      database: ${GRAFANA_DB_NAME}
       owner: grafana
       secret:
         name: grafana-pg-credentials

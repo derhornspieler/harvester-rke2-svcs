@@ -1282,11 +1282,15 @@ import json,sys
 }
 
 # ============================================================
-# Auto-cleanup completed init Jobs before deploy
+# Auto-cleanup completed init Jobs before deploy (spec-hash aware)
 # ============================================================
 # Kubernetes Jobs are immutable. Fleet cannot patch them, causing ErrApplied.
-# Delete completed, failed, or crash-looping Jobs so Fleet recreates them
-# with the latest spec. Crash-looping = 3+ restarts (stuck on old code).
+#
+# Strategy:
+#   - Failed / crash-looping Jobs: always delete (broken, need recreation)
+#   - Completed Jobs: compare fleet.aegisgroup.ch/spec-hash annotation against
+#     the hash of the rendered manifest. Only delete if the spec changed.
+#   - Legacy Jobs without annotation: delete (first deploy with hashing)
 cleanup_completed_init_jobs() {
   # Map of group → "namespace/job-name" pairs (must match all Job manifests)
   declare -A GROUP_JOBS=(
@@ -1298,10 +1302,59 @@ cleanup_completed_init_jobs() {
     ["50-gitlab"]="gitlab/gitlab-init gitlab/gitlab-ready gitlab/vault-jwt-auth-setup gitlab/gitlab-admin-setup gitlab-runners/runner-secrets-setup"
   )
 
+  # Map: "namespace/job-name" → rendered manifest file (relative to rendered/)
+  declare -A JOB_MANIFEST_FILES=(
+    ["vault/vault-init"]="05-pki-secrets/vault-init/manifests/vault-init-job.yaml"
+    ["vault/vault-init-wait"]="05-pki-secrets/vault-init-wait/manifests/vault-init-wait-job.yaml"
+    ["keycloak/keycloak-init"]="10-identity/keycloak/manifests/init-job.yaml"
+    ["keycloak/keycloak-config"]="10-identity/keycloak-config/manifests/keycloak-config-job.yaml"
+    ["database/database-init"]="10-identity/cnpg-keycloak/manifests/init-job.yaml"
+    ["monitoring/monitoring-init"]="20-monitoring/monitoring-init/manifests/monitoring-init-job.yaml"
+    ["harbor/harbor-init"]="30-harbor/harbor-init/manifests/harbor-init-job.yaml"
+    ["harbor/harbor-oidc-setup"]="30-harbor/harbor-manifests/manifests/harbor-oidc-config.yaml"
+    ["minio/minio-init"]="30-harbor/minio/manifests/minio-init-job.yaml"
+    ["argocd/argocd-init"]="40-gitops/argocd-init/manifests/argocd-init-job.yaml"
+    ["argocd/argocd-gitlab-setup"]="40-gitops/argocd-gitlab-setup/manifests/argocd-gitlab-setup.yaml"
+    ["argo-rollouts/rollouts-init"]="40-gitops/rollouts-init/manifests/rollouts-init-job.yaml"
+    ["argo-workflows/workflows-init"]="40-gitops/workflows-init/manifests/workflows-init-job.yaml"
+    ["gitlab/gitlab-init"]="50-gitlab/gitlab-init/manifests/gitlab-init-job.yaml"
+    ["gitlab/gitlab-ready"]="50-gitlab/gitlab-ready/manifests/gitlab-ready-job.yaml"
+    ["gitlab/vault-jwt-auth-setup"]="50-gitlab/gitlab-manifests/manifests/vault-jwt-auth-setup.yaml"
+    ["gitlab/gitlab-admin-setup"]="50-gitlab/gitlab-manifests/manifests/gitlab-admin-setup.yaml"
+    ["gitlab-runners/runner-secrets-setup"]="50-gitlab/gitlab-runners/manifests/runner-secrets-setup.yaml"
+  )
+
+  local rendered_dir="${FLEET_DIR}/rendered"
+
+  # --- Get downstream kubeconfig ---
+  local cluster_id ds_kc
+  cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+    python3 -c "
+import json,sys
+[print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c.get('name')=='${FLEET_TARGET_CLUSTER}']
+" 2>/dev/null | head -1)
+
+  if [[ -z "${cluster_id:-}" ]]; then
+    log_warn "Cannot find cluster ${FLEET_TARGET_CLUSTER} — skipping Job cleanup"
+    return 0
+  fi
+
+  ds_kc=$(mktemp /tmp/ds-kubeconfig-cleanup.XXXXXX)
+  rancher_api POST "/v3/clusters/${cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+    python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc}" 2>/dev/null || true
+
+  if [[ ! -s "${ds_kc}" ]]; then
+    log_warn "Could not get downstream kubeconfig — skipping Job cleanup"
+    rm -f "${ds_kc}"
+    return 0
+  fi
+
+  # --- Determine which groups to clean ---
   local groups_to_clean=()
   if [[ -n "${SINGLE_GROUP}" ]]; then
     if [[ -z "${GROUP_JOBS[${SINGLE_GROUP}]+set}" ]]; then
       log_info "Group '${SINGLE_GROUP}' has no init Jobs to clean up"
+      rm -f "${ds_kc}"
       return 0
     fi
     groups_to_clean=("${SINGLE_GROUP}")
@@ -1309,7 +1362,8 @@ cleanup_completed_init_jobs() {
     groups_to_clean=("${!GROUP_JOBS[@]}")
   fi
 
-  local cleaned=0
+  # --- Iterate Jobs and apply cleanup strategy ---
+  local cleaned=0 skipped=0
   for group in "${groups_to_clean[@]}"; do
     local jobs="${GROUP_JOBS[${group}]:-}"
     [[ -z "${jobs}" ]] && continue
@@ -1319,33 +1373,66 @@ cleanup_completed_init_jobs() {
     for entry in "${job_entries[@]}"; do
       local ns="${entry%%/*}"
       local job_name="${entry##*/}"
-      # Check for completed, failed, or crash-looping Jobs
-      # All must be deleted so Fleet can recreate with updated spec (Jobs are immutable)
+
+      # Check Job status on downstream cluster
       local complete failed restarts
-      complete=$(kubectl get job "${job_name}" -n "${ns}" \
+      complete=$(kubectl --kubeconfig="${ds_kc}" get job "${job_name}" -n "${ns}" \
         -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || echo "")
-      failed=$(kubectl get job "${job_name}" -n "${ns}" \
+      failed=$(kubectl --kubeconfig="${ds_kc}" get job "${job_name}" -n "${ns}" \
         -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || echo "")
-      restarts=$(kubectl get pods -n "${ns}" -l "job-name=${job_name}" \
+      restarts=$(kubectl --kubeconfig="${ds_kc}" get pods -n "${ns}" -l "job-name=${job_name}" \
         -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
-      if [[ "${complete}" == "True" ]]; then
-        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
-        log_info "Deleted completed Job: ${ns}/${job_name}"
-        cleaned=$((cleaned + 1))
-      elif [[ "${failed}" == "True" ]]; then
-        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+
+      # Always delete failed or crash-looping Jobs
+      if [[ "${failed}" == "True" ]]; then
+        kubectl --kubeconfig="${ds_kc}" delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
         log_info "Deleted failed Job: ${ns}/${job_name}"
         cleaned=$((cleaned + 1))
-      elif [[ "${restarts}" -gt 3 ]]; then
-        kubectl delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+        continue
+      fi
+      if [[ "${restarts:-0}" -gt 3 ]]; then
+        kubectl --kubeconfig="${ds_kc}" delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
         log_info "Deleted crash-looping Job (${restarts} restarts): ${ns}/${job_name}"
         cleaned=$((cleaned + 1))
+        continue
+      fi
+
+      # For completed Jobs: compare spec-hash annotation
+      if [[ "${complete}" == "True" ]]; then
+        local live_hash desired_hash
+        live_hash=$(kubectl --kubeconfig="${ds_kc}" get job "${job_name}" -n "${ns}" \
+          -o jsonpath='{.metadata.annotations.fleet\.aegisgroup\.ch/spec-hash}' 2>/dev/null || echo "")
+
+        # Compute desired hash from rendered manifest (excluding the annotation line itself)
+        local manifest_file="${rendered_dir}/${JOB_MANIFEST_FILES[${entry}]:-}"
+        if [[ -n "${manifest_file}" && -f "${manifest_file}" ]]; then
+          desired_hash=$(grep -v 'fleet\.aegisgroup\.ch/spec-hash:' "${manifest_file}" | sha256sum | awk '{print $1}')
+        else
+          desired_hash="UNKNOWN"
+        fi
+
+        if [[ -z "${live_hash}" ]]; then
+          # Legacy Job without annotation — delete so Fleet recreates with hash
+          kubectl --kubeconfig="${ds_kc}" delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+          log_info "Deleted completed Job (no spec-hash, legacy): ${ns}/${job_name}"
+          cleaned=$((cleaned + 1))
+        elif [[ "${live_hash}" != "${desired_hash}" ]]; then
+          # Hash mismatch — spec changed, delete to allow recreation
+          kubectl --kubeconfig="${ds_kc}" delete job "${job_name}" -n "${ns}" --ignore-not-found &>/dev/null
+          log_info "Deleted completed Job (spec changed): ${ns}/${job_name}"
+          cleaned=$((cleaned + 1))
+        else
+          # Hash matches — spec unchanged, skip deletion
+          skipped=$((skipped + 1))
+        fi
       fi
     done
   done
 
-  if [[ ${cleaned} -gt 0 ]]; then
-    log_ok "Cleaned up ${cleaned} completed init Job(s)"
+  rm -f "${ds_kc}"
+
+  if [[ ${cleaned} -gt 0 || ${skipped} -gt 0 ]]; then
+    log_ok "Job cleanup: ${cleaned} deleted, ${skipped} unchanged (skipped)"
   fi
 }
 

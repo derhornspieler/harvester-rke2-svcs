@@ -132,7 +132,7 @@ spec:
                   echo "Robot account created: ${ROBOT_FULL_NAME}"
 
                   # Store in Vault via harbor-init SA
-                  VAULT_ADDR="http://vault.vault.svc.cluster.local:8200"
+                  VAULT_ADDR="${VAULT_INTERNAL_URL}"
                   SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
                   VAULT_TOKEN=$(curl -sk --request POST \
                     --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"bootstrap-keycloak-harbor\"}" \

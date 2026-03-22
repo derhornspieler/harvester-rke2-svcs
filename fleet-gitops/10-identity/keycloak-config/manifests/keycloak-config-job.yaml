@@ -91,7 +91,7 @@ spec:
 
               DOMAIN="${DOMAIN}"
               KC_REALM="${KEYCLOAK_REALM}"
-              KC_URL="http://keycloak.keycloak.svc.cluster.local:8080"
+              KC_URL="${KEYCLOAK_INTERNAL_URL}"
               PLATFORM_ADMIN_USER="${PLATFORM_ADMIN_USER}"
               PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_USER}@${DOMAIN}"
 
@@ -513,7 +513,7 @@ spec:
                 "allowed_redirect_uris": ["https://vault.'"${DOMAIN}"'/ui/vault/auth/oidc/oidc/callback","http://localhost:8250/oidc/callback"],
                 "user_claim": "preferred_username",
                 "groups_claim": "groups",
-                "bound_claims": {"groups": ["platform-admins"]},
+                "bound_claims": {"groups": ["${RBAC_GROUP_ADMINS}"]},
                 "oidc_scopes": "openid,profile,email,groups",
                 "policies": "default,admin-policy",
                 "ttl": "1h"

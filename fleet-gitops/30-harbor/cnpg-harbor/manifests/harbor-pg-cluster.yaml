@@ -13,7 +13,7 @@ spec:
 
   bootstrap:
     initdb:
-      database: registry
+      database: ${HARBOR_DB_NAME}
       owner: harbor
       secret:
         name: harbor-pg-credentials

@@ -9,7 +9,7 @@ spec:
     selector:
       matchLabels:
         cnpg.io/cluster: gitlab-postgresql
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 200Gi
   increasePercent: 25
@@ -25,7 +25,7 @@ metadata:
 spec:
   target:
     pvcName: repo-data-gitlab-gitaly-default-0
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 300Gi
   increasePercent: 25
@@ -41,7 +41,7 @@ metadata:
 spec:
   target:
     pvcName: repo-data-gitlab-gitaly-default-1
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 300Gi
   increasePercent: 25
@@ -57,7 +57,7 @@ metadata:
 spec:
   target:
     pvcName: repo-data-gitlab-gitaly-default-2
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 300Gi
   increasePercent: 25
@@ -75,7 +75,7 @@ spec:
     selector:
       matchLabels:
         app: gitlab-redis
-  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
   thresholdPercent: 80
   maxSize: 50Gi
   increasePercent: 25
