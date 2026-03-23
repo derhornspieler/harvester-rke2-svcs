@@ -1,41 +1,41 @@
-# Tiered backup schedule for gitlab-postgresql
+# Tiered backup schedule for harbor-pg
 # Daily: 7-day recovery window | Weekly: 30-day rollback | Monthly: 90-day compliance
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: gitlab-postgresql-daily
+  name: harbor-pg-daily
   namespace: database
 spec:
-  schedule: "0 45 3 * * *"  # 03:45 UTC daily
+  schedule: "0 30 3 * * *"  # 03:30 UTC daily
   backupOwnerReference: self
   immediate: true
   cluster:
-    name: gitlab-postgresql
+    name: harbor-pg
   method: barmanObjectStore
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: gitlab-postgresql-weekly
+  name: harbor-pg-weekly
   namespace: database
 spec:
-  schedule: "0 45 4 * * 0"  # 04:45 UTC Sunday
+  schedule: "0 30 4 * * 0"  # 04:30 UTC Sunday
   backupOwnerReference: self
   immediate: true
   cluster:
-    name: gitlab-postgresql
+    name: harbor-pg
   method: barmanObjectStore
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: gitlab-postgresql-monthly
+  name: harbor-pg-monthly
   namespace: database
 spec:
-  schedule: "0 45 5 1 * *"  # 05:45 UTC 1st of month
+  schedule: "0 30 5 1 * *"  # 05:30 UTC 1st of month
   backupOwnerReference: self
   immediate: true
   cluster:
-    name: gitlab-postgresql
+    name: harbor-pg
   method: barmanObjectStore

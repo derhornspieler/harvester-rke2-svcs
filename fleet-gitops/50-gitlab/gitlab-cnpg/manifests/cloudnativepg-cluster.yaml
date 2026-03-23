@@ -98,6 +98,6 @@ spec:
         secretAccessKey:
           name: cnpg-minio-credentials
           key: ACCESS_SECRET_KEY
-    retentionPolicy: "1d"
+    retentionPolicy: "90d"
 
   enableSuperuserAccess: false

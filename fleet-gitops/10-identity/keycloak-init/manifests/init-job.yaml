@@ -58,6 +58,9 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "create", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "patch"]
   - apiGroups: ["external-secrets.io"]
     resources: ["secretstores"]
     verbs: ["get", "create", "patch", "update"]
@@ -276,6 +279,18 @@ spec:
               SAEOF
               done
               log "[INFO] Downstream eso-secrets ServiceAccounts created"
+
+              # --- Copy vault-root-ca ConfigMap to keycloak namespace ---
+              log "[INFO] Copying vault-root-ca ConfigMap to keycloak namespace..."
+              if kubectl get configmap vault-root-ca -n kube-system >/dev/null 2>&1; then
+                kubectl create configmap vault-root-ca \
+                  --namespace=keycloak \
+                  --from-literal="ca.crt=$(kubectl get configmap vault-root-ca -n kube-system -o jsonpath='{.data.ca\.crt}')" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                log "[INFO] vault-root-ca ConfigMap created in keycloak namespace"
+              else
+                log "[WARN] vault-root-ca ConfigMap not found in kube-system — skipping"
+              fi
 
               log "[INFO] keycloak-init complete"
           volumeMounts:
