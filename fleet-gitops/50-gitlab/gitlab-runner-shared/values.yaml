@@ -1,5 +1,6 @@
 # Helm values for GitLab shared (instance-wide) runner
 # Chart: gitlab/gitlab-runner
+# Rollout: 2026-03-23 — SA token refresh after RBAC recreation
 
 replicas: 1
 
@@ -57,6 +58,10 @@ rbac:
 serviceAccount:
   create: false
   name: gitlab-runner-sa
+
+## Pod annotations — used to trigger rollouts when SA tokens need refresh
+podAnnotations:
+  platform.example.com/rollout: "2026-03-23T0130Z"
 
 ## VAULT_CACERT tells the runner's Vault secret resolver where to find
 ## the private CA so it can verify the Vault TLS certificate

@@ -1,5 +1,6 @@
 # Helm values for GitLab terraform-runner
 # Chart: gitlab/gitlab-runner
+# Rollout: 2026-03-23 — SA token refresh after RBAC recreation
 #
 # This runner executes Terraform-based infrastructure builds (golden images,
 # etc.). The heavy lifting runs inside a Harvester utility VM -- the runner
@@ -18,7 +19,7 @@ runners:
   secret: gitlab-gitlab-runner-secret
   config: |
     [[runners]]
-      name = "terraform-runner"
+      name = "terraform"
       executor = "kubernetes"
       pre_build_script = """
       # Trust the private CA
@@ -55,10 +56,10 @@ runners:
         [runners.kubernetes.pod_labels]
           "app.kubernetes.io/managed-by" = "gitlab-runner"
         [runners.kubernetes.pod_annotations]
-          "terraform-runner" = "true"
+          "terraform" = "true"
 
-  ## Tags -- only jobs tagged with "terraform-runner" run here
-  tags: "terraform-runner"
+  ## Tags -- only jobs tagged with "terraform" run here
+  tags: "terraform"
 
 ## Runner pod node selector (the runner manager pod itself)
 nodeSelector:
@@ -71,6 +72,10 @@ rbac:
 serviceAccount:
   create: false
   name: gitlab-runner-sa
+
+## Pod annotations — used to trigger rollouts when SA tokens need refresh
+podAnnotations:
+  platform.example.com/rollout: "2026-03-23T0130Z"
 
 ## VAULT_CACERT tells the runner's Vault secret resolver where to find
 ## the private CA so it can verify the Vault TLS certificate
