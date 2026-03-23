@@ -119,6 +119,37 @@ sync-to-github:
       git clone --branch main "${CI_REPOSITORY_URL}" "${WORK_DIR}"
       cd "${WORK_DIR}"
 
+      # Strip sync-to-github job from .gitlab-ci.yml (keep CI visible on GitHub)
+      python3 - .gitlab-ci.yml << 'STRIP_SYNC'
+      import sys, re
+      lines = open(sys.argv[1]).read().split('\n')
+      lines = [l for l in lines if l.strip() != '- sync']
+      idx = next((i for i,l in enumerate(lines) if l.startswith('sync-to-github:')), None)
+      if idx is not None:
+          d = idx
+          for i in range(idx-1, max(idx-15,-1), -1):
+              if lines[i].strip().startswith('#') or lines[i].strip() == '': d = i
+              else: break
+          while d > 0 and lines[d-1].strip() == '': d -= 1
+          lines = lines[:d]
+      pat = re.compile(r'sync-to-github|[Ss]yncs?\s+to\s+[Gg]it[Hh]ub|[Ss]anitized\s+push|github-mirror|github.sanitize|[Rr]emoves?\s+PII|sensitive\s+configs?\s+before\s+pushing', re.I)
+      out, i = [], 0
+      while i < len(lines):
+          if lines[i].strip().startswith('#') and pat.search(lines[i]):
+              i += 1
+              while i < len(lines) and lines[i].strip().startswith('#') and not lines[i].strip().startswith('# ---') and not lines[i].strip().startswith('# ==='):
+                  r = lines[i].strip()[1:].strip()
+                  if r and r[0].islower(): i += 1
+                  else: break
+              continue
+          out.append(lines[i]); i += 1
+      while out and out[-1].strip() == '': out.pop()
+      out.append('')
+      open(sys.argv[1],'w').write('\n'.join(out))
+      STRIP_SYNC
+      git add .gitlab-ci.yml
+      git commit -m "ci: strip sync-to-github for public mirror" --allow-empty 2>/dev/null || true
+
       # Create PII replacement map
       cat > /tmp/replacements.txt << 'REPLACEMENTS'
       example.com==>example.com
@@ -135,7 +166,6 @@ sync-to-github:
         --path-glob 'fleet-gitops/root-ca.pem' --invert-paths \
         --path-glob 'GIT_LOG.txt' --invert-paths \
         --path-glob 'scripts/github-sanitize.sh' --invert-paths \
-        --path-glob '.gitlab-ci.yml' --invert-paths \
         --path-glob 'CLAUDE.md' --invert-paths \
         --path-glob '.claude' --invert-paths \
         --path-glob 'memory' --invert-paths \

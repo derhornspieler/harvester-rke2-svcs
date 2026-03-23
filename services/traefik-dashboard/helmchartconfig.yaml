@@ -22,6 +22,8 @@ spec:
       initContainers:
         - name: combine-ca
           image: docker.io/library/alpine:3.21
+          securityContext:
+            allowPrivilegeEscalation: false
           command:
             - sh
             - -c

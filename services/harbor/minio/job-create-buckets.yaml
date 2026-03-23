@@ -13,6 +13,8 @@ spec:
       containers:
         - name: mc
           image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+          securityContext:
+            allowPrivilegeEscalation: false
           env:
             - name: MINIO_ROOT_USER
               valueFrom:

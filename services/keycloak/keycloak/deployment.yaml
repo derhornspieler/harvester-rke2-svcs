@@ -42,6 +42,8 @@ spec:
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:26.0.8
+          securityContext:
+            allowPrivilegeEscalation: false
           args:
             - start
           ports:
