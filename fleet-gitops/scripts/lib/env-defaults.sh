@@ -32,7 +32,7 @@ export MINIO_INTERNAL_URL="${MINIO_INTERNAL_URL:-http://minio.minio.svc.cluster.
 export MINIO_INTERNAL_HOST="${MINIO_INTERNAL_HOST:-minio.minio.svc.cluster.local}"
 export PROMETHEUS_INTERNAL_URL="${PROMETHEUS_INTERNAL_URL:-http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090}"
 export LOKI_INTERNAL_URL="${LOKI_INTERNAL_URL:-http://loki.monitoring.svc:3100}"
-export KEYCLOAK_INTERNAL_URL="${KEYCLOAK_INTERNAL_URL:-http://keycloak.keycloak.svc.cluster.local:8080}"
+export KEYCLOAK_INTERNAL_URL="${KEYCLOAK_INTERNAL_URL:-http://keycloak-http.keycloak.svc.cluster.local:8080}"
 
 # --- Database hosts ---
 export KEYCLOAK_DB_HOST="${KEYCLOAK_DB_HOST:-keycloak-pg-rw.database.svc.cluster.local}"
@@ -130,6 +130,7 @@ export OCI_CHART_ARGO_ROLLOUTS="${OCI_CHART_ARGO_ROLLOUTS:-${OCI_HELM_PREFIX}/ar
 export OCI_CHART_ARGO_WORKFLOWS="${OCI_CHART_ARGO_WORKFLOWS:-${OCI_HELM_PREFIX}/argo-workflows}"
 export OCI_CHART_GITLAB="${OCI_CHART_GITLAB:-${OCI_HELM_PREFIX}/gitlab}"
 export OCI_CHART_GITLAB_RUNNER="${OCI_CHART_GITLAB_RUNNER:-${OCI_HELM_PREFIX}/gitlab-runner}"
+export OCI_CHART_KEYCLOAKX="${OCI_CHART_KEYCLOAKX:-${OCI_HELM_PREFIX}/keycloak-chart}"
 
 # --- Label prefix for platform-managed resources ---
 export LABEL_PREFIX="${LABEL_PREFIX:-platform.${DOMAIN}}"
@@ -293,6 +294,7 @@ ${CHART_VER_CNPG} ${CHART_VER_REDIS_OPERATOR} ${CHART_VER_EXTERNAL_DNS}
 ${CHART_VER_PROMETHEUS_CRDS} ${CHART_VER_PROMETHEUS_STACK}
 ${CHART_VER_HARBOR} ${CHART_VER_ARGOCD} ${CHART_VER_ARGO_ROLLOUTS}
 ${CHART_VER_ARGO_WORKFLOWS} ${CHART_VER_GITLAB} ${CHART_VER_GITLAB_RUNNER}
+${CHART_VER_KEYCLOAKX} ${OCI_CHART_KEYCLOAKX}
 ${ROOT_CA_PEM_CONTENT} ${ROOT_CA_PEM_B64}
 ${ROOT_CA_PEM_INDENT2} ${ROOT_CA_PEM_INDENT4} ${ROOT_CA_PEM_INDENT8}
 ${VAULT_PKI_MOUNT}

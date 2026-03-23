@@ -52,7 +52,9 @@ BUNDLES=(
   "05-pki-secrets/vault-bootstrap-store:pki-vault-bootstrap-store"
   # 10-identity: Keycloak + CNPG
   "10-identity/cnpg-keycloak:identity-cnpg-keycloak"
-  "10-identity/keycloak:identity-keycloak"
+  "10-identity/keycloak-init:identity-keycloak-init"
+  # identity-keycloak is now a Helm chart bundle (fleet.yaml + values.yaml)
+  # — deployed via HelmOps referencing OCI chart directly, not pushed as a bundle
   "10-identity/keycloak-config:identity-keycloak-config"
   # 11-infra-auth: OAuth2-proxy for infra services
   "11-infra-auth/traefik-auth:infra-auth-traefik"
