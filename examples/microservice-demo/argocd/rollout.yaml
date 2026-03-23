@@ -16,6 +16,8 @@ spec:
       containers:
         - name: app
           image: harbor.CHANGEME_DOMAIN/library/microservice-demo:latest
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - name: http
               containerPort: 8080
