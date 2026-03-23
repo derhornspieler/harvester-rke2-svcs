@@ -120,7 +120,8 @@ HELMOP_DEFS=(
 
   # 10-identity (3 self-contained bundles, no shared init-lib.sh)
   "identity-cnpg-keycloak|oci://${HARBOR}/fleet/identity-cnpg-keycloak|${BUNDLE_VERSION}|database|identity-cnpg-keycloak|pki-vault-bootstrap-store,operators-cnpg|"
-  "identity-keycloak|oci://${HARBOR}/fleet/identity-keycloak|${BUNDLE_VERSION}|keycloak|identity-keycloak|identity-cnpg-keycloak,operators-prometheus-crds|"
+  "identity-keycloak-init|oci://${HARBOR}/fleet/identity-keycloak-init|${BUNDLE_VERSION}|keycloak|identity-keycloak-init|identity-cnpg-keycloak,pki-vault-bootstrap-store|"
+  "identity-keycloak|${OCI_CHART_KEYCLOAKX}|${CHART_VER_KEYCLOAKX}|keycloak|identity-keycloak|identity-keycloak-init,identity-cnpg-keycloak,operators-prometheus-crds|10-identity/keycloak/values.yaml"
   "identity-keycloak-config|oci://${HARBOR}/fleet/identity-keycloak-config|${BUNDLE_VERSION}|keycloak|identity-keycloak-config|identity-keycloak|"
 
   # 15-dns (depends on pki — FreeIPA must be running externally)
@@ -543,7 +544,7 @@ purge_harbor_oci() {
   local bundle_names=(
     operators-cluster-autoscaler operators-overprovisioning operators-node-labeler operators-storage-autoscaler operators-gateway-api-crds
     pki-vault-init pki-vault-init-wait pki-vault-unsealer pki-vault-pki-issuer pki-vault-bootstrap-store
-    identity-cnpg-keycloak identity-keycloak identity-keycloak-config
+    identity-cnpg-keycloak identity-keycloak-init identity-keycloak identity-keycloak-config
     infra-auth-traefik infra-auth-vault infra-auth-hubble
     dns-external-dns-secrets
     monitoring-init monitoring-cnpg-grafana monitoring-secrets monitoring-loki monitoring-alloy monitoring-ingress-auth
@@ -587,6 +588,166 @@ purge_harbor_oci() {
   done
 
   log_ok "Harbor OCI purge complete"
+}
+
+# ============================================================
+# Helper: recreate a HelmOp from a HELMOP_DEFS entry
+# ============================================================
+create_helmop_from_def() {
+  local entry="$1"
+  local name oci_repo version namespace release depends values_file
+  IFS='|' read -r name oci_repo version namespace release depends values_file <<< "${entry}"
+  create_helmop "${name}" "${oci_repo}" "${version}" \
+    "${namespace}" "${release}" "${depends}" "${values_file}"
+}
+
+# ============================================================
+# Self-heal stuck bundles (Modified with missing resources)
+# ============================================================
+# Fleet's Helm deployer sometimes marks bundles "Deployed: True" but
+# doesn't actually create the resources on the downstream cluster.
+# Deleting the generated Bundle CR forces Fleet to re-apply from the
+# HelmOp, which resolves the issue.
+heal_stuck_bundles() {
+  local max_wait="${1:-300}"  # Default 5 min
+  local poll_interval=15
+  local elapsed=0
+  local healed=0
+
+  log_info "Waiting for bundle convergence (up to ${max_wait}s)..."
+
+  while (( elapsed < max_wait )); do
+    local stuck_bundles=()
+
+    for entry in "${HELMOP_DEFS[@]}"; do
+      IFS='|' read -r name _ _ _ _ _ _ <<< "${entry}"
+
+      # Query bundle status
+      local bundle_json
+      bundle_json=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${name}" 2>/dev/null || echo "{}")
+
+      # Check for "Modified" state with "missing" resources
+      local has_missing
+      has_missing=$(echo "${bundle_json}" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    summary=d.get('status',{}).get('summary',{})
+    modified=summary.get('modified',0)
+    if modified == 0:
+        sys.exit(0)
+    for nr in summary.get('nonReadyResources',[]):
+        for ms in nr.get('modifiedStatus',[]):
+            if ms.get('missing'):
+                print(nr.get('name',''))
+                sys.exit(0)
+except: pass
+" 2>/dev/null || echo "")
+
+      if [[ -n "${has_missing}" ]]; then
+        stuck_bundles+=("${name}")
+      fi
+    done
+
+    if (( ${#stuck_bundles[@]} == 0 )); then
+      if (( healed > 0 )); then
+        log_ok "All stuck bundles recovered (${healed} healed)"
+      fi
+      return 0
+    fi
+
+    if (( elapsed > 0 && elapsed % 60 == 0 )); then
+      # After waiting, heal stuck bundles by deleting both HelmOp + Bundle,
+      # then recreating the HelmOp. Fleet only regenerates Bundles when the
+      # HelmOp is created/updated — deleting just the Bundle is not enough.
+      for stuck_name in "${stuck_bundles[@]}"; do
+        log_warn "Bundle ${stuck_name} stuck in Modified (missing resources) — force-recreating HelmOp"
+        # Delete Bundle CR first (downstream resources will be cleaned up)
+        rancher_api DELETE "/v1/fleet.cattle.io.bundles/fleet-default/${stuck_name}" > /dev/null 2>&1 || true
+        # Delete the HelmOp so we can recreate it
+        rancher_api DELETE "/v1/fleet.cattle.io.helmops/fleet-default/${stuck_name}" > /dev/null 2>&1 || true
+        sleep 5
+        # Find and recreate the HelmOp from HELMOP_DEFS
+        for def_entry in "${HELMOP_DEFS[@]}"; do
+          local def_name
+          IFS='|' read -r def_name _ _ _ _ _ _ <<< "${def_entry}"
+          if [[ "${def_name}" == "${stuck_name}" ]]; then
+            create_helmop_from_def "${def_entry}" || log_warn "Failed to recreate HelmOp ${stuck_name}"
+            break
+          fi
+        done
+        (( ++healed ))
+      done
+      log_info "Recreated ${#stuck_bundles[@]} stuck HelmOps — waiting for Fleet to deploy"
+
+      # Also reset Helm releases for bundles that depend on healed bundles.
+      # These may have started before the healed bundle's resources existed,
+      # causing Jobs to fail with stale auth/config. Deleting their Helm
+      # releases forces Fleet to re-deploy them with correct ordering.
+      local ds_kc_heal
+      ds_kc_heal=$(mktemp /tmp/ds-kubeconfig-heal.XXXXXX)
+      local _cluster_id
+      _cluster_id=$(rancher_api GET "/v3/clusters" 2>/dev/null | \
+        python3 -c "import sys,json; [print(c['id']) for c in json.load(sys.stdin).get('data',[]) if c['name']=='${FLEET_TARGET_CLUSTER}']" 2>/dev/null | head -1)
+      rancher_api POST "/v3/clusters/${_cluster_id}?action=generateKubeconfig" 2>/dev/null | \
+        python3 -c "import json,sys; print(json.load(sys.stdin)['config'])" > "${ds_kc_heal}" 2>/dev/null || true
+
+      if [[ -s "${ds_kc_heal}" ]]; then
+        for stuck_name in "${stuck_bundles[@]}"; do
+          # Find bundles that depend on the healed bundle
+          for def_entry in "${HELMOP_DEFS[@]}"; do
+            local dep_name dep_depends
+            IFS='|' read -r dep_name _ _ dep_ns _ dep_depends _ <<< "${def_entry}"
+            if [[ "${dep_depends}" == *"${stuck_name}"* && "${dep_name}" != "${stuck_name}" ]]; then
+              # Delete Helm releases for this dependent bundle on downstream cluster
+              local release_name="${dep_name}"
+              local deleted_releases
+              deleted_releases=$(kubectl --kubeconfig="${ds_kc_heal}" delete secrets -n "${dep_ns}" \
+                -l "name=${release_name},owner=helm" --ignore-not-found 2>&1 | grep -c "deleted" || echo "0")
+              if (( deleted_releases > 0 )); then
+                log_info "Reset downstream Helm release for dependent: ${dep_name} (depends on ${stuck_name})"
+              fi
+            fi
+          done
+        done
+      fi
+      rm -f "${ds_kc_heal}"
+    else
+      log_info "  ${#stuck_bundles[@]} bundle(s) not yet converged: ${stuck_bundles[*]} (${elapsed}s/${max_wait}s)"
+    fi
+
+    sleep "${poll_interval}"
+    (( elapsed += poll_interval ))
+  done
+
+  # Final check
+  local remaining=()
+  for entry in "${HELMOP_DEFS[@]}"; do
+    IFS='|' read -r name _ _ _ _ _ _ <<< "${entry}"
+    local has_missing
+    has_missing=$(rancher_api GET "/v1/fleet.cattle.io.bundles/fleet-default/${name}" 2>/dev/null | \
+      python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    for nr in d.get('status',{}).get('summary',{}).get('nonReadyResources',[]):
+        for ms in nr.get('modifiedStatus',[]):
+            if ms.get('missing'):
+                print('stuck')
+                sys.exit(0)
+except: pass
+" 2>/dev/null || echo "")
+    [[ -n "${has_missing}" ]] && remaining+=("${name}")
+  done
+
+  if (( ${#remaining[@]} > 0 )); then
+    log_warn "Bundles still stuck after ${max_wait}s: ${remaining[*]}"
+    log_warn "These may require manual investigation"
+    return 1
+  fi
+
+  log_ok "All bundles converged (${healed} healed)"
+  return 0
 }
 
 # ============================================================
@@ -737,6 +898,9 @@ load_config
 # Render templates (substitutes env vars into YAML for values files)
 log_info "Rendering templates..."
 "${SCRIPT_DIR}/render-templates.sh"
+
+# Re-inject spec-hash annotations (render-templates.sh overwrites them)
+"${SCRIPT_DIR}/compute-job-hashes.sh" 2>/dev/null || true
 
 echo -e "${BOLD}${BLUE}============================================================${NC}"
 echo -e "${BOLD}${BLUE}  Fleet GitOps — HelmOp Deployment${NC}"
@@ -1306,7 +1470,7 @@ cleanup_completed_init_jobs() {
   declare -A JOB_MANIFEST_FILES=(
     ["vault/vault-init"]="05-pki-secrets/vault-init/manifests/vault-init-job.yaml"
     ["vault/vault-init-wait"]="05-pki-secrets/vault-init-wait/manifests/vault-init-wait-job.yaml"
-    ["keycloak/keycloak-init"]="10-identity/keycloak/manifests/init-job.yaml"
+    ["keycloak/keycloak-init"]="10-identity/keycloak-init/manifests/init-job.yaml"
     ["keycloak/keycloak-config"]="10-identity/keycloak-config/manifests/keycloak-config-job.yaml"
     ["database/database-init"]="10-identity/cnpg-keycloak/manifests/init-job.yaml"
     ["monitoring/monitoring-init"]="20-monitoring/monitoring-init/manifests/monitoring-init-job.yaml"
@@ -1492,6 +1656,9 @@ if [[ "${DRY_RUN}" != true ]]; then
     echo ""
     echo -e "${BOLD}${BLUE}--- Post-Deploy Convergence Phase ---${NC}"
     echo ""
+
+    # 0. Heal stuck bundles (Fleet sometimes fails to apply resources on first deploy)
+    heal_stuck_bundles 300 || log_warn "Some bundles may need manual investigation"
 
     # 1. Sign Vault intermediate CSR (Vault must be running and init must generate CSR)
     sign_vault_intermediate_csr

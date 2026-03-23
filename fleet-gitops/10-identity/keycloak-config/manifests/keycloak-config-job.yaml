@@ -192,7 +192,7 @@ spec:
               DEFAULT_PLATFORM_ADMIN_PASS="$(head -c 24 /dev/urandom | base64)"
 
               # --- Wait for Keycloak to be reachable ---
-              KC_HEALTH_URL="http://keycloak.keycloak.svc.cluster.local:9000"
+              KC_HEALTH_URL="http://keycloak-http.keycloak.svc.cluster.local:9000"
               log "[INFO] Waiting for Keycloak health at ${KC_HEALTH_URL}..."
               for i in $(seq 1 60); do
                 if curl -sf --http1.1 --connect-timeout 5 "${KC_HEALTH_URL}/health/ready" >/dev/null 2>&1; then

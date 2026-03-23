@@ -43,6 +43,7 @@ OCI_CHARTS=(
   "argo-cd|${OCI_SRC_ARGOCD}|${CHART_VER_ARGOCD}"
   "argo-rollouts|${OCI_SRC_ARGO_ROLLOUTS}|${CHART_VER_ARGO_ROLLOUTS}"
   "argo-workflows|${OCI_SRC_ARGO_WORKFLOWS}|${CHART_VER_ARGO_WORKFLOWS}"
+  "keycloak-chart|${OCI_SRC_KEYCLOAKX}|${CHART_VER_KEYCLOAKX}"
 )
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
@@ -52,6 +53,13 @@ log "Logging into Harbor OCI registry..."
 echo "${HARBOR_PASS}" | helm registry login "${HARBOR}" \
   --username "${HARBOR_USER}" \
   --password-stdin 2>/dev/null
+
+# Login to DHI OCI registry (Docker Hardened Images)
+if [[ -n "${DHI_USER:-}" ]]; then
+  log "Logging into DHI OCI registry..."
+  echo "${DHI_PASS}" | helm registry login dhi.io \
+    --username "${DHI_USER}" --password-stdin 2>/dev/null
+fi
 
 # Repo-based charts: add repo, pull, push
 for entry in "${CHARTS[@]}"; do
