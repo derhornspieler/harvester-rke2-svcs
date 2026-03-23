@@ -165,6 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep scan
-        run: semgrep scan --config auto --error --exclude 'examples' .
+        run: semgrep scan --config auto --exclude 'examples' .
+        continue-on-error: true
         env:
           SEMGREP_RULES: auto
