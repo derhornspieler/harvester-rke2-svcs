@@ -31,7 +31,7 @@ All artifacts are stored in a single OCI-compatible registry. Change
 | argo-workflows | `CHART_VER_ARGO_WORKFLOWS` | `OCI_SRC_ARGO_WORKFLOWS` (OCI-native) | argo-workflows |
 | gitlab | `CHART_VER_GITLAB` | `HELM_REPO_GITLAB` | gitlab |
 | gitlab-runner (shared) | `CHART_VER_GITLAB_RUNNER` | `HELM_REPO_GITLAB` | gitlab-runners |
-| gitlab-runner (golden-image) | `CHART_VER_GITLAB_RUNNER` | `HELM_REPO_GITLAB` | gitlab-runners |
+| gitlab-runner (terraform) | `CHART_VER_GITLAB_RUNNER` | `HELM_REPO_GITLAB` | gitlab-runners |
 
 ## Container Images (19 pinned in .env)
 

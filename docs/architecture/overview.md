@@ -219,7 +219,7 @@ graph TD
 - 20-monitoring: Observability stack (Prometheus, Grafana, Loki, Alloy)
 - 30-harbor: Container registry (uses shared MinIO)
 - 40-gitops: ArgoCD + Rollouts + Workflows
-- 50-gitlab: Source control + CI/CD (13 bundles, includes runners and golden images)
+- 50-gitlab: Source control + CI/CD (13 bundles, includes shared + terraform runners)
 
 ---
 

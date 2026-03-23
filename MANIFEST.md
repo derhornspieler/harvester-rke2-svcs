@@ -98,6 +98,6 @@ These CRDs are provided by the RKE2 cluster or Rancher and are not managed by th
 | 20-monitoring | 7 | Prometheus stack, Grafana, Loki, Alloy, monitoring-init, monitoring-secrets, ingress-auth |
 | 30-harbor | 7 | Harbor, MinIO, Valkey, CNPG (Harbor DB), harbor-init, harbor-manifests, harbor-secrets |
 | 40-gitops | 11 | ArgoCD, Argo Rollouts, Argo Workflows, init jobs, manifests, credentials, analysis-templates |
-| 50-gitlab | 10 | GitLab core, CNPG, Redis, runners (shared + golden-image), init jobs, credentials |
+| 50-gitlab | 10 | GitLab core, CNPG, Redis, runners (shared + terraform), init jobs, credentials |
 
 **Source of truth:** `fleet-gitops/.env`
