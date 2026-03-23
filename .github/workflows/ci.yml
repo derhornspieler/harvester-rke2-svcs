@@ -50,7 +50,7 @@ jobs:
         run: pip install yamllint
       - name: Run yamllint
         run: |
-          find services/ -name '*.yaml' -not -path '*/.git/*' \
+          find services/ fleet-gitops/ -name '*.yaml' -not -path '*/.git/*' \
             | xargs yamllint -c .github/linters/.yamllint.yml
 
   # -------------------------------------------------------------------

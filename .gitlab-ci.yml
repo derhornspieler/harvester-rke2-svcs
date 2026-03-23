@@ -223,7 +223,6 @@ sync-to-github:
       # Pass 1: Replace PII in file content + remove sensitive files
       git filter-repo \
         --replace-text /tmp/replacements.txt \
-        --path-glob 'fleet-gitops/' --invert-paths \
         --path-glob 'GIT_LOG.txt' --invert-paths \
         --path-glob 'scripts/github-sanitize.sh' --invert-paths \
         --path-glob 'CLAUDE.md' --invert-paths \
