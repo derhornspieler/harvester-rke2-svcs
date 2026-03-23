@@ -17,5 +17,15 @@ diff:
       operations:
         - op: remove
           path: /status
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      operations:
+        - op: remove
+          path: /status
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: ScheduledBackup
+      operations:
+        - op: remove
+          path: /status
 targets:
   - clusterName: ${FLEET_TARGET_CLUSTER}

@@ -93,12 +93,26 @@ extraEnv: |
       secretKeyRef:
         name: keycloak-admin-secret
         key: KC_BOOTSTRAP_ADMIN_PASSWORD
+  - name: KC_TRUSTSTORE_PATHS
+    value: /etc/keycloak/certs/ca.crt
 
 # --- Extra ports (JGroups for kubernetes cache stack) ---
 extraPorts:
   - name: jgroups
     containerPort: 7800
     protocol: TCP
+
+# --- Mount platform root CA for LDAPS and private TLS trust ---
+extraVolumeMounts: |
+  - name: vault-root-ca
+    mountPath: /etc/keycloak/certs/ca.crt
+    subPath: ca.crt
+    readOnly: true
+
+extraVolumes: |
+  - name: vault-root-ca
+    configMap:
+      name: vault-root-ca
 
 # --- Resources (requests only, no limits — allows bursting) ---
 resources:

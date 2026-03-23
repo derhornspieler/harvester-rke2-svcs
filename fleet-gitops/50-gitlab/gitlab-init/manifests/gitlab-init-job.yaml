@@ -394,21 +394,17 @@ spec:
                 access_key=$(vault kv get -field=accesskey "kv/${vault_path}" 2>/dev/null || true)
                 secret_key=$(vault kv get -field=secretkey "kv/${vault_path}" 2>/dev/null || true)
 
-                if [[ -n "${access_key}" && -n "${secret_key}" ]]; then
-                  if mc admin user info myminio "${access_key}" >/dev/null 2>&1; then
-                    log "[INFO] MinIO user already exists for: ${user_name}"
-                    return 0
-                  fi
+                if [[ -z "${access_key}" || -z "${secret_key}" ]]; then
+                  # Generate new credentials if none in Vault
+                  access_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20 || true)
+                  secret_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 40 || true)
+                  log "[INFO] Generated new MinIO credentials for: ${user_name}"
                 fi
 
-                # Generate credentials
-                access_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20 || true)
-                secret_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 40 || true)
-
-                # Create IAM user
+                # Always reconcile: mc admin user add is idempotent (creates or updates)
                 mc admin user add myminio "${access_key}" "${secret_key}"
 
-                # Create scoped IAM policy
+                # Ensure scoped IAM policy exists and is attached
                 local policy_json
                 policy_json=$(jq -n \
                   --arg prefix "${bucket_prefix}" \
@@ -424,15 +420,17 @@ spec:
                     }]
                   }')
 
-                echo "${policy_json}" | mc admin policy create myminio "${user_name}-policy" /dev/stdin
-                mc admin policy attach myminio "${user_name}-policy" --user "${access_key}"
+                echo "${policy_json}" | mc admin policy create myminio "${user_name}-policy" /dev/stdin 2>/dev/null \
+                  || log "[INFO] Policy ${user_name}-policy already exists"
+                mc admin policy attach myminio "${user_name}-policy" --user "${access_key}" 2>/dev/null \
+                  || log "[INFO] Policy ${user_name}-policy already attached"
 
                 # Store in Vault (accesskey/secretkey — matches ExternalSecret property names)
                 vault_kv_put "${vault_path}" \
                   accesskey="${access_key}" \
                   secretkey="${secret_key}"
 
-                log "[INFO] Created MinIO IAM user: ${user_name}"
+                log "[INFO] Reconciled MinIO IAM user: ${user_name}"
               }
 
               ###################################################################

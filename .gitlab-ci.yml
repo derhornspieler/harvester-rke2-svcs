@@ -1,8 +1,8 @@
 # =============================================================================
 # GitLab CI — harvester-rke2-svcs
 # =============================================================================
-# Wiki sync pipeline: keeps docs/ and GitLab wiki in sync bidirectionally.
-# Also syncs to GitHub remote on push.
+# Lint pipeline: shellcheck, yamllint, helm lint on MRs and main.
+# Sync pipeline: sanitized push to GitHub mirror on main.
 # =============================================================================
 
 stages:
@@ -15,10 +15,34 @@ variables:
 
 default:
   tags:
-    - shared
+    - terraform
 
 # ---------------------------------------------------------------------------
-# Lint: yamllint on push
+# Lint: shellcheck on all shell scripts
+# ---------------------------------------------------------------------------
+shellcheck:
+  stage: lint
+  image: docker.io/alpine:3.21
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apk add --no-cache shellcheck bash
+  script:
+    - |
+      echo "Running shellcheck on all .sh files..."
+      ERRORS=0
+      while IFS= read -r -d '' file; do
+        if ! shellcheck -x "${file}"; then
+          ERRORS=$((ERRORS + 1))
+        fi
+      done < <(find scripts/ fleet-gitops/ -name '*.sh' -not -path '.git/*' -print0)
+      echo "shellcheck complete: ${ERRORS} file(s) with issues"
+      if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
+  allow_failure: true
+
+# ---------------------------------------------------------------------------
+# Lint: yamllint on fleet-gitops and services YAML
 # ---------------------------------------------------------------------------
 yamllint:
   stage: lint
@@ -29,13 +53,49 @@ yamllint:
   before_script:
     - apk add --no-cache yamllint
   script:
-    - yamllint -c .yamllint.yml . || true
+    - yamllint -c .yamllint.yml fleet-gitops/ services/
   allow_failure: true
 
 # ---------------------------------------------------------------------------
-# Wiki sync jobs disabled — CI job token can't write to wiki in GitLab 18.x
-# Re-enable once a project access token is configured for wiki push access
+# Lint: helm lint on all Fleet Helm values
 # ---------------------------------------------------------------------------
+helm-lint:
+  stage: lint
+  image: docker.io/alpine/helm:3.17.3
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      echo "Running helm lint on Fleet bundles with values.yaml..."
+      ERRORS=0
+      for values_file in $(find fleet-gitops/ -name 'values.yaml' -type f); do
+        bundle_dir=$(dirname "${values_file}")
+        fleet_yaml="${bundle_dir}/fleet.yaml"
+        if [ ! -f "${fleet_yaml}" ]; then
+          continue
+        fi
+        # Extract chart name from fleet.yaml (helm.chart field)
+        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"')
+        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"')
+        if [ -z "${chart}" ] || [ -z "${repo}" ]; then
+          echo "SKIP: ${values_file} (no helm chart/repo in fleet.yaml)"
+          continue
+        fi
+        echo "Linting: ${chart} (${values_file})"
+        # Add repo and lint — helm lint validates values structure
+        repo_name="lint-$(echo "${chart}" | tr '/' '-')"
+        if helm repo add "${repo_name}" "${repo}" --force-update 2>/dev/null; then
+          if ! helm lint "${repo_name}/${chart}" -f "${values_file}" 2>&1; then
+            ERRORS=$((ERRORS + 1))
+          fi
+        else
+          echo "SKIP: could not add repo ${repo} (air-gapped or auth required)"
+        fi
+      done
+      echo "helm lint complete: ${ERRORS} chart(s) with issues"
+      if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
+  allow_failure: true
 
 # ---------------------------------------------------------------------------
 # Sync: Sanitized push to GitHub mirror (on push to main)
