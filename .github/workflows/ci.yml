@@ -11,6 +11,9 @@ permissions:
   contents: read
 
 jobs:
+  # -------------------------------------------------------------------
+  # Secret Scanning
+  # -------------------------------------------------------------------
   gitleaks:
     name: Secret Scanning
     runs-on: ubuntu-latest
@@ -22,6 +25,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # -------------------------------------------------------------------
+  # ShellCheck
+  # -------------------------------------------------------------------
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
@@ -32,6 +38,9 @@ jobs:
           find . -name '*.sh' -not -path './.git/*' \
             | xargs shellcheck --severity=warning
 
+  # -------------------------------------------------------------------
+  # YAML Lint
+  # -------------------------------------------------------------------
   yamllint:
     name: YAML Lint
     runs-on: ubuntu-latest
@@ -44,6 +53,32 @@ jobs:
           find services/ -name '*.yaml' -not -path '*/.git/*' \
             | xargs yamllint -c .github/linters/.yamllint.yml
 
+  # -------------------------------------------------------------------
+  # JSON Lint
+  # -------------------------------------------------------------------
+  jsonlint:
+    name: JSON Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON files
+        run: |
+          find . -name '*.json' \
+            -not -path './.git/*' \
+            -not -path './node_modules/*' \
+            -not -path './.claude/*' \
+            | while read -r f; do
+                if ! python3 -m json.tool "$f" > /dev/null 2>&1; then
+                  echo "INVALID: $f"
+                  python3 -m json.tool "$f"
+                  exit 1
+                fi
+              done
+          echo "All JSON files valid"
+
+  # -------------------------------------------------------------------
+  # Markdown Lint
+  # -------------------------------------------------------------------
   markdownlint:
     name: Markdown Lint
     runs-on: ubuntu-latest
@@ -56,6 +91,9 @@ jobs:
             **/*.md
             !.github/**
 
+  # -------------------------------------------------------------------
+  # Kustomize Validate
+  # -------------------------------------------------------------------
   kustomize:
     name: Kustomize Validate
     runs-on: ubuntu-latest
@@ -115,3 +153,18 @@ jobs:
         run: kustomize build services/gitlab/runners/
       - name: Build GitLab monitoring
         run: kustomize build services/gitlab/monitoring/
+
+  # -------------------------------------------------------------------
+  # SAST — Semgrep
+  # -------------------------------------------------------------------
+  semgrep:
+    name: SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: semgrep scan --config auto --error .
+        env:
+          SEMGREP_RULES: auto
