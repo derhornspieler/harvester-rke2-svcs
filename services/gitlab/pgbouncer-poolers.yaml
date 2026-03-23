@@ -33,6 +33,8 @@ spec:
         workload-type: database
       containers:
         - name: pgbouncer
+          securityContext:
+            allowPrivilegeEscalation: false
           resources:
             requests:
               cpu: 50m
@@ -68,6 +70,8 @@ spec:
         workload-type: database
       containers:
         - name: pgbouncer
+          securityContext:
+            allowPrivilegeEscalation: false
           resources:
             requests:
               cpu: 50m
