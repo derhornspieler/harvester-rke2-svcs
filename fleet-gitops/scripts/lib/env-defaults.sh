@@ -130,7 +130,7 @@ export OCI_CHART_ARGO_ROLLOUTS="${OCI_CHART_ARGO_ROLLOUTS:-${OCI_HELM_PREFIX}/ar
 export OCI_CHART_ARGO_WORKFLOWS="${OCI_CHART_ARGO_WORKFLOWS:-${OCI_HELM_PREFIX}/argo-workflows}"
 export OCI_CHART_GITLAB="${OCI_CHART_GITLAB:-${OCI_HELM_PREFIX}/gitlab}"
 export OCI_CHART_GITLAB_RUNNER="${OCI_CHART_GITLAB_RUNNER:-${OCI_HELM_PREFIX}/gitlab-runner}"
-export OCI_CHART_KEYCLOAKX="${OCI_CHART_KEYCLOAKX:-${OCI_HELM_PREFIX}/keycloak-chart}"
+export OCI_CHART_KEYCLOAKX="${OCI_CHART_KEYCLOAKX:-oci://${HARBOR_HOST}/dhi.io/keycloak-chart}"
 
 # --- Label prefix for platform-managed resources ---
 export LABEL_PREFIX="${LABEL_PREFIX:-platform.${DOMAIN}}"
