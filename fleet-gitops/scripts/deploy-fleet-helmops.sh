@@ -176,7 +176,7 @@ HELMOP_DEFS=(
   "gitlab-manifests|oci://${HARBOR}/fleet/gitlab-manifests|${BUNDLE_VERSION}|gitlab|gitlab-manifests|gitlab-ready,gitlab-init,operators-gateway-api-crds|"
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
-  "gitlab-runner-golden-image|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-golden-image|gitlab-runners|50-gitlab/gitlab-runner-golden-image/values.yaml"
+  "gitlab-runner-terraform|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-terraform|gitlab-runners|50-gitlab/gitlab-runner-terraform/values.yaml"
 )
 
 # ============================================================
@@ -861,7 +861,7 @@ import json,sys
       vault "$@"
   }
 
-  # Seed Harvester kubeconfig (for golden-image-builder runner)
+  # Seed Harvester kubeconfig (for terraform-runner)
   local existing
   existing=$(_vexec kv get -field=kubeconfig kv/services/ci/harvester-kubeconfig 2>/dev/null || true)
   if [[ -n "${existing}" ]]; then

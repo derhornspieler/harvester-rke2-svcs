@@ -474,7 +474,7 @@ seed_manual_secrets() {
     log_warn "No GITLAB_LICENSE in .env — seeded empty placeholder (Community Edition)"
   fi
 
-  # Harvester kubeconfig (used by golden-image-builder runner to orchestrate builds)
+  # Harvester kubeconfig (used by terraform-runner to orchestrate builds)
   if [[ -n "${HARVESTER_KUBECONFIG_PATH:-}" && -f "${HARVESTER_KUBECONFIG_PATH}" ]]; then
     local existing_kubeconfig
     existing_kubeconfig=$(vexec kv get -field=kubeconfig kv/services/ci/harvester-kubeconfig 2>/dev/null || true)

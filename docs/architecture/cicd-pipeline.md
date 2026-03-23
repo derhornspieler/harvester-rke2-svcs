@@ -354,7 +354,7 @@ The `gitlab-ci` service account is a Keycloak user created by the `keycloak-conf
 
 ### GitLab Bundle Structure (50-gitlab group)
 
-The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runners + golden image system:
+The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runners system:
 
 | Bundle # | Bundle Name | Purpose | Depends On | Notes |
 |----------|-----------|---------|-----------|-------|
@@ -367,9 +367,9 @@ The **50-gitlab** bundle group (13 bundles) deploys the entire GitLab EE + Runne
 | 44 | gitlab-manifests | Additional Gateway, RBAC, StorageClass, NetworkPolicy | gitlab-ready | Manifests for operations |
 | 45 | gitlab-runners | Runner namespace + executor init Job | gitlab-ready | Runner infrastructure setup |
 | 46 | gitlab-runner-shared | Shared runners (Kubernetes executor, uses Harbor images) | gitlab-runners | Distributed job execution |
-| 47 | gitlab-runner-golden-image | Golden image builder (VM-based, uses Harvester) | gitlab-runners | Golden image CI pipeline |
+| 47 | gitlab-runner-terraform | Terraform runner (VM-based, uses Harvester) | gitlab-runners | Infrastructure CI pipeline |
 
-**Critical design**: `gitlab-credentials` (Bundle 41) deploys immediately after `gitlab-redis` (Bundle 40) and before `gitlab-core` (Bundle 42). The `gitlab-credentials` bundle contains a **PushSecret** that seeds CI credentials into Vault during the synchronization. This allows the credentials to be pulled by `gitlab-core` at startup, and by `gitlab-runner-golden-image` when the ExternalSecret syncs (default 5-minute refresh interval).
+**Critical design**: `gitlab-credentials` (Bundle 41) deploys immediately after `gitlab-redis` (Bundle 40) and before `gitlab-core` (Bundle 42). The `gitlab-credentials` bundle contains a **PushSecret** that seeds CI credentials into Vault during the synchronization. This allows the credentials to be pulled by `gitlab-core` at startup, and by `gitlab-runner-terraform` when the ExternalSecret syncs (default 5-minute refresh interval).
 
 **Bundles 38-44 are pure infrastructure** (no user-facing services). Bundles 45-47 scale with the platform.
 

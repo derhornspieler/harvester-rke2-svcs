@@ -97,7 +97,7 @@ When bundle groups 05-pki-secrets (Vault) through 50-gitlab deploy:
 **Step 2: CI Secret Generation via PushSecret (during Bundle 41: gitlab-credentials)**
 The `gitlab-credentials` bundle (Bundle 41, deployed right after `gitlab-redis`) contains **PushSecret** resources that auto-generate CI secrets and push them to Vault:
 - These credentials are required by `gitlab-core` at startup
-- They're also required by `gitlab-runner-golden-image` to access CI systems
+- They're also required by `gitlab-runner-terraform` to access CI systems
 - By deploying `gitlab-credentials` before `gitlab-core`, we ensure credentials exist before consumption
 
 **Step 3: Manual Secret Seeding (Phase 6 Post-Deploy)**
@@ -308,14 +308,14 @@ For one-time initialization (writing config files, seeding databases), an init c
 
 When a service needs to generate credentials at deployment time and push them to Vault (rather than pulling pre-existing secrets from Vault), the **External Secrets PushSecret** resource is used:
 
-**Use Case:** GitLab CI pipeline credentials (Gitaly token, Praefect token, Praefect DB secret, MinIO storage credentials) must be generated and stored in Vault before `gitlab-core` and `gitlab-runner-golden-image` can pull and use them.
+**Use Case:** GitLab CI pipeline credentials (Gitaly token, Praefect token, Praefect DB secret, MinIO storage credentials) must be generated and stored in Vault before `gitlab-core` and `gitlab-runner-terraform` can pull and use them.
 
 **Bundle Deployment Order (Critical):**
 1. **Bundle 39** (`gitlab-cnpg`) deploys — database ready
 2. **Bundle 40** (`gitlab-redis`) deploys — cache ready
 3. **Bundle 41** (`gitlab-credentials`) deploys — PushSecrets push generated credentials to Vault
 4. **Bundle 42** (`gitlab-core`) deploys — pulls credentials from Vault via ExternalSecret
-5. **Bundle 47** (`gitlab-runner-golden-image`) pulls same credentials for image builds
+5. **Bundle 47** (`gitlab-runner-terraform`) pulls same credentials for infrastructure builds
 
 **PushSecret Process:**
 
@@ -337,7 +337,7 @@ gitlab-credentials bundle (Bundle 41)
 gitlab-core bundle (Bundle 42, depends on 41)
   └── ExternalSecret pulls kv/services/gitlab/* paths (already populated by 41)
 
-gitlab-runner-golden-image bundle (Bundle 47, depends on 41)
+gitlab-runner-terraform bundle (Bundle 47, depends on 41)
   └── ExternalSecret pulls kv/services/gitlab/* paths (same source)
 ```
 

@@ -53,7 +53,7 @@ Bundle groups deploy in strict order, each depending on previous ones. For detai
 | 20-monitoring | 7 | Prometheus, Grafana, Loki, Alloy, Hubble, Alertmanager | 05-pki-secrets, 11-infra-auth |
 | 30-harbor | 7 | Harbor registry, MinIO, Harbor database (CNPG), Valkey cache | 05-pki-secrets, 11-infra-auth |
 | 40-gitops | 9 | ArgoCD, Argo Rollouts, Argo Workflows + initialization | 05-pki-secrets, 10-identity, 11-infra-auth |
-| 50-gitlab | 13 | GitLab EE, Praefect/Gitaly, Runners, golden image builder, CNPG, Redis | 05-pki-secrets, 10-identity, 11-infra-auth, 30-harbor |
+| 50-gitlab | 13 | GitLab EE, Praefect/Gitaly, Runners, terraform-runner, CNPG, Redis | 05-pki-secrets, 10-identity, 11-infra-auth, 30-harbor |
 
 ## Step 1: Prepare Your Environment
 

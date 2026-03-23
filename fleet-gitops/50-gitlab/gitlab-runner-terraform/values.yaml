@@ -1,8 +1,9 @@
-# Helm values for GitLab golden-image-builder runner
+# Helm values for GitLab terraform-runner
 # Chart: gitlab/gitlab-runner
 #
-# This runner executes golden image builds. The heavy lifting runs inside
-# a Harvester utility VM -- the runner only needs Terraform + kubectl.
+# This runner executes Terraform-based infrastructure builds (golden images,
+# etc.). The heavy lifting runs inside a Harvester utility VM -- the runner
+# only needs Terraform + kubectl.
 
 replicas: 1
 
@@ -17,7 +18,7 @@ runners:
   secret: gitlab-gitlab-runner-secret
   config: |
     [[runners]]
-      name = "golden-image-builder"
+      name = "terraform-runner"
       executor = "kubernetes"
       pre_build_script = """
       # Trust the private CA
@@ -37,7 +38,7 @@ runners:
         image = "hashicorp/terraform:1.12"
         service_account = "gitlab-runner-sa"
         pull_policy = ["if-not-present"]
-        # Golden image builds take 30-60 minutes
+        # Terraform builds (golden images etc.) take 30-60 minutes
         poll_timeout = 7200
         [runners.kubernetes.node_selector]
           "workload-type" = "compute"
@@ -54,10 +55,10 @@ runners:
         [runners.kubernetes.pod_labels]
           "app.kubernetes.io/managed-by" = "gitlab-runner"
         [runners.kubernetes.pod_annotations]
-          "golden-image-builder" = "true"
+          "terraform-runner" = "true"
 
-  ## Tags -- only jobs tagged with "golden-image-builder" run here
-  tags: "golden-image-builder"
+  ## Tags -- only jobs tagged with "terraform-runner" run here
+  tags: "terraform-runner"
 
 ## Runner pod node selector (the runner manager pod itself)
 nodeSelector:
