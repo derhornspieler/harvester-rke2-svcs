@@ -619,8 +619,32 @@ heal_stuck_bundles() {
   while (( elapsed < max_wait )); do
     local stuck_bundles=()
 
+    # NEVER self-heal stateful bundles — deleting the Bundle CR cascades
+    # to downstream resources (CNPG clusters, Redis, Vault). Data loss.
+    local -a HEAL_EXCLUSIONS=(
+      identity-cnpg-keycloak
+      monitoring-cnpg-grafana
+      harbor-cnpg
+      gitlab-cnpg
+      gitlab-redis
+      harbor-valkey
+      pki-vault
+    )
+
     for entry in "${HELMOP_DEFS[@]}"; do
       IFS='|' read -r name _ _ _ _ _ _ <<< "${entry}"
+
+      # Skip stateful bundles — never auto-heal databases or data stores
+      local skip=false
+      for excl in "${HEAL_EXCLUSIONS[@]}"; do
+        if [[ "${name}" == "${excl}" ]]; then
+          skip=true
+          break
+        fi
+      done
+      if [[ "${skip}" == "true" ]]; then
+        continue
+      fi
 
       # Query bundle status
       local bundle_json
