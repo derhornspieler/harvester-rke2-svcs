@@ -1095,17 +1095,30 @@ for c in json.load(sys.stdin).get('data',[]):
     fi
   fi
 
-  # Seed GitLab Enterprise license activation code (or empty placeholder so ESO doesn't fail)
+  # Seed GitLab Enterprise license (activation code or offline license file)
+  # Priority: offline license file (GITLAB_LICENSE_FILE) > online activation code (GITLAB_LICENSE)
   local license_check
   license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
-  if [[ -n "${license_check}" ]]; then
+  local license_file_check
+  license_file_check=$(_vexec kv get -field=license-file kv/services/gitlab 2>/dev/null || true)
+
+  if [[ -n "${license_check}" || -n "${license_file_check}" ]]; then
     log_ok "GitLab license already in Vault"
+  elif [[ -n "${GITLAB_LICENSE_FILE:-}" ]]; then
+    if [[ ! -f "${GITLAB_LICENSE_FILE}" ]]; then
+      log_err "GITLAB_LICENSE_FILE points to '${GITLAB_LICENSE_FILE}' but file does not exist"
+      return 1
+    fi
+    local license_content
+    license_content=$(<"${GITLAB_LICENSE_FILE}")
+    _vexec kv put kv/services/gitlab activation-code="" license-file="${license_content}"
+    log_ok "Seeded GitLab offline license file into Vault (services/gitlab)"
   elif [[ -n "${GITLAB_LICENSE:-}" ]]; then
-    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
-    log_ok "Seeded GitLab license into Vault (services/gitlab)"
+    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}" license-file=""
+    log_ok "Seeded GitLab activation code into Vault (services/gitlab)"
   else
-    _vexec kv put kv/services/gitlab activation-code=""
-    log_warn "No GITLAB_LICENSE in .env — seeded empty placeholder (Community Edition)"
+    _vexec kv put kv/services/gitlab activation-code="" license-file=""
+    log_warn "No GITLAB_LICENSE or GITLAB_LICENSE_FILE in .env — seeded empty placeholders (Community Edition)"
   fi
 
   # Seed GitHub mirror credentials (for sanitized push from CI)

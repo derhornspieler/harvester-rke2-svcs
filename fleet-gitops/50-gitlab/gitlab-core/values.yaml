@@ -14,12 +14,19 @@
 global:
   edition: ee
 
-  ## Enterprise Activation Code (synced from Vault via ESO)
+  ## Enterprise License (synced from Vault via ESO)
+  ## Online activation: GITLAB_ACTIVATION_CODE env var (activation code string)
+  ## Offline activation: gitlab-license secret mounted as file via global.gitlab.license
   extraEnvFrom:
     GITLAB_ACTIVATION_CODE:
       secretKeyRef:
         name: gitlab-license
         key: activation-code
+
+  gitlab:
+    license:
+      secret: gitlab-license
+      key: license-file
 
   ## Shared MinIO from minio namespace
   minio:
