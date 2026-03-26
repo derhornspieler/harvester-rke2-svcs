@@ -1097,14 +1097,13 @@ for c in json.load(sys.stdin).get('data',[]):
 
   # Seed GitLab Enterprise license (activation code or offline license file)
   # Priority: offline license file (GITLAB_LICENSE_FILE) > online activation code (GITLAB_LICENSE)
+  # Uses kv patch to backfill new keys without clobbering existing values.
   local license_check
   license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
   local license_file_check
   license_file_check=$(_vexec kv get -field=license-file kv/services/gitlab 2>/dev/null || true)
 
-  if [[ -n "${license_check}" || -n "${license_file_check}" ]]; then
-    log_ok "GitLab license already in Vault"
-  elif [[ -n "${GITLAB_LICENSE_FILE:-}" ]]; then
+  if [[ -n "${GITLAB_LICENSE_FILE:-}" ]]; then
     if [[ ! -f "${GITLAB_LICENSE_FILE}" ]]; then
       log_err "GITLAB_LICENSE_FILE points to '${GITLAB_LICENSE_FILE}' but file does not exist"
       return 1
@@ -1114,8 +1113,18 @@ for c in json.load(sys.stdin).get('data',[]):
     _vexec kv put kv/services/gitlab activation-code="" license-file="${license_content}"
     log_ok "Seeded GitLab offline license file into Vault (services/gitlab)"
   elif [[ -n "${GITLAB_LICENSE:-}" ]]; then
-    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}" license-file=""
-    log_ok "Seeded GitLab activation code into Vault (services/gitlab)"
+    if [[ -n "${license_check}" ]]; then
+      # Backfill license-file key if missing from prior deployment
+      _vexec kv patch kv/services/gitlab license-file="" 2>/dev/null || true
+      log_ok "GitLab activation code already in Vault (ensured license-file key exists)"
+    else
+      _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}" license-file=""
+      log_ok "Seeded GitLab activation code into Vault (services/gitlab)"
+    fi
+  elif [[ -n "${license_check}" ]]; then
+    # Existing deployment — backfill license-file key if missing
+    _vexec kv patch kv/services/gitlab license-file="" 2>/dev/null || true
+    log_ok "GitLab license already in Vault (ensured license-file key exists)"
   else
     _vexec kv put kv/services/gitlab activation-code="" license-file=""
     log_warn "No GITLAB_LICENSE or GITLAB_LICENSE_FILE in .env — seeded empty placeholders (Community Edition)"
