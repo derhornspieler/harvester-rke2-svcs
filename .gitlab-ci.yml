@@ -10,10 +10,12 @@ stages:
 variables:
   GIT_SSL_CAINFO: /etc/ssl/certs/vault-root-ca.pem
   CURL_CA_BUNDLE: /etc/ssl/certs/vault-root-ca.pem
+  ALPINE_MIRROR: "https://alpine.${DOMAIN}/alpine"
 
 default:
   tags:
     - terraform
+    - shared
 
 # ---------------------------------------------------------------------------
 # Lint: shellcheck on all shell scripts
@@ -25,6 +27,8 @@ shellcheck:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
+    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|g" /etc/apk/repositories
+    - apk update
     - apk add --no-cache shellcheck bash
   script:
     - |
@@ -49,6 +53,8 @@ yamllint:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
+    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|g" /etc/apk/repositories
+    - apk update
     - apk add --no-cache yamllint
   script:
     - yamllint -c .yamllint.yml fleet-gitops/ services/
