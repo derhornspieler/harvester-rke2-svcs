@@ -10,7 +10,6 @@ stages:
 variables:
   GIT_SSL_CAINFO: /etc/ssl/certs/vault-root-ca.pem
   CURL_CA_BUNDLE: /etc/ssl/certs/vault-root-ca.pem
-  ALPINE_MIRROR: "https://alpine.${DOMAIN}/alpine"
 
 default:
   tags:
@@ -27,7 +26,9 @@ shellcheck:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
-    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|g" /etc/apk/repositories
+    - cp fleet-gitops/root-ca.pem /usr/local/share/ca-certificates/root-ca.crt
+    - update-ca-certificates
+    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|https://alpine.${DOMAIN}/alpine|g" /etc/apk/repositories
     - apk update
     - apk add --no-cache shellcheck bash
   script:
@@ -53,7 +54,9 @@ yamllint:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   before_script:
-    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|g" /etc/apk/repositories
+    - cp fleet-gitops/root-ca.pem /usr/local/share/ca-certificates/root-ca.crt
+    - update-ca-certificates
+    - sed -i "s|https://dl-cdn.alpinelinux.org/alpine|https://alpine.${DOMAIN}/alpine|g" /etc/apk/repositories
     - apk update
     - apk add --no-cache yamllint
   script:
