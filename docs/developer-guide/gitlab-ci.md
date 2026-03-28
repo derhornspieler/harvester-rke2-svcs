@@ -295,24 +295,28 @@ user with Developer access on the `platform` group). Keys are provided via
 
 ### Adding Your App to platform-deployments
 
-Before you can deploy, your app structure must exist in `platform-deployments`:
+Before you can deploy, your app's overlay must exist in `platform-deployments`:
 
 ```bash
 platform-deployments/
-  base/
-    microservice/                        # Shared Deployment, Service, HPA
   dev/<TEAM>/<APP>/
+    kustomization.yaml               # Kustomize overlay with image tag
+    deployment.yaml                   # Your Deployment, Service, etc.
+  staged/<TEAM>/<APP>/
     kustomization.yaml
-  staging/<TEAM>/<APP>/
-    kustomization.yaml
+    deployment.yaml
   prod/<TEAM>/<APP>/
     kustomization.yaml
+    deployment.yaml
 ```
 
-Platform team seeds the initial structure. To add your app:
+Each team owns their overlay structure — define your own Deployment, Service,
+Ingress, HPA, etc. directly in the overlay. No shared base required.
 
-1. Create a folder in `platform-deployments` (e.g., `dev/<TEAM>/<APP>`)
-2. Create `kustomization.yaml` referencing the base
+To add your app:
+
+1. Create your overlay folders in `platform-deployments` (e.g., `dev/<TEAM>/<APP>/`)
+2. Define your Kubernetes manifests and `kustomization.yaml`
 3. Submit MR for platform team review
 4. Once merged, your CI/CD deploy stage can update image tags
 
