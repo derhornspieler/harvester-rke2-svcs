@@ -1095,17 +1095,17 @@ for c in json.load(sys.stdin).get('data',[]):
     fi
   fi
 
-  # Seed GitLab Enterprise license activation code (or empty placeholder so ESO doesn't fail)
-  local license_check
-  license_check=$(_vexec kv get -field=activation-code kv/services/gitlab 2>/dev/null || true)
-  if [[ -n "${license_check}" ]]; then
-    log_ok "GitLab license already in Vault"
+  # GitLab license — always update from .env (licenses expire and get renewed)
+  # License file (.gitlab-license) takes precedence over activation code
+  if [[ -n "${GITLAB_LICENSE_CONTENT:-}" ]]; then
+    _vexec kv put kv/services/gitlab license="${GITLAB_LICENSE_CONTENT}" activation-code="" license-encryption-key="${GITLAB_LICENSE_KEY_CONTENT:-}"
+    log_ok "GitLab license file synced to Vault (services/gitlab)"
   elif [[ -n "${GITLAB_LICENSE:-}" ]]; then
-    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}"
-    log_ok "Seeded GitLab license into Vault (services/gitlab)"
+    _vexec kv put kv/services/gitlab activation-code="${GITLAB_LICENSE}" license="" license-encryption-key="${GITLAB_LICENSE_KEY_CONTENT:-}"
+    log_ok "GitLab activation code synced to Vault (services/gitlab)"
   else
-    _vexec kv put kv/services/gitlab activation-code=""
-    log_warn "No GITLAB_LICENSE in .env — seeded empty placeholder (Community Edition)"
+    _vexec kv put kv/services/gitlab activation-code="" license="" license-encryption-key=""
+    log_warn "No GITLAB_LICENSE or GITLAB_LICENSE_FILE in .env — seeded empty placeholder (Community Edition)"
   fi
 
   # Seed GitHub mirror credentials (for sanitized push from CI)
@@ -1128,10 +1128,11 @@ for c in json.load(sys.stdin).get('data',[]):
     fi
   fi
 
-  # NOTE: Platform GDT (Group Deploy Token) for CI push to platform-deployments
-  # is created automatically by the gitlab-admin-setup Job via Rails runner.
-  # No .env variables needed — the Job creates the token and seeds it to Vault
-  # at kv/services/ci/platform-deploy-token (username + token).
+  # NOTE: SSH deploy key for CI push to platform-deployments is created
+  # automatically by the gitlab-admin-setup Job. No .env variables needed —
+  # the Job generates an ed25519 key pair, uploads the public key to the
+  # platform-deployments project, and seeds the private key to Vault
+  # at kv/services/ci/platform-deploy-key (private_key + public_key).
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
