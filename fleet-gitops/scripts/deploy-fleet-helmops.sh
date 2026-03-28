@@ -178,9 +178,10 @@ HELMOP_DEFS=(
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
   "gitlab-runner-terraform|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-terraform|gitlab-runners|50-gitlab/gitlab-runner-terraform/values.yaml"
-  # 60-cicd-onboard: per-app platform onboarding jobs
-  "onboard-identity-portal|oci://${HARBOR}/fleet/onboard-identity-portal|${BUNDLE_VERSION}|harbor|onboard-identity-portal|harbor-init,identity-keycloak-config|"
-  "onboard-forge|oci://${HARBOR}/fleet/onboard-forge|${BUNDLE_VERSION}|harbor|onboard-forge|harbor-init,identity-keycloak-config|"
+  # 60-cicd-onboard: shared RBAC + per-app platform onboarding jobs
+  "onboard-rbac|oci://${HARBOR}/fleet/onboard-rbac|${BUNDLE_VERSION}|harbor|onboard-rbac||"
+  "onboard-identity-portal|oci://${HARBOR}/fleet/onboard-identity-portal|${BUNDLE_VERSION}|harbor|onboard-identity-portal|harbor-init,identity-keycloak-config,onboard-rbac|"
+  "onboard-forge|oci://${HARBOR}/fleet/onboard-forge|${BUNDLE_VERSION}|harbor|onboard-forge|harbor-init,identity-keycloak-config,onboard-rbac|"
 )
 
 # ============================================================
@@ -554,7 +555,7 @@ purge_harbor_oci() {
     harbor-init harbor-secrets minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-init gitops-rollouts-init gitops-workflows-init gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-init gitlab-cnpg-gitlab gitlab-redis gitlab-credentials gitlab-ready gitlab-manifests gitlab-runners
-    onboard-identity-portal onboard-forge
+    onboard-rbac onboard-identity-portal onboard-forge
   )
 
   for repo in "${bundle_names[@]}"; do
