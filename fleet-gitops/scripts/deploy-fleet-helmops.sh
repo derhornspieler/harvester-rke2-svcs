@@ -178,6 +178,8 @@ HELMOP_DEFS=(
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
   "gitlab-runner-terraform|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-terraform|gitlab-runners|50-gitlab/gitlab-runner-terraform/values.yaml"
+  # 60-cicd-onboard: per-app platform onboarding jobs
+  "onboard-identity-portal|oci://${HARBOR}/fleet/onboard-identity-portal|${BUNDLE_VERSION}|harbor|onboard-identity-portal|harbor-init,identity-keycloak-config|"
 )
 
 # ============================================================
@@ -551,6 +553,7 @@ purge_harbor_oci() {
     harbor-init harbor-secrets minio harbor-cnpg-harbor harbor-valkey harbor-manifests
     gitops-argocd-init gitops-rollouts-init gitops-workflows-init gitops-argocd-credentials gitops-argocd-manifests gitops-argocd-gitlab-setup gitops-argo-rollouts-manifests gitops-argo-workflows-manifests gitops-analysis-templates
     gitlab-init gitlab-cnpg-gitlab gitlab-redis gitlab-credentials gitlab-ready gitlab-manifests gitlab-runners
+    onboard-identity-portal
   )
 
   for repo in "${bundle_names[@]}"; do
@@ -1489,6 +1492,7 @@ cleanup_completed_init_jobs() {
     ["30-harbor"]="harbor/harbor-init harbor/harbor-oidc-setup minio/minio-init"
     ["40-gitops"]="argocd/argocd-init argocd/argocd-gitlab-setup argo-rollouts/rollouts-init argo-workflows/workflows-init"
     ["50-gitlab"]="gitlab/gitlab-init gitlab/gitlab-ready gitlab/vault-jwt-auth-setup gitlab/gitlab-admin-setup gitlab-runners/runner-secrets-setup"
+    ["60-cicd-onboard"]="harbor/onboard-identity-portal"
   )
 
   # Map: "namespace/job-name" → rendered manifest file (relative to rendered/)
@@ -1511,6 +1515,7 @@ cleanup_completed_init_jobs() {
     ["gitlab/vault-jwt-auth-setup"]="50-gitlab/gitlab-manifests/manifests/vault-jwt-auth-setup.yaml"
     ["gitlab/gitlab-admin-setup"]="50-gitlab/gitlab-manifests/manifests/gitlab-admin-setup.yaml"
     ["gitlab-runners/runner-secrets-setup"]="50-gitlab/gitlab-runners/manifests/runner-secrets-setup.yaml"
+    ["harbor/onboard-identity-portal"]="60-cicd-onboard/onboard-identity-portal/manifests/onboard-job.yaml"
   )
 
   local rendered_dir="${FLEET_DIR}/rendered"
@@ -1648,6 +1653,7 @@ for entry in "${HELMOP_DEFS[@]}"; do
       harbor-*|minio) group="30-harbor" ;;
       gitops-*)     group="40-gitops" ;;
       gitlab-*)     group="50-gitlab" ;;
+      onboard-*)    group="60-cicd-onboard" ;;
       *)            group="unknown" ;;
     esac
     if [[ "${group}" != "${SINGLE_GROUP}" ]]; then
