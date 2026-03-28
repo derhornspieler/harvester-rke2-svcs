@@ -1710,7 +1710,7 @@ if [[ "${DRY_RUN}" != true ]]; then
     echo ""
 
     # 0. Heal stuck bundles (Fleet sometimes fails to apply resources on first deploy)
-    local heal_timeout=300
+    heal_timeout=300
     if [[ "${CI_MODE}" == "true" ]]; then
       heal_timeout=120
       log_info "CI mode: reduced convergence timeout to ${heal_timeout}s"
