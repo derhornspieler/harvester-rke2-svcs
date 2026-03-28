@@ -1144,7 +1144,6 @@ for c in json.load(sys.stdin).get('data',[]):
 
   # Seed Fleet deploy credentials for CI pipeline
   log_info "Checking Fleet deploy credentials in Vault..."
-  local fleet_check
   fleet_check=$(_vexec kv get -field=rancher-url kv/services/ci/fleet-deploy 2>/dev/null || true)
   if [[ -n "${fleet_check}" ]]; then
     log_ok "Fleet deploy credentials already in Vault"
@@ -1156,6 +1155,21 @@ for c in json.load(sys.stdin).get('data',[]):
       harbor-pass="${HARBOR_PASS}"
     log_ok "Seeded Fleet deploy credentials into Vault (services/ci/fleet-deploy)"
   fi
+
+  # Ensure Fleet deploy Vault policy exists (idempotent)
+  log_info "Ensuring gitlab-ci-fleet-deploy Vault policy..."
+  _vexec policy write gitlab-ci-fleet-deploy - <<'FLEETPOLICY' 2>/dev/null || true
+path "kv/data/services/ci/fleet-deploy" {
+  capabilities = ["read"]
+}
+path "kv/metadata/services/ci/fleet-deploy" {
+  capabilities = ["read"]
+}
+path "kv/data/services/harbor/ci-robot" {
+  capabilities = ["read"]
+}
+FLEETPOLICY
+  log_ok "Fleet deploy policy ensured"
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
