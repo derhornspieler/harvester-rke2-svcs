@@ -16,7 +16,7 @@ Before your pipeline can build and push images:
    GitLab → Group → Settings → CI/CD → Variables → `DOMAIN`
 
 2. **Create your Harbor project** — Log in to Harbor (`harbor.dev.<DOMAIN>`)
-   via Keycloak and create a project matching your GitLab namespace (e.g., `forge`).
+   via Keycloak and create a project matching your GitLab group name.
    The platform robot account (`robot$ci-push`) has system-level push/pull access
    to all projects automatically.
 
@@ -40,14 +40,14 @@ Minimal `.gitlab-ci.yml` for a microservice with full CI/CD pipeline:
 include:
   - component: gitlab.example.com/infra_and_platform_services/ci-components/build@1.0.0
     inputs:
-      image_name: forge/svc-forge
+      image_name: <TEAM>/<APP>
 
   - component: gitlab.example.com/infra_and_platform_services/ci-components/scan@1.0.0
 
   - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
     inputs:
-      team: forge
-      app: svc-forge
+      team: <TEAM>
+      app: <APP>
 ```
 
 This gives you: secret detection, image build, vulnerability scan, SAST, and automated
@@ -102,22 +102,22 @@ include:
 
   - component: gitlab.example.com/infra_and_platform_services/ci-components/build@1.0.0
     inputs:
-      image_name: forge/svc-forge
+      image_name: <TEAM>/<APP>
 
   - component: gitlab.example.com/infra_and_platform_services/ci-components/scan@1.0.0
     inputs:
-      image_name: harbor.dev.example.com/forge/svc-forge:$CI_COMMIT_SHORT_SHA
+      image_name: harbor.dev.example.com/<TEAM>/<APP>:$CI_COMMIT_SHORT_SHA
 
   - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
     inputs:
-      team: forge
-      app: svc-forge
+      team: <TEAM>
+      app: <APP>
 ```
 
 **Stages:** lint → build → scan → deploy
 
 Each component handles its own Vault authentication and credentials.
-Your app must exist in `platform-deployments/dev/forge/svc-forge/` for deployment to work.
+Your app must exist in `platform-deployments/dev/<TEAM>/<APP>/` for deployment to work.
 
 ### Platform Service Pattern
 
@@ -228,8 +228,8 @@ Use the deploy CI Catalog component. Include it once with your team/app settings
 include:
   - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
     inputs:
-      team: forge
-      app: svc-forge
+      team: <TEAM>
+      app: <APP>
 ```
 
 This creates a `deploy:dev` job that auto-pushes image tags to the `dev` branch
@@ -244,8 +244,8 @@ the legacy templates alongside the catalog component:
 include:
   - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
     inputs:
-      team: forge
-      app: svc-forge
+      team: <TEAM>
+      app: <APP>
   - project: 'infra_and_platform_services/harvester-rke2-svcs'
     ref: main
     file: '/services/gitlab/ci-templates/jobs/deploy.yml'
@@ -253,14 +253,14 @@ include:
 promote:staged:
   extends: .deploy:promote-staged
   variables:
-    DEPLOY_TEAM: forge
-    DEPLOY_APP: svc-forge
+    DEPLOY_TEAM: <TEAM>
+    DEPLOY_APP: <APP>
 
 promote:prod:
   extends: .deploy:promote-prod
   variables:
-    DEPLOY_TEAM: forge
-    DEPLOY_APP: svc-forge
+    DEPLOY_TEAM: <TEAM>
+    DEPLOY_APP: <APP>
 ```
 
 Promotion jobs create a branch and print a link to create an MR in GitLab.
@@ -301,17 +301,17 @@ Before you can deploy, your app structure must exist in `platform-deployments`:
 platform-deployments/
   base/
     microservice/                        # Shared Deployment, Service, HPA
-  dev/forge/svc-forge/
+  dev/<TEAM>/<APP>/
     kustomization.yaml
-  staging/forge/svc-forge/
+  staging/<TEAM>/<APP>/
     kustomization.yaml
-  prod/forge/svc-forge/
+  prod/<TEAM>/<APP>/
     kustomization.yaml
 ```
 
 Platform team seeds the initial structure. To add your app:
 
-1. Create a folder in `platform-deployments` (e.g., `dev/forge/svc-forge`)
+1. Create a folder in `platform-deployments` (e.g., `dev/<TEAM>/<APP>`)
 2. Create `kustomization.yaml` referencing the base
 3. Submit MR for platform team review
 4. Once merged, your CI/CD deploy stage can update image tags
@@ -353,7 +353,7 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
   ```yaml
   images:
     - name: CHANGEME_IMAGE
-      newName: harbor.dev.<DOMAIN>/forge/svc-forge
+      newName: harbor.dev.<DOMAIN>/<TEAM>/<APP>
       newTag: latest
   ```
 
@@ -361,12 +361,12 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 
 - ArgoCD checks for changes every ~3 minutes (configurable)
 - Check ArgoCD logs: `kubectl logs -n argocd deployment/argocd-application-controller`
-- Manually trigger sync: `argocd app sync svc-forge-dev`
+- Manually trigger sync: `argocd app sync <APP>-dev`
 - Verify the git push was successful: `git log` in platform-deployments should show your commit
 
 ### "invalid username/password" on Harbor login
 
-- Verify the `forge` (or your) project exists in Harbor — log in via Keycloak and create it
+- Verify your project exists in Harbor — log in via Keycloak and create it
 - Check Vault has robot credentials: the platform deploys `robot$ci-push` automatically
 - The `$` in `robot$ci-push` must be escaped in shell scripts (`robot\$ci-push`)
 
