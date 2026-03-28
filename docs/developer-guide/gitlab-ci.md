@@ -393,6 +393,141 @@ wget --ca-certificate=/etc/ssl/certs/vault-root-ca.pem https://internal-service/
 Kaniko uses `${HARBOR_REGISTRY}/ci-cache/${CI_PROJECT_NAME}` for layer caching.
 The `ci-cache` project must exist in Harbor. Create it via Harbor UI if needed.
 
+## Pipeline Efficiency
+
+Techniques to reduce build times and avoid unnecessary work.
+
+### Skip Builds When Source Hasn't Changed
+
+Use `changes:` rules to only run jobs when relevant files are modified.
+This avoids rebuilding images when only docs or tests change:
+
+```yaml
+build:backend:
+  stage: build
+  script:
+    - buildah bud --layers -t "${IMAGE}:${CI_COMMIT_SHORT_SHA}" .
+    - buildah push "${IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - Dockerfile
+        - .dockerignore
+
+lint:frontend:
+  stage: lint
+  script:
+    - cd frontend && npm ci && npx eslint .
+  rules:
+    - changes:
+        - "frontend/**"
+```
+
+This pattern is used by identity-portal to skip backend builds when only
+frontend files change (and vice versa).
+
+### Docker Layer Caching
+
+Use `--layers` with Buildah or `--cache=true` with Kaniko to reuse
+previously built layers:
+
+```yaml
+# Buildah (recommended)
+buildah bud --layers \
+  -f Dockerfile \
+  -t "${IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+  -t "${IMAGE}:${CI_COMMIT_REF_SLUG}" \
+  .
+
+# Kaniko (alternative — stores cache in Harbor)
+/kaniko/executor \
+  --cache=true \
+  --cache-repo="${HARBOR_REGISTRY}/ci-cache/${CI_PROJECT_NAME}" \
+  --snapshot-mode=redo
+```
+
+For Kaniko caching, the `ci-cache` project must exist in Harbor.
+Create it via the Harbor UI if needed.
+
+### Dual-Tag Images
+
+Tag images with both the commit SHA and branch name. The SHA is immutable
+(used for deployments), the branch tag is mutable (useful for dev testing):
+
+```yaml
+- buildah push "${IMAGE}:${CI_COMMIT_SHORT_SHA}"
+- buildah push "${IMAGE}:${CI_COMMIT_REF_SLUG}"
+```
+
+### Promote Images Without Rebuilding
+
+Use `crane tag` to add production tags to an existing image digest.
+No rebuild needed — the same bytes are served under a new tag:
+
+```yaml
+promote:production:
+  stage: deploy-production
+  image: gcr.io/go-containerregistry/crane:latest
+  script:
+    - crane auth login "${REGISTRY}" -u "${HARBOR_USER}" -p "${HARBOR_PASS}"
+    - crane tag "${IMAGE}:${CI_COMMIT_SHORT_SHA}" "production"
+    - crane tag "${IMAGE}:${CI_COMMIT_SHORT_SHA}" "v${CI_PIPELINE_IID}"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+```
+
+### Skip Deploy When Tag Is Current
+
+The deploy template already checks if the image tag has changed before
+committing. If the tag in `platform-deployments` is already up to date,
+it skips the push:
+
+```yaml
+git add .
+if git diff --cached --quiet; then
+  echo "No changes — image tag already up to date"
+else
+  git commit -m "deploy: <APP> ${CI_COMMIT_SHORT_SHA} to dev"
+  git push origin dev
+fi
+```
+
+This prevents empty commits and unnecessary ArgoCD reconciliation.
+
+### Dependency Caching
+
+Cache package manager artifacts between pipeline runs:
+
+```yaml
+# Go modules
+cache:
+  key: go-${CI_PROJECT_PATH_SLUG}
+  paths:
+    - .go/pkg/mod/
+  policy: pull-push
+
+# Node.js
+cache:
+  key: node-${CI_PROJECT_PATH_SLUG}
+  paths:
+    - .npm/
+  policy: pull-push
+
+# Python
+cache:
+  key: pip-${CI_PROJECT_PATH_SLUG}
+  paths:
+    - .pip-cache/
+  policy: pull-push
+```
+
+Use `policy: pull-push` to read cache from previous builds and update
+it with new dependencies.
+
 ## Platform Deployment Pipeline (for platform operators)
 
 This section is for **platform operators managing the harvester-rke2-svcs repository**. Application developers should use the patterns in [Deploying to platform-deployments](#deploying-to-platform-deployments) above.
@@ -485,5 +620,5 @@ secret, then deletes the old token. No manual intervention needed.
 - [CI/CD Pipeline Architecture](../architecture/cicd-pipeline.md) — system design
 - [Secrets & Configuration](../architecture/secrets-configuration.md) — Vault paths
 - [platform-deployments Repository](../../examples/platform-deployments/) — repository structure and conventions
-- [2026-03-16 Platform Deployments Migration](../communications/2026-03-16-platform-deployments-migration.md) — detailed migration guide
+- [2026-03-16 Platform Deployments Migration](../../fleet-gitops/scripts/docs/communications/2026-03-16-platform-deployments-migration.md) — detailed migration guide
 - [Getting Started — Deployment section](../getting-started.md) — general deployment workflow
