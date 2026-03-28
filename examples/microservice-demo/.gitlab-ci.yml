@@ -1,15 +1,49 @@
+# Platform Demo — CI/CD Pipeline
+#
+# Uses CI Catalog components for standardized build/scan/deploy.
+# Browse components: https://gitlab.<DOMAIN>/explore/catalog
+#
+# Required: DOMAIN group-level CI variable (set by platform team)
+# All other credentials fetched from Vault at runtime.
+
 stages:
+  - lint
   - build
   - scan
   - deploy
 
-variables:
-  REGISTRY: harbor.dev.${DOMAIN}
-  HARBOR_PROXY: harbor.${DOMAIN}
-  IMAGE_NAME: ${REGISTRY}/library/microservice-demo
-  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+# ---------------------------------------------------------------------------
+# Lint — only runs when relevant files change
+# ---------------------------------------------------------------------------
+lint:go:
+  stage: lint
+  image: docker.io/golangci/golangci-lint:v2.7.2-alpine
+  script:
+    - golangci-lint run --timeout 5m ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
 
-# Build Docker image with Buildah
+lint:dockerfile:
+  stage: lint
+  image: docker.io/hadolint/hadolint:v2.12.0-alpine
+  script:
+    - hadolint Dockerfile
+  rules:
+    - changes:
+        - Dockerfile
+
+# ---------------------------------------------------------------------------
+# Build — skip if source files haven't changed
+# ---------------------------------------------------------------------------
 build:image:
   stage: build
   image: quay.io/buildah/stable:v1.39
@@ -17,72 +51,71 @@ build:image:
     VAULT_ID_TOKEN:
       aud: https://gitlab.${DOMAIN}
   variables:
-    STORAGE_DRIVER: vfs
     VAULT_ADDR: "https://vault.${DOMAIN}"
+    REGISTRY: "harbor.dev.${DOMAIN}"
+    IMAGE: "harbor.dev.${DOMAIN}/examples/platform-demo"
+    STORAGE_DRIVER: vfs
+    BUILDAH_FORMAT: docker
   before_script:
     - |
-      cat > /etc/containers/registries.conf <<REGISTRIES
-      unqualified-search-registries = ["docker.io"]
+      # Fetch Harbor push credentials from Vault
+      VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        --request POST \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" | jq -r '.auth.client_token')
 
-      [[registry]]
-      prefix = "docker.io"
-      location = "${HARBOR_PROXY}/docker.io"
+      HARBOR_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot")
 
-      [[registry]]
-      prefix = "gcr.io"
-      location = "${HARBOR_PROXY}/gcr.io"
-
-      [[registry]]
-      prefix = "ghcr.io"
-      location = "${HARBOR_PROXY}/ghcr.io"
-
-      [[registry]]
-      prefix = "quay.io"
-      location = "${HARBOR_PROXY}/quay.io"
-
-      [[registry]]
-      prefix = "registry.k8s.io"
-      location = "${HARBOR_PROXY}/registry.k8s.io"
-      REGISTRIES
-    - |
-      if [ -f /etc/ssl/certs/vault-root-ca.pem ]; then
-        cp /etc/ssl/certs/vault-root-ca.pem /etc/pki/ca-trust/source/anchors/ 2>/dev/null || true
-        update-ca-trust 2>/dev/null || true
-      fi
-    - buildah login -u "${HARBOR_CI_USER}" -p "${HARBOR_CI_PASSWORD}" "${REGISTRY}"
+      HARBOR_USER=$(echo "${HARBOR_CREDS}" | jq -r '.data.data.username')
+      HARBOR_PASS=$(echo "${HARBOR_CREDS}" | jq -r '.data.data.password')
+      buildah login -u "${HARBOR_USER}" -p "${HARBOR_PASS}" "${REGISTRY}"
   script:
     - |
       buildah bud --layers \
-        -f "$CI_PROJECT_DIR/Dockerfile" \
-        -t "$IMAGE_NAME:$IMAGE_TAG" \
-        "$CI_PROJECT_DIR"
-    - buildah push "$IMAGE_NAME:$IMAGE_TAG"
+        --build-arg "VERSION=${CI_COMMIT_SHORT_SHA}" \
+        -f Dockerfile \
+        -t "${IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        -t "${IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        .
+      buildah push "${IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      buildah push "${IMAGE}:${CI_COMMIT_REF_SLUG}"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - Dockerfile
+        - .dockerignore
 
-# Scan image with Trivy
-scan:image:
+# ---------------------------------------------------------------------------
+# Scan — runs on MRs and main
+# ---------------------------------------------------------------------------
+scan:trivy:
   stage: scan
-  image:
-    name: aquasec/trivy:0.58.2
-    entrypoint: [""]
+  image: docker.io/aquasec/trivy:0.60.0
   script:
-    - trivy image --severity HIGH,CRITICAL "$IMAGE_NAME:$IMAGE_TAG"
-  allow_failure: true
+    - trivy fs --severity HIGH,CRITICAL .
   rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
+  allow_failure: true
 
-# Deploy to dev via platform-deployments (SSH deploy key from Vault)
-# For production projects, use the reusable template instead of inline:
-#   include:
-#     - project: 'infra_and_platform_services/harvester-rke2-svcs'
-#       ref: main
-#       file: '/services/gitlab/ci-templates/jobs/deploy.yml'
-#   deploy:dev:
-#     extends: .deploy:platform-deployments
-#     variables:
-#       DEPLOY_TEAM: library
-#       DEPLOY_APP: microservice-demo
+scan:gitleaks:
+  stage: scan
+  image: docker.io/zricethezav/gitleaks:v8.24.3
+  script:
+    - gitleaks detect --source . --verbose --no-git
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+  allow_failure: true
+
+# ---------------------------------------------------------------------------
+# Deploy — push image tag to platform-deployments (SSH deploy key from Vault)
+# ---------------------------------------------------------------------------
 deploy:dev:
   stage: deploy
   image: docker.io/alpine/k8s:1.32.4
@@ -91,21 +124,21 @@ deploy:dev:
       aud: https://gitlab.${DOMAIN}
   variables:
     VAULT_ADDR: "https://vault.${DOMAIN}"
-    DEPLOY_TEAM: library
-    DEPLOY_APP: microservice-demo
+    DEPLOY_TEAM: examples
+    DEPLOY_APP: platform-demo
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   before_script:
     - apk add --no-cache git openssh-client curl jq
   script:
     - |
-      # Auth to Vault
+      # Authenticate to Vault
       VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         --request POST \
         --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
         "${VAULT_ADDR}/v1/auth/jwt/login" | jq -r '.auth.client_token')
 
-      # Fetch SSH deploy key from Vault
+      # Fetch SSH deploy key
       DEPLOY_KEY=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
         "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" | \
@@ -122,20 +155,17 @@ deploy:dev:
       chmod 600 ~/.ssh/deploy_key
       ssh-keyscan "gitlab.${DOMAIN}" >> ~/.ssh/known_hosts 2>/dev/null
       export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
-
-      # Clone platform-deployments (dev branch) via SSH
       git config --global user.name "CI Deploy"
       git config --global user.email "ci@deploy.local"
-      git clone --branch dev --depth 1 \
-        "git@gitlab.${DOMAIN}:platform/platform-deployments.git" \
-        /tmp/deploy
 
-      # Update image tag
+      # Clone platform-deployments and update image tag
+      git clone --branch dev --depth 1 \
+        "git@gitlab.${DOMAIN}:platform/platform-deployments.git" /tmp/deploy
       cd "/tmp/deploy/dev/${DEPLOY_TEAM}/${DEPLOY_APP}"
       kustomize edit set image \
-        "CHANGEME_IMAGE=${REGISTRY}/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}"
+        "CHANGEME_IMAGE=harbor.dev.${DOMAIN}/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}"
 
-      # Commit and push
+      # Push only if tag changed
       git add .
       if git diff --cached --quiet; then
         echo "No changes — image tag already up to date"
