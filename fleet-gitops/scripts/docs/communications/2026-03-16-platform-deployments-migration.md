@@ -52,31 +52,31 @@ $ docker push harbor.dev.example.com/forge/svc-forge:abc1234
 
 ### Step 2: Update the Image Tag (New Deploy Stage)
 
-Your CI/CD pipeline's **deploy stage** now updates a YAML file in `platform-deployments`:
+Your CI/CD pipeline's **deploy stage** now updates a YAML file in `platform-deployments`.
+
+The recommended approach is to use the **reusable deploy template** which handles Vault authentication and SSH key setup automatically:
 
 ```yaml
-deploy-dev:
-  stage: deploy
-  image: docker.io/alpine/k8s:1.32.4
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  script:
-    - |
-      # Clone the central deployments repo
-      git clone https://${CI_JOB_TOKEN_USER}:${CI_JOB_TOKEN}@gitlab.example.com/platform/platform-deployments.git
-      cd platform-deployments
+include:
+  - project: 'infra_and_platform_services/harvester-rke2-svcs'
+    ref: main
+    file: '/services/gitlab/ci-templates/jobs/deploy.yml'
 
-      # Update the image tag in your app's kustomization
-      cd dev/forge/svc-forge
-      kustomize edit set image CHANGEME_IMAGE=harbor.dev.example.com/forge/svc-forge:${CI_COMMIT_SHORT_SHA}
-
-      # Commit and push
-      git add .
-      git commit -m "deploy: svc-forge ${CI_COMMIT_SHORT_SHA} to dev"
-      git push origin main
-
-      # ✅ ArgoCD auto-syncs to dev within ~3 minutes
+deploy:dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_TEAM: forge
+    DEPLOY_APP: svc-forge
 ```
+
+This template:
+1. Authenticates to Vault using GitLab JWT
+2. Fetches the SSH deploy key from `kv/services/ci/platform-deploy-key`
+3. Clones `platform-deployments` via SSH
+4. Updates the image tag with `kustomize edit set image`
+5. Commits and pushes to the `dev` branch
+
+ArgoCD auto-syncs to dev within ~3 minutes.
 
 ### Step 3: ArgoCD Auto-Syncs (Already Happens)
 
@@ -129,38 +129,31 @@ platform-deployments/
 
 ### 2. Update Your CI Deploy Stage
 
-Add or modify your `.gitlab-ci.yml`:
+Include the reusable deploy template in your `.gitlab-ci.yml`:
 
 ```yaml
 # For Forge team (svc-forge)
-deploy-dev:
-  stage: deploy
-  image: docker.io/alpine/k8s:1.32.4
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  script:
-    - apk add --no-cache git curl
-    - git clone https://${CI_JOB_TOKEN_USER}:${CI_JOB_TOKEN}@gitlab.example.com/platform/platform-deployments.git
-    - cd platform-deployments
-    - cd dev/forge/svc-forge
-    - kustomize edit set image CHANGEME_IMAGE=harbor.dev.example.com/forge/svc-forge:${CI_COMMIT_SHORT_SHA}
-    - git add . && git commit -m "deploy: svc-forge ${CI_COMMIT_SHORT_SHA} to dev" && git push origin main
+include:
+  - project: 'infra_and_platform_services/harvester-rke2-svcs'
+    ref: main
+    file: '/services/gitlab/ci-templates/jobs/deploy.yml'
 
-deploy-staging:
-  stage: deploy
-  image: docker.io/alpine/k8s:1.32.4
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  script:
-    - apk add --no-cache git
-    - git clone https://${CI_JOB_TOKEN_USER}:${CI_JOB_TOKEN}@gitlab.example.com/platform/platform-deployments.git
-    - cd platform-deployments
-    - cd staging/forge/svc-forge
-    - kustomize edit set image CHANGEME_IMAGE=harbor.dev.example.com/forge/svc-forge:${CI_COMMIT_SHORT_SHA}
-    - git add . && git commit -m "deploy: svc-forge ${CI_COMMIT_SHORT_SHA} to staging" && git push origin main
-  # ℹ️ MR step (optional, for extra safety): create MR instead of direct push
-  #   Requires team+lead approval via CODEOWNERS
+deploy:dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_TEAM: forge
+    DEPLOY_APP: svc-forge
+
+# Staging promotion (manual trigger — creates MR to staged branch)
+promote:staged:
+  extends: .deploy:promote-staged
+  variables:
+    DEPLOY_TEAM: forge
+    DEPLOY_APP: svc-forge
 ```
+
+The template handles Vault authentication and SSH deploy key retrieval automatically.
+No CI variables or deploy tokens needed.
 
 ### 3. Promote to Production (When Ready)
 
