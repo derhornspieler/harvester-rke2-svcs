@@ -229,6 +229,32 @@ else
   export ROOT_CA_PEM_INDENT8="${ROOT_CA_PEM_INDENT8:-}"
 fi
 
+# --- GitLab license file content (read from file if provided) ---
+if [[ -n "${GITLAB_LICENSE_FILE:-}" && "${GITLAB_LICENSE_FILE}" != /* ]]; then
+  _ENV_DEFAULTS_DIR="${_ENV_DEFAULTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  _FLEET_DIR="${_FLEET_DIR:-$(dirname "$(dirname "${_ENV_DEFAULTS_DIR}")")}"
+  GITLAB_LICENSE_FILE="${_FLEET_DIR}/${GITLAB_LICENSE_FILE#./}"
+fi
+if [[ -n "${GITLAB_LICENSE_FILE:-}" && -f "${GITLAB_LICENSE_FILE}" ]]; then
+  export GITLAB_LICENSE_CONTENT
+  GITLAB_LICENSE_CONTENT="$(cat "${GITLAB_LICENSE_FILE}")"
+else
+  export GITLAB_LICENSE_CONTENT="${GITLAB_LICENSE_CONTENT:-}"
+fi
+
+# --- GitLab license encryption key (read from file if provided) ---
+if [[ -n "${GITLAB_LICENSE_KEY_FILE:-}" && "${GITLAB_LICENSE_KEY_FILE}" != /* ]]; then
+  _ENV_DEFAULTS_DIR="${_ENV_DEFAULTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+  _FLEET_DIR="${_FLEET_DIR:-$(dirname "$(dirname "${_ENV_DEFAULTS_DIR}")")}"
+  GITLAB_LICENSE_KEY_FILE="${_FLEET_DIR}/${GITLAB_LICENSE_KEY_FILE#./}"
+fi
+if [[ -n "${GITLAB_LICENSE_KEY_FILE:-}" && -f "${GITLAB_LICENSE_KEY_FILE}" ]]; then
+  export GITLAB_LICENSE_KEY_CONTENT
+  GITLAB_LICENSE_KEY_CONTENT="$(cat "${GITLAB_LICENSE_KEY_FILE}")"
+else
+  export GITLAB_LICENSE_KEY_CONTENT="${GITLAB_LICENSE_KEY_CONTENT:-}"
+fi
+
 # --- ENVSUBST variable list ---
 # Explicit list of variables that render-templates.sh will substitute.
 # Any $VAR not in this list is LEFT AS-IS (critical for embedded bash in Jobs).
@@ -300,4 +326,5 @@ ${ROOT_CA_PEM_INDENT2} ${ROOT_CA_PEM_INDENT4} ${ROOT_CA_PEM_INDENT8}
 ${VAULT_PKI_MOUNT}
 ${ORG}
 ${RANCHER_FQDN}
-${HARBOR_USER} ${HARBOR_PASS}'
+${HARBOR_USER} ${HARBOR_PASS}
+${BUNDLE_VERSION}'

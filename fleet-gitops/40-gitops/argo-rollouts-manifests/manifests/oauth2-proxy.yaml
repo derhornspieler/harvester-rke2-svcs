@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: oauth2-proxy
         app.kubernetes.io/instance: rollouts
+      annotations:
+        deploy-version: "${BUNDLE_VERSION}"
     spec:
       securityContext:
         runAsNonRoot: true

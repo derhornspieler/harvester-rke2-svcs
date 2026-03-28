@@ -18,6 +18,7 @@ spec:
         app: minio
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        deploy-version: "${BUNDLE_VERSION}"
     spec:
       nodeSelector:
         workload-type: database
