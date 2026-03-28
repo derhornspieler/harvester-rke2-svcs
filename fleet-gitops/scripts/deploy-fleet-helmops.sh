@@ -1158,18 +1158,21 @@ for c in json.load(sys.stdin).get('data',[]):
 
   # Ensure Fleet deploy Vault policy exists (idempotent)
   log_info "Ensuring gitlab-ci-fleet-deploy Vault policy..."
-  _vexec policy write gitlab-ci-fleet-deploy - <<'FLEETPOLICY' 2>/dev/null || true
-path "kv/data/services/ci/fleet-deploy" {
-  capabilities = ["read"]
-}
-path "kv/metadata/services/ci/fleet-deploy" {
-  capabilities = ["read"]
-}
-path "kv/data/services/harbor/ci-robot" {
-  capabilities = ["read"]
-}
-FLEETPOLICY
-  log_ok "Fleet deploy policy ensured"
+  local root_token
+  root_token=$(kubectl --kubeconfig="${ds_kc}" get secret vault-init-keys -n vault \
+    -o jsonpath='{.data.init\.json}' 2>/dev/null | base64 -d | \
+    grep -o '"root_token"[[:space:]]*:[[:space:]]*"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+  if [[ -n "${root_token}" ]]; then
+    kubectl --kubeconfig="${ds_kc}" exec -n vault vault-0 -- sh -c "
+      VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${root_token}' vault policy write gitlab-ci-fleet-deploy /dev/stdin <<EOF
+path \"kv/data/services/ci/fleet-deploy\" { capabilities = [\"read\"] }
+path \"kv/metadata/services/ci/fleet-deploy\" { capabilities = [\"read\"] }
+path \"kv/data/services/harbor/ci-robot\" { capabilities = [\"read\"] }
+EOF
+    " 2>/dev/null && log_ok "Fleet deploy policy ensured" || log_warn "Could not write Fleet deploy policy"
+  else
+    log_warn "Cannot read Vault root token — Fleet deploy policy not created"
+  fi
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
