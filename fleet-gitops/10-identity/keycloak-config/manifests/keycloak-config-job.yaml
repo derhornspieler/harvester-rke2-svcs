@@ -403,6 +403,19 @@ spec:
                 "accessCodeLifespan": 120
               }'
 
+              # Enable unmanaged user attributes for admin API (allows sq_* security questions)
+              log "[INFO] Enabling unmanaged attributes for admin users..."
+              kc_api PUT "${KC_REALM}/users-management-permissions" -d '{"enabled": true}' 2>/dev/null || true
+              # Set unmanaged attribute policy via realm User Profile config
+              _up_config=$(kc_api GET "${KC_REALM}/users/profile" 2>/dev/null || echo '{}')
+              _updated=$(echo "${_up_config}" | jq '.unmanagedAttributePolicy = "ADMIN_EDIT"' 2>/dev/null || echo "")
+              if [[ -n "${_updated}" && "${_updated}" != "{}" ]]; then
+                kc_api PUT "${KC_REALM}/users/profile" -d "${_updated}" 2>/dev/null || true
+                log "[INFO] Unmanaged attributes enabled (ADMIN_EDIT policy)"
+              else
+                log "[WARN] Could not update User Profile config — set manually in Keycloak admin"
+              fi
+
               # Seed infra OIDC client secrets into Vault
               log "[INFO] Seeding infra OIDC client secrets into Vault..."
               for client_id in ${INFRA_CLIENTS}; do
