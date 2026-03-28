@@ -17,6 +17,7 @@ Welcome! This guide is for application engineers building services that run on t
 - **[GitLab CI Patterns](gitlab-ci.md)** -- CI/CD workflows and pipeline patterns
 - **[ArgoCD Deployment](argocd-deployment.md)** -- Progressive delivery and rollbacks
 - **[Fleet Deployment](fleet-deployment.md)** -- When and how to use Fleet GitOps
+- **[App Onboarding](app-onboarding.md)** -- Provision OIDC, Vault, and ESO for a new app
 - **[Platform Integration](platform-integration.md)** -- Using Keycloak, Vault, monitoring
 - **[Troubleshooting](troubleshooting.md)** -- Common issues and solutions
 - **[Example Repositories](getting-started-with-examples.md)** -- Working demos to learn from

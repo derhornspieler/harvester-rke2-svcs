@@ -361,6 +361,80 @@ Credentials are rotated manually today (automated rotation is planned):
 
 ---
 
+## CI Deploy Key Model (SSH over Tokens)
+
+### Why SSH Deploy Keys?
+
+The platform uses an **SSH deploy key** (`kv/services/ci/platform-deploy-key`) as the CI credential for git operations, rather than GitLab deploy tokens or personal access tokens.
+
+| Property | SSH Deploy Key | Deploy Token | Personal Access Token |
+|----------|---------------|--------------|----------------------|
+| Expiration | Never expires | Configurable expiry | Configurable expiry |
+| Scope | Single project | Single project | User-wide |
+| Rotation needed | No (unless compromised) | Yes (on expiry) | Yes (on expiry) |
+| Revocation | Remove from project | Delete token | Delete token |
+| Identity | Machine identity | Machine identity | Human identity |
+
+**Decision rationale:**
+- **No expiration**: SSH keys do not expire. Deploy tokens and PATs require rotation schedules, adding operational burden and risk of CI outages when tokens silently expire.
+- **Project-scoped**: Each deploy key is scoped to a single GitLab project, following least-privilege. A compromised key cannot access other projects.
+- **No rotation overhead**: The key is generated once by the `gitlab-admin-setup` Job, stored in Vault at `kv/services/ci/platform-deploy-key`, and consumed by CI runners via ESO. No cron jobs or renewal pipelines needed.
+- **Machine identity**: SSH keys represent machine identity (the CI system), not a human user. This avoids tying CI access to a person's account lifecycle.
+
+### Key Lifecycle
+
+1. **Generation**: The `gitlab-admin-setup` Job generates an Ed25519 SSH keypair and stores both `private_key` and `public_key` fields in Vault at `kv/services/ci/platform-deploy-key`.
+2. **Registration**: The same Job registers the public key as a deploy key on the target GitLab project(s) with read-only or read-write access as needed.
+3. **Distribution**: ExternalSecret CRs in CI namespaces pull the private key from Vault and mount it as a Kubernetes Secret for runner pods.
+4. **Revocation**: If the key is compromised, remove it from the GitLab project and delete the Vault secret. Regenerate by re-running the admin setup Job.
+
+### The `60-cicd-onboard` Pattern
+
+When a new application needs CI/CD access to platform secrets (database credentials, registry tokens, deploy keys), the **`60-cicd-onboard`** pattern provides a standardized onboarding flow:
+
+1. **Vault policy**: A new Vault policy is created granting the application's namespace read access to its specific `kv/services/<app>/*` paths.
+2. **Vault auth role**: A Kubernetes auth role (`eso-<namespace>`) is created binding the namespace's `eso-secrets` ServiceAccount to the policy.
+3. **SecretStore**: A `SecretStore` CR in the application namespace connects to Vault using the auth role.
+4. **ExternalSecrets**: Application-specific `ExternalSecret` CRs map Vault paths to Kubernetes Secrets.
+5. **PushSecrets** (if needed): If the application generates credentials that other services consume, PushSecret CRs push them to Vault.
+
+This pattern ensures every new CI/CD consumer follows the same Vault-backed credential flow, with no manual secret creation or copying.
+
+## Deploy-Version Annotation for Secret Rotation
+
+### The Problem: Pods Do Not Restart on Secret Changes
+
+When a credential is rotated in Vault, ESO updates the Kubernetes Secret within 5 minutes. However, pods that consume secrets via **environment variables** do not see the update until they restart. Even pods using **volume mounts** may cache the old value in memory. There is no native Kubernetes mechanism to force a pod restart when a mounted Secret changes.
+
+### The Solution: `deploy-version` Annotation
+
+All Deployments, StatefulSets, and Jobs that consume secrets carry a `deploy-version` annotation on their pod template:
+
+```yaml
+spec:
+  template:
+    metadata:
+      annotations:
+        deploy-version: "1.2.3"   # Matches BUNDLE_VERSION from .env
+```
+
+Every time `BUNDLE_VERSION` is incremented in `.env` and bundles are redeployed, the `deploy-version` annotation value changes. Kubernetes treats any change to `spec.template.metadata.annotations` as a pod template change, triggering a **rolling restart** of all pods in the Deployment or StatefulSet.
+
+### How It Works in Practice
+
+1. **Rotate credential in Vault** (manually or via admin Job)
+2. **ESO syncs** the new value to the Kubernetes Secret (within 5 minutes)
+3. **Bump `BUNDLE_VERSION`** in `fleet-gitops/.env`
+4. **Redeploy**: `push-bundles.sh` &amp;&amp; `deploy-fleet-helmops.sh`
+5. **Fleet reconciles**: Helm detects the changed `deploy-version` annotation and triggers rolling restarts
+6. **New pods start** with the updated Secret mounted — credential rotation complete
+
+### Why Not Use `kubectl rollout restart`?
+
+Fleet-managed resources must never be mutated with ad-hoc `kubectl` commands. The `restartedAt` annotation injected by `kubectl rollout restart` causes drift — Fleet sees "Modified" state and may fight with the manual change. The `deploy-version` annotation is the GitOps-native equivalent: it lives in the bundle templates, flows through Fleet, and leaves no drift.
+
+---
+
 ## Emergency Procedures
 
 ### Vault Unsealing
