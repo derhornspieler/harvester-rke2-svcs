@@ -159,6 +159,8 @@ push-bundles:
     VAULT_ADDR: "https://vault.example.com"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
   script:
     - |
       cd fleet-gitops
@@ -241,7 +243,7 @@ deploy-fleet-full:
 sync-to-github:
   stage: sync
   image: docker.io/alpine:3.21
-  needs: [shellcheck, yamllint, helm-lint, push-bundles]
+  needs: [shellcheck, yamllint, helm-lint]
   id_tokens:
     VAULT_ID_TOKEN:
       aud: https://gitlab.example.com
