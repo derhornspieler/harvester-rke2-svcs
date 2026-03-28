@@ -95,6 +95,7 @@ BUNDLES=(
   "50-gitlab/gitlab-manifests:gitlab-manifests"
   "50-gitlab/gitlab-runners:gitlab-runners"
   # 60-cicd-onboard: per-app platform onboarding (Keycloak + Vault + ESO)
+  "60-cicd-onboard/onboard-rbac:onboard-rbac"
   "60-cicd-onboard/onboard-identity-portal:onboard-identity-portal"
   "60-cicd-onboard/onboard-forge:onboard-forge"
 )
