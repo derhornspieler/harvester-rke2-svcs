@@ -191,6 +191,45 @@ spec:
               "
               log "Role gitlab-ci-idp created"
 
+              # --- Create Fleet deploy policy + role ---
+              log "Creating fleet-deploy policy and JWT role..."
+              kubectl exec -n vault vault-0 -- sh -c "
+                cat > /tmp/gitlab-ci-fleet-deploy.hcl <<'HCL'
+              path \"kv/data/services/ci/fleet-deploy\" {
+                capabilities = [\"read\"]
+              }
+              path \"kv/metadata/services/ci/fleet-deploy\" {
+                capabilities = [\"read\"]
+              }
+              path \"kv/data/services/harbor/ci-robot\" {
+                capabilities = [\"read\"]
+              }
+              HCL
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' vault policy write gitlab-ci-fleet-deploy /tmp/gitlab-ci-fleet-deploy.hcl
+                rm -f /tmp/gitlab-ci-fleet-deploy.hcl
+              "
+              kubectl exec -n vault vault-0 -- sh -c "
+                cat > /tmp/gitlab-ci-fleet-deploy-role.json <<ROLE
+              {
+                \"role_type\": \"jwt\",
+                \"policies\": [\"gitlab-ci-fleet-deploy\"],
+                \"token_explicit_max_ttl\": 1800,
+                \"user_claim\": \"user_email\",
+                \"bound_audiences\": [\"https://gitlab.${DOMAIN}\"],
+                \"bound_claims_type\": \"glob\",
+                \"bound_claims\": {
+                  \"iss\": \"https://gitlab.${DOMAIN}\",
+                  \"project_path\": \"infra_and_platform_services/harvester-rke2-svcs\",
+                  \"ref_protected\": \"true\"
+                }
+              }
+              ROLE
+                VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${VAULT_TOKEN}' \
+                  vault write auth/jwt/role/gitlab-ci-fleet-deploy @/tmp/gitlab-ci-fleet-deploy-role.json
+                rm -f /tmp/gitlab-ci-fleet-deploy-role.json
+              "
+              log "Role gitlab-ci-fleet-deploy created (30 min TTL, protected branches only)"
+
               log "Vault JWT auth setup complete"
               log ""
               log "Usage in .gitlab-ci.yml:"

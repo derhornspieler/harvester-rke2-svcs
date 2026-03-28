@@ -896,6 +896,7 @@ STATUS_MODE=false
 WATCH_MODE=false
 WATCH_INTERVAL=10
 SINGLE_GROUP=""
+CI_MODE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -906,8 +907,9 @@ while [[ $# -gt 0 ]]; do
     --watch)      WATCH_MODE=true; shift ;;
     --interval)   WATCH_INTERVAL="$2"; shift 2 ;;
     --group)      SINGLE_GROUP="$2"; shift 2 ;;
+    --ci-mode)    CI_MODE=true; shift ;;
     -h|--help)
-      echo "Usage: $0 [--dry-run] [--delete] [--purge] [--status] [--watch] [--group <group>]"
+      echo "Usage: $0 [--dry-run] [--delete] [--purge] [--status] [--watch] [--group <group>] [--ci-mode]"
       echo ""
       echo "  --delete     Remove all HelmOps from Fleet (keeps Harbor OCI artifacts)"
       echo "  --purge      Remove HelmOps from Fleet AND delete OCI artifacts from Harbor"
@@ -915,6 +917,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --watch      Live-watch status until all bundles converge (implies --status)"
       echo "  --interval   Refresh interval in seconds for --watch (default: 10)"
       echo "  --group      Deploy/delete a single group (e.g., 50-gitlab)"
+      echo "  --ci-mode    Skip CSR signing, reduce convergence timeout (for CI pipelines)"
       echo "  --dry-run    Show CRs without applying"
       exit 0
       ;;
@@ -1138,6 +1141,21 @@ for c in json.load(sys.stdin).get('data',[]):
   # the Job generates an ed25519 key pair, uploads the public key to the
   # platform-deployments project, and seeds the private key to Vault
   # at kv/services/ci/platform-deploy-key (private_key + public_key).
+
+  # Seed Fleet deploy credentials for CI pipeline
+  log_info "Checking Fleet deploy credentials in Vault..."
+  local fleet_check
+  fleet_check=$(_vexec kv get -field=rancher-url kv/services/ci/fleet-deploy 2>/dev/null || true)
+  if [[ -n "${fleet_check}" ]]; then
+    log_ok "Fleet deploy credentials already in Vault"
+  else
+    _vexec kv put kv/services/ci/fleet-deploy \
+      rancher-url="${RANCHER_URL}" \
+      rancher-token="${RANCHER_TOKEN}" \
+      harbor-user="${HARBOR_USER}" \
+      harbor-pass="${HARBOR_PASS}"
+    log_ok "Seeded Fleet deploy credentials into Vault (services/ci/fleet-deploy)"
+  fi
 }
 
 # NOTE: seed_ci_secrets runs in the post-deploy phase (Vault must exist first)
@@ -1692,10 +1710,20 @@ if [[ "${DRY_RUN}" != true ]]; then
     echo ""
 
     # 0. Heal stuck bundles (Fleet sometimes fails to apply resources on first deploy)
-    heal_stuck_bundles 300 || log_warn "Some bundles may need manual investigation"
+    heal_timeout=300
+    if [[ "${CI_MODE}" == "true" ]]; then
+      heal_timeout=120
+      log_info "CI mode: reduced convergence timeout to ${heal_timeout}s"
+    fi
+    heal_stuck_bundles "${heal_timeout}" || log_warn "Some bundles may need manual investigation"
 
-    # 1. Sign Vault intermediate CSR (Vault must be running and init must generate CSR)
-    sign_vault_intermediate_csr
+    # 1. Sign Vault intermediate CSR (requires offline Root CA — skip in CI mode)
+    if [[ "${CI_MODE}" == "true" ]]; then
+      log_info "CI mode: skipping CSR signing (requires offline Root CA key)"
+      log_info "Run scripts/sign-csr-only.sh from a workstation if needed"
+    else
+      sign_vault_intermediate_csr
+    fi
 
     # 2. Seed CI secrets into Vault (Vault must be initialized and unsealed)
     seed_ci_secrets
