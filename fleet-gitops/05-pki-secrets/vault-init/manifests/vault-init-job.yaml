@@ -906,6 +906,9 @@ spec:
               path "auth/kubernetes/role/eso-writer-*" {
                 capabilities = ["create", "update", "read"]
               }
+              path "auth/kubernetes/role/app-*" {
+                capabilities = ["create", "update", "read"]
+              }
               ENDPOLICY
               log "Auth-binder policy created"
 
