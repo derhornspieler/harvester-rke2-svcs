@@ -65,6 +65,7 @@ helm-lint:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - |
+      set +e
       echo "Running helm lint on Fleet bundles with values.yaml..."
       ERRORS=0
       SKIPPED=0
@@ -75,21 +76,16 @@ helm-lint:
           continue
         fi
         # Extract chart name from fleet.yaml (helm.chart field)
-        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"')
-        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"')
+        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"' || true)
+        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"' || true)
         if [ -z "${chart}" ] || [ -z "${repo}" ]; then
           echo "SKIP: ${values_file} (no helm chart/repo in fleet.yaml)"
           SKIPPED=$((SKIPPED + 1))
           continue
         fi
         # OCI charts can't be added as repos — skip them
-        if echo "${chart}" | grep -q '^oci://'; then
-          echo "SKIP: ${values_file} (OCI chart — requires registry auth)"
-          SKIPPED=$((SKIPPED + 1))
-          continue
-        fi
+        case "${chart}" in oci://*) echo "SKIP: ${values_file} (OCI chart)"; SKIPPED=$((SKIPPED + 1)); continue ;; esac
         echo "Linting: ${chart} (${values_file})"
-        # Add repo and lint — helm lint validates values structure
         repo_name="lint-$(echo "${chart}" | tr '/' '-')"
         if helm repo add "${repo_name}" "${repo}" --force-update 2>/dev/null; then
           if ! helm lint "${repo_name}/${chart}" -f "${values_file}" 2>&1; then
