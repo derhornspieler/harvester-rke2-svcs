@@ -1,18 +1,18 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o microservice-demo main.go
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X main.version=${VERSION}" -o server main.go
 
-# Runtime stage
-FROM alpine:3.18
+# Runtime stage — distroless-style Alpine
+FROM alpine:3.21
 RUN apk add --no-cache ca-certificates \
-    && adduser -D -u 10001 appuser
-COPY --from=builder /app/microservice-demo /usr/local/bin/
-USER 10001
+    && adduser -D -u 65532 appuser \
+    && mkdir -p /data && chown appuser:appuser /data
+COPY --from=builder /app/server /usr/local/bin/server
+USER 65532
 EXPOSE 8080
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -q -O- http://localhost:8080/health || exit 1
-CMD ["/usr/local/bin/microservice-demo"]
+ENTRYPOINT ["/usr/local/bin/server"]
