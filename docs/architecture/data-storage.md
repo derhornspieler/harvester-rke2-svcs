@@ -261,6 +261,40 @@ Each database continuously ships its Write-Ahead Log (WAL) to MinIO. Combined wi
 
 ---
 
+## CNPG Deletion Protection
+
+### The Problem: Fleet Reconciliation and Stateful Resources
+
+Rancher Fleet manages resources declaratively — if a resource disappears from the bundle or Fleet decides to recreate it, Fleet deletes and re-creates the resource. For stateless workloads this is harmless. For CNPG `Cluster` custom resources, deletion means **the entire PostgreSQL cluster is torn down**: all pods stop, PVCs may be reclaimed, and the database is gone. On re-creation, CNPG bootstraps a fresh empty database — all data is lost.
+
+The consequences are severe:
+- **Keycloak**: All OIDC client UUIDs, user accounts, realm configuration, and session data are destroyed. Every service that authenticates via Keycloak breaks because client IDs no longer match.
+- **Harbor**: Registry metadata (repositories, tags, vulnerability scan results) is lost. Image blobs in MinIO become orphaned and inaccessible.
+- **Grafana**: All custom dashboards, datasource configurations, and user preferences are wiped.
+- **GitLab**: Project metadata, merge request history, CI/CD pipeline records, and user accounts are destroyed. Git repository data on Gitaly is orphaned.
+
+### The Solution: `helm.sh/resource-policy: keep`
+
+All four CNPG `Cluster` CRs carry the `helm.sh/resource-policy: keep` annotation:
+
+| Cluster | Namespace | Annotation |
+|---------|-----------|------------|
+| `keycloak-pg` | `database` | `helm.sh/resource-policy: keep` |
+| `harbor-pg` | `database` | `helm.sh/resource-policy: keep` |
+| `grafana-pg` | `database` | `helm.sh/resource-policy: keep` |
+| `gitlab-postgresql` | `database` | `helm.sh/resource-policy: keep` |
+
+This annotation tells Helm (and by extension Fleet, which uses Helm under the hood) to **skip deletion** of these resources during `helm uninstall` or resource reconciliation. The CNPG `Cluster` CR persists even if the HelmOps bundle is deleted or redeployed, preserving all database pods and PVCs.
+
+### What This Means for Operations
+
+- **Safe redeployment**: Running `deploy.sh --delete` followed by `deploy.sh` tears down and recreates all Fleet HelmOps, but the CNPG clusters survive because Helm skips their deletion.
+- **Bundle version bumps**: Incrementing `BUNDLE_VERSION` and redeploying updates the Helm release without touching the protected CNPG resources.
+- **Manual cleanup required**: If you genuinely need to destroy a CNPG cluster (e.g., during a full environment teardown), you must delete the `Cluster` CR manually with `kubectl delete cluster &lt;name&gt; -n database` after Fleet resources are removed.
+- **CRD orphan caveat**: If CNPG CRDs are deleted before the `Cluster` CRs, the clusters become orphaned resources. Teardown scripts handle this by deleting CRs before CRDs.
+
+---
+
 ## Operational Characteristics
 
 ### Monitoring & Observability
