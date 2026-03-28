@@ -915,10 +915,10 @@ spec:
               # credentials to services/database/*, admin/*, oidc/* paths.
               # ================================================================
               write_policy bootstrap-seeder <<'ENDPOLICY'
-              path "kv/data/services/database/*" {
+              path "kv/data/services/*" {
                 capabilities = ["create", "read", "update"]
               }
-              path "kv/metadata/services/database/*" {
+              path "kv/metadata/services/*" {
                 capabilities = ["read", "list"]
               }
               path "kv/data/admin/*" {
