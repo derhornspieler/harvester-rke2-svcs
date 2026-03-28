@@ -1,175 +1,108 @@
-# Microservice Demo
+# Platform Demo
 
-A complete example of a service deployed on the harvester-rke2-svcs platform.
+A reference implementation showing how to build, scan, and deploy an
+application on the platform using the MinimalCD pattern.
 
 ## What This Demonstrates
 
-- Go HTTP service with Prometheus metrics
-- Multi-stage Docker build
-- GitLab CI/CD pipeline (build, scan, push)
-- Harbor container registry integration
-- Kubernetes Deployment with health checks
-- ArgoCD GitOps deployment
-- Argo Rollouts canary strategy
-- Service metrics and monitoring
+- **Go web server** with health probes, Prometheus metrics, structured JSON logging, and file serving
+- **CI pipeline** with efficiency patterns (`changes:` rules, Docker layer caching, deploy skip)
+- **Dev/Staged/Prod overlays** — self-contained Kustomize overlays for each environment
+- **Platform conventions** — non-root, read-only rootfs, requests only, Gateway API
 
-## Quick Start
+## Project Structure
 
-### 1. Clone This Repo
-
-```bash
-git clone https://gitlab.CHANGEME_DOMAIN/your-org/microservice-demo.git
-cd microservice-demo
 ```
-
-### 2. Build Locally
-
-```bash
-go build -o microservice-demo main.go
-./microservice-demo
-# Server listening on :8080
-```
-
-Test the service:
-
-```bash
-curl http://localhost:8080/health
-curl http://localhost:8080/hello
-curl http://localhost:8080/metrics
-```
-
-### 3. Build Container
-
-```bash
-docker build -t microservice-demo:latest .
-docker run -p 8080:8080 microservice-demo:latest
-```
-
-### 4. Deploy to Kubernetes
-
-#### Option A: Direct Kubectl
-
-```bash
-kubectl apply -k k8s/
-```
-
-#### Option B: ArgoCD
-
-```bash
-kubectl apply -f k8s/argocd-app.yaml
-# ArgoCD will sync automatically
-```
-
-## File Structure
-
-```text
 .
-├── main.go                 # Service code
-├── go.mod                  # Go module definition
-├── Dockerfile              # Container image
-├── .gitlab-ci.yml          # CI/CD pipeline
-├── k8s/
-│   ├── deployment.yaml     # Kubernetes Deployment
-│   ├── service.yaml        # Kubernetes Service
-│   ├── kustomization.yaml  # Kustomize config
-│   └── argocd-app.yaml     # ArgoCD Application
-├── argocd/
-│   └── rollout.yaml        # Argo Rollouts config (canary strategy)
-└── README.md               # This file
+├── main.go                    # Go web server
+├── Dockerfile                 # Multi-stage build (builder + alpine runtime)
+├── go.mod / go.sum            # Go dependencies
+├── .gitlab-ci.yml             # CI pipeline (lint → build → scan → deploy)
+└── deploy/
+    ├── dev/                   # Dev environment overlay
+    │   ├── kustomization.yaml
+    │   ├── deployment.yaml
+    │   ├── service.yaml
+    │   └── httproute.yaml
+    ├── staged/                # Staged environment overlay
+    │   └── ...
+    └── prod/                  # Production environment overlay
+        └── ...
 ```
 
-## How It Works
+## How Deployment Works
 
-### Service Code
+```
+Developer pushes to main
+        │
+        ▼
+CI: lint (if source changed) → build image → scan → deploy
+        │
+        ▼
+deploy:dev job:
+  1. Authenticates to Vault (GitLab JWT)
+  2. Fetches SSH deploy key from Vault
+  3. Clones platform/platform-deployments (dev branch)
+  4. Updates image tag via kustomize
+  5. Commits and pushes
+        │
+        ▼
+ArgoCD detects change → syncs to cluster (~3 min)
+```
 
-`main.go` implements a simple HTTP server with three endpoints:
+### Environment Promotion
 
-- `GET /health` -- Health check (used for Kubernetes probes)
-- `GET /hello` -- Returns "Hello from microservice-demo"
-- `GET /metrics` -- Prometheus metrics (automatically scraped)
+| Environment | Trigger | Branch | ArgoCD Sync |
+|-------------|---------|--------|-------------|
+| **dev** | Auto on merge to main | `dev` | Auto (~3 min) |
+| **staged** | Manual (MR to staged branch) | `staged` | Auto after merge |
+| **prod** | Manual (MR to prod branch) | `prod` | Manual sync |
 
-### CI/CD Pipeline (.gitlab-ci.yml)
-
-1. **build:image** -- Build container with Kaniko, push to Harbor
-2. **scan:image** -- Scan with Trivy for CVEs
-3. **deploy:argocd** -- Deploy via ArgoCD (manual gate)
-
-### Deployment (k8s/)
-
-- **deployment.yaml** -- 3 replicas, health checks, anti-affinity
-- **service.yaml** -- ClusterIP service on port 8080
-- **kustomization.yaml** -- Kustomize orchestration
-- **argocd-app.yaml** -- ArgoCD Application CRD
-
-### Progressive Delivery (argocd/rollout.yaml)
-
-Uses Argo Rollouts canary strategy:
-
-1. Deploy new version
-2. Shift 5% traffic, pause 5 minutes
-3. Run success-rate analysis
-4. Shift 50% traffic, pause 5 minutes
-5. Run success-rate and error-rate analysis
-6. Shift 100% traffic
-7. If any health check fails, rollback automatically
-
-## Customizing for Your Service
-
-1. Replace `main.go` with your service code
-2. Update `Dockerfile` if needed
-3. Edit `k8s/deployment.yaml` for your image, ports, resources
-4. Update `.gitlab-ci.yml` registry URL and image name
-5. Push to GitLab and watch CI/CD run
-
-## Monitoring
-
-Once deployed, Prometheus scrapes `/metrics`. Access Grafana to see:
-
-- HTTP request rate
-- Request latency histogram
-- Error rates
-
-Add a Grafana dashboard by creating a ConfigMap with JSON.
-
-## Troubleshooting
-
-### Pod won't start (CrashLoopBackOff)
+## Local Development
 
 ```bash
-kubectl logs deployment/microservice-demo -n microservice-demo
-kubectl describe pod -l app=microservice-demo -n microservice-demo
+# Run locally
+go run main.go
+
+# Build image
+buildah bud -t platform-demo:dev .
+
+# Test endpoints
+curl http://localhost:8080/          # Index page
+curl http://localhost:8080/healthz   # Liveness probe
+curl http://localhost:8080/readyz    # Readiness probe
+curl http://localhost:8080/metrics   # Prometheus metrics
+curl http://localhost:8080/files/    # File browser
 ```
 
-### Image pull fails
+## Adapting for Your Project
 
-```bash
-# Verify image exists in Harbor
-# Check Harbor credentials in ImagePullSecret
-kubectl get secret -n microservice-demo
-kubectl describe secret harbor-pull-secret -n microservice-demo
-```
+1. Copy this example to your project repo
+2. Replace the Go app with your application
+3. Update `deploy/*/kustomization.yaml` with your team and app name
+4. Update `.gitlab-ci.yml` variables (`DEPLOY_TEAM`, `DEPLOY_APP`, `IMAGE`)
+5. Create your overlay folders in `platform/platform-deployments`
+6. Push to main — CI handles the rest
 
-### ArgoCD not syncing
+## CI Pipeline Efficiency Patterns
 
-```bash
-# Check Application status
-kubectl get application microservice-demo -n argocd -o yaml
+| Pattern | How | Why |
+|---------|-----|-----|
+| `changes:` rules | Only build when `*.go`, `Dockerfile` change | Skip builds on doc-only commits |
+| `buildah --layers` | Reuse Docker layers from previous builds | Faster rebuilds (only changed layers) |
+| `git diff --quiet` | Skip deploy push if tag is current | No empty commits in platform-deployments |
+| Dual tags | `${CI_COMMIT_SHORT_SHA}` + `${CI_COMMIT_REF_SLUG}` | SHA for deploy, branch for dev testing |
 
-# Check ArgoCD controller logs
-kubectl logs -n argocd deployment/argocd-server
-```
+## Platform Conventions
 
-## Next Steps
-
-- Modify the service code and push to GitLab
-- Watch the CI/CD pipeline automatically build and deploy
-- Use Argo Rollouts UI to watch the canary deployment
-- Check Grafana dashboards for metrics
-
-## Resources
-
-- [Go HTTP Server](https://golang.org/doc/articles/wiki/)
-- [Prometheus Client Library](https://github.com/prometheus/client_golang)
-- [Kubernetes Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
-- [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/application/)
-- [Argo Rollouts](https://argoproj.github.io/argo-rollouts/)
+| Convention | Implementation |
+|------------|---------------|
+| Non-root container | `USER 65532` in Dockerfile, `runAsNonRoot: true` |
+| Read-only rootfs | `readOnlyRootFilesystem: true`, emptyDir for writable paths |
+| Requests only (no limits) | `cpu: 50m, memory: 32Mi` — allows bursting |
+| Health probes | `/healthz` (liveness), `/readyz` (readiness), startup probe |
+| Prometheus metrics | `/metrics` endpoint + ServiceMonitor CR |
+| Structured logging | JSON to stdout (`timestamp`, `level`, `msg`) |
+| Gateway API | HTTPRoute (not legacy Ingress) |
+| Pod anti-affinity | Spread replicas across nodes |
+| Node selector | `workload-type: general` |
