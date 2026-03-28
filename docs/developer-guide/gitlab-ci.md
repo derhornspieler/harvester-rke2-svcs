@@ -34,41 +34,29 @@ need to set any project-level variables for basic CI/CD functionality.
 
 ## Quick Start
 
-Minimal `.gitlab-ci.yml` for a microservice with full CI/CD pipeline including deployment:
+Minimal `.gitlab-ci.yml` for a microservice with full CI/CD pipeline:
 
 ```yaml
 include:
-  - project: 'infra_and_platform_services/gitlab-ci-templates'
-    file:
-      - '/stages.yml'
-      - '/patterns/microservice.yml'
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/build@1.0.0
+    inputs:
+      image_name: forge/svc-forge
 
-variables:
-  APP_NAME: svc-forge
-  HARBOR_PROJECT: forge
-  DEPLOY_TEAM: forge
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/scan@1.0.0
 
-deploy-dev:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: dev
-    DEPLOY_APP: svc-forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-
-deploy-staging:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: staging
-    DEPLOY_APP: svc-forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
+    inputs:
+      team: forge
+      app: svc-forge
 ```
 
-**Note:** Every job that authenticates to Vault needs the `id_tokens` block (included in templates).
-The `VAULT_ID_TOKEN` variable name must match what the CI templates expect.
+This gives you: secret detection, image build, vulnerability scan, SAST, and automated
+deployment to dev. ArgoCD syncs within ~3 minutes.
 
-This gives you: secret detection, linting, build, image scan, SBOM, and automated deployment to dev and staging environments. ArgoCD syncs within ~3 minutes.
+All authentication (Vault JWT, Harbor push, SSH deploy key) is handled by the components
+automatically — no CI variables needed.
+
+Browse available components at: `https://gitlab.example.com/explore/catalog`
 
 ## How Authentication Works
 
@@ -104,59 +92,49 @@ my-job:
 
 ### Microservice Pattern
 
-Full build → test → scan → deploy to platform-deployments pipeline:
+Full build → scan → deploy to platform-deployments pipeline using CI Catalog components:
 
 ```yaml
 include:
-  - project: 'infra_and_platform_services/gitlab-ci-templates'
-    file:
-      - '/stages.yml'
-      - '/patterns/microservice.yml'
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/lint@1.0.0
+    inputs:
+      hadolint_enabled: true
 
-variables:
-  APP_NAME: svc-forge              # Application name
-  HARBOR_PROJECT: forge            # Harbor project (must exist)
-  DEPLOY_TEAM: forge               # Team name (matches platform-deployments folder)
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/build@1.0.0
+    inputs:
+      image_name: forge/svc-forge
 
-deploy-dev:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: dev
-    DEPLOY_APP: svc-forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/scan@1.0.0
+    inputs:
+      image_name: harbor.dev.example.com/forge/svc-forge:$CI_COMMIT_SHORT_SHA
 
-deploy-staging:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: staging
-    DEPLOY_APP: svc-forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
+    inputs:
+      team: forge
+      app: svc-forge
 ```
 
-**Stages:** secret-detection → hadolint → build → image-scan → sbom → deploy-dev → deploy-staging
+**Stages:** lint → build → scan → deploy
 
-Your app must exist in `platform-deployments/dev/forge/svc-forge/` and `platform-deployments/staging/forge/svc-forge/` for deployment to work.
+Each component handles its own Vault authentication and credentials.
+Your app must exist in `platform-deployments/dev/forge/svc-forge/` for deployment to work.
 
 ### Platform Service Pattern
 
-Platform services (those deployed via harvester-rke2-svcs Fleet GitOps) have a different pipeline:
+Platform services (deployed via harvester-rke2-svcs Fleet GitOps) use lint and scan
+components only — they are deployed by the platform team using Fleet, not platform-deployments:
 
 ```yaml
 include:
-  - project: 'infra_and_platform_services/gitlab-ci-templates'
-    file:
-      - '/stages.yml'
-      - '/patterns/platform-service.yml'
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/lint@1.0.0
+    inputs:
+      shellcheck_paths: scripts/ fleet-gitops/
 
-variables:
-  APP_NAME: my-platform-svc
-  ESO_NAMESPACE: my-namespace      # Namespace for ESO provisioning
-  ESO_VAULT_PATHS: "services/my-svc"
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/scan@1.0.0
 ```
 
-**Note:** Platform services are not deployed via platform-deployments. They are deployed by the platform team using Fleet GitOps. Use this pattern only if you are a platform operator.
+**Note:** Platform services do not use the deploy component. Deployment is managed
+by Fleet GitOps (`deploy.sh`). Use this pattern only if you are a platform operator.
 
 ## Available Job Templates
 
@@ -242,49 +220,50 @@ After building and scanning your image, the deploy stage updates the image tag i
 
 ### Deploy Stage Pattern
 
-Use the `.deploy:platform-deployments` template in your pipeline. Add one deploy job per environment (dev, staging, prod).
+Use the deploy CI Catalog component. Include it once with your team/app settings:
 
-**For development (auto-sync):**
-
-```yaml
-deploy-dev:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: dev
-    DEPLOY_APP: svc-forge
-    DEPLOY_TEAM: forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-```
-
-**For staging (requires MR + approval):**
+**For development (auto-push to dev branch):**
 
 ```yaml
-deploy-staging:
-  extends: .deploy:platform-deployments
-  variables:
-    DEPLOY_ENV: staging
-    DEPLOY_APP: svc-forge
-    DEPLOY_TEAM: forge
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  # Optional: create MR instead of direct push
-  # Set DEPLOY_CREATE_MR: "true" to require platform team approval
+include:
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
+    inputs:
+      team: forge
+      app: svc-forge
 ```
 
-**For production (manual MR + approval):**
+This creates a `deploy:dev` job that auto-pushes image tags to the `dev` branch
+of `platform-deployments` on every merge to `main`.
+
+**For staged/prod promotion (manual MR):**
+
+The deploy component also provides manual promotion jobs. To add them, include
+the legacy templates alongside the catalog component:
 
 ```yaml
-deploy-prod:
-  extends: .deploy:platform-deployments
+include:
+  - component: gitlab.example.com/infra_and_platform_services/ci-components/deploy@1.0.0
+    inputs:
+      team: forge
+      app: svc-forge
+  - project: 'infra_and_platform_services/harvester-rke2-svcs'
+    ref: main
+    file: '/services/gitlab/ci-templates/jobs/deploy.yml'
+
+promote:staged:
+  extends: .deploy:promote-staged
   variables:
-    DEPLOY_ENV: prod
-    DEPLOY_APP: svc-forge
     DEPLOY_TEAM: forge
-    DEPLOY_CREATE_MR: "true"  # Require platform team approval
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    DEPLOY_APP: svc-forge
+
+promote:prod:
+  extends: .deploy:promote-prod
+  variables:
+    DEPLOY_TEAM: forge
+    DEPLOY_APP: svc-forge
 ```
+
+Promotion jobs create a branch and print a link to create an MR in GitLab.
 
 ### What the Deploy Stage Does
 
