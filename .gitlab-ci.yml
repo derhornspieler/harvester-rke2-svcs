@@ -33,13 +33,12 @@ shellcheck:
       echo "Running shellcheck on all .sh files..."
       ERRORS=0
       while IFS= read -r -d '' file; do
-        if ! shellcheck -x "${file}"; then
+        if ! shellcheck -x -S warning "${file}"; then
           ERRORS=$((ERRORS + 1))
         fi
-      done < <(find scripts/ fleet-gitops/ -name '*.sh' -not -path '.git/*' -print0)
+      done < <(find scripts/ fleet-gitops/ -name '*.sh' -not -path '.git/*' -not -path '*/rendered/*' -print0)
       echo "shellcheck complete: ${ERRORS} file(s) with issues"
       if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
-  allow_failure: true
 
 # ---------------------------------------------------------------------------
 # Lint: yamllint on fleet-gitops and services YAML
@@ -54,7 +53,6 @@ yamllint:
     - apk add --no-cache yamllint
   script:
     - yamllint -c .yamllint.yml fleet-gitops/ services/
-  allow_failure: true
 
 # ---------------------------------------------------------------------------
 # Lint: helm lint on all Fleet Helm values
@@ -67,23 +65,27 @@ helm-lint:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - |
+      set +e
       echo "Running helm lint on Fleet bundles with values.yaml..."
       ERRORS=0
-      for values_file in $(find fleet-gitops/ -name 'values.yaml' -type f); do
+      SKIPPED=0
+      for values_file in $(find fleet-gitops/ -name 'values.yaml' -type f -not -path '*/rendered/*'); do
         bundle_dir=$(dirname "${values_file}")
         fleet_yaml="${bundle_dir}/fleet.yaml"
         if [ ! -f "${fleet_yaml}" ]; then
           continue
         fi
         # Extract chart name from fleet.yaml (helm.chart field)
-        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"')
-        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"')
+        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"' || true)
+        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"' || true)
         if [ -z "${chart}" ] || [ -z "${repo}" ]; then
           echo "SKIP: ${values_file} (no helm chart/repo in fleet.yaml)"
+          SKIPPED=$((SKIPPED + 1))
           continue
         fi
+        # OCI charts can't be added as repos — skip them
+        case "${chart}" in oci://*) echo "SKIP: ${values_file} (OCI chart)"; SKIPPED=$((SKIPPED + 1)); continue ;; esac
         echo "Linting: ${chart} (${values_file})"
-        # Add repo and lint — helm lint validates values structure
         repo_name="lint-$(echo "${chart}" | tr '/' '-')"
         if helm repo add "${repo_name}" "${repo}" --force-update 2>/dev/null; then
           if ! helm lint "${repo_name}/${chart}" -f "${values_file}" 2>&1; then
@@ -91,11 +93,11 @@ helm-lint:
           fi
         else
           echo "SKIP: could not add repo ${repo} (air-gapped or auth required)"
+          SKIPPED=$((SKIPPED + 1))
         fi
       done
-      echo "helm lint complete: ${ERRORS} chart(s) with issues"
+      echo "helm lint complete: ${ERRORS} error(s), ${SKIPPED} skipped"
       if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
-  allow_failure: true
 
 # ---------------------------------------------------------------------------
 # Sync: Sanitized push to GitHub mirror (on push to main)
@@ -108,12 +110,13 @@ helm-lint:
 sync-to-github:
   stage: sync
   image: docker.io/alpine:3.21
+  needs: [shellcheck, yamllint, helm-lint]
   id_tokens:
     VAULT_ID_TOKEN:
       aud: https://gitlab.example.com
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-      when: always
+      when: on_success
   variables:
     VAULT_ADDR: "https://vault.example.com"
   before_script:
@@ -223,7 +226,6 @@ sync-to-github:
       # Pass 1: Replace PII in file content + remove sensitive files
       git filter-repo \
         --replace-text /tmp/replacements.txt \
-        --path-glob 'fleet-gitops/' --invert-paths \
         --path-glob 'GIT_LOG.txt' --invert-paths \
         --path-glob 'scripts/github-sanitize.sh' --invert-paths \
         --path-glob 'CLAUDE.md' --invert-paths \

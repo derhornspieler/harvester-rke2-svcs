@@ -73,9 +73,9 @@ serviceAccount:
   create: false
   name: gitlab-runner-sa
 
-## Pod annotations — used to trigger rollouts when SA tokens need refresh
+## Pod annotations — deploy-version forces rollout on every bundle version bump
 podAnnotations:
-  platform.example.com/rollout: "2026-03-23T0130Z"
+  deploy-version: "${BUNDLE_VERSION}"
 
 ## VAULT_CACERT tells the runner's Vault secret resolver where to find
 ## the private CA so it can verify the Vault TLS certificate

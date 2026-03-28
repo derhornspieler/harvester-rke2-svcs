@@ -128,6 +128,8 @@ alertmanager:
 grafana:
   replicas: 2
   fullnameOverride: "grafana"
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
   # Air-gapped plugin install: GF_INSTALL_PLUGINS handled by Docker entrypoint
   # (chart's plugins: key maps to GF_PLUGINS_PREINSTALL_SYNC which only supports
   # plugin IDs from grafana.com — broken for custom URLs / air-gapped installs)
