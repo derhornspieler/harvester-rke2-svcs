@@ -1,52 +1,69 @@
 # Getting Started with Examples
 
-Overview of the working demo repositories.
+Working demo projects you can clone and adapt for your own services.
 
-## What Are These?
-
-Real, runnable examples you can clone and adapt for your own services.
-
-## microservice-demo
+## Platform Demo (microservice-demo)
 
 [Full README](../../examples/microservice-demo/README.md)
 
-A complete HTTP service that demonstrates:
+A Go web server demonstrating the full platform developer experience:
 
-- Container build
-- GitLab CI pipeline
-- Harbor image push
-- ArgoCD deployment
-- Prometheus metrics export
-- Canary rollout
+- Structured JSON logging, Prometheus metrics, health probes
+- CI pipeline with efficiency patterns (`changes:` rules, Docker layer caching)
+- Dev/staged/prod Kustomize overlays — self-contained, no shared base
+- MinimalCD flow: auto-deploy to dev, MR promotion to staged/prod
+- All platform conventions: non-root, read-only rootfs, Gateway API
 
-Clone and adapt for your own microservices.
+**Structure:**
+```
+microservice-demo/
+  main.go              # Go web server
+  Dockerfile           # Multi-stage build
+  .gitlab-ci.yml       # CI with build/scan/deploy
+  deploy/
+    dev/               # Dev overlay (Deployment, Service, HTTPRoute)
+    staged/            # Staged overlay
+    prod/              # Production overlay
+```
 
-## library-demo
+**CI Pipeline:**
+```yaml
+include:
+  - component: gitlab.<DOMAIN>/infra_and_platform_services/ci-components/build@1.0.0
+    inputs:
+      image_name: <TEAM>/<APP>
+
+  - component: gitlab.<DOMAIN>/infra_and_platform_services/ci-components/deploy@1.0.0
+    inputs:
+      team: <TEAM>
+      app: <APP>
+```
+
+## Library Demo
 
 [Full README](../../examples/library-demo/README.md)
 
-A shared Go library that demonstrates:
+A shared Go library demonstrating:
 
-- Module structure
+- Module structure and semantic versioning
 - GitLab Package Registry publishing
-- Semantic versioning
 - How to import and use in other services
 
-Clone and adapt for shared libraries.
+## Which Example to Use?
 
-## How to Use Them
-
-1. Clone the example repository
-2. Modify code/config for your needs
-3. Push to your GitLab instance
-4. Watch CI/CD pipeline run automatically
-5. ArgoCD deploys to your cluster
+| Use Case | Example | CI Pattern |
+|----------|---------|------------|
+| HTTP service with deployment | Platform Demo | build + scan + deploy |
+| Shared library (no container) | Library Demo | test + publish |
 
 ## What's Next
 
-Pick an example and follow its README to get hands-on.
+1. Clone the Platform Demo
+2. Update `deploy/` overlays with your team/app name
+3. Update `.gitlab-ci.yml` with your CI Catalog component inputs
+4. Push to GitLab — CI handles the rest
 
-- [Quickstart](quickstart.md) -- 10-minute walkthrough
-- [Application Design](application-design.md) -- Understand the patterns
-- [GitLab CI](gitlab-ci.md) -- How the pipeline works
-- [ArgoCD Deployment](argocd-deployment.md) -- How deployment works
+- [Application Design](application-design.md) — platform conventions
+- [GitLab CI](gitlab-ci.md) — pipeline patterns and efficiency
+- [ArgoCD Deployment](argocd-deployment.md) — promotion workflow
+- [App Onboarding](app-onboarding.md) — platform setup for new apps

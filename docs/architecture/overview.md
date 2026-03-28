@@ -8,7 +8,7 @@ This platform delivers a production-grade GitOps foundation on a 13-node Harvest
 
 ## Platform at a Glance
 
-The platform is organized into 7 ecosystem groups deployed as 58 bundles with strict dependency ordering. Every service is production-ready with HA, autoscaling, observability, and zero-trust security.
+The platform is organized into 7 ecosystem groups deployed as 62 bundles across 9 bundle groups with strict dependency ordering. Every service is production-ready with HA, autoscaling, observability, and zero-trust security.
 
 ```mermaid
 block-beta
@@ -129,7 +129,7 @@ When a real workload needs resources, pause pods are preempted and become Pendin
 
 ---
 
-## Service Catalog (27 Services across 58 Bundles)
+## Service Catalog (27 Services across 62 Bundles)
 
 | # | Service | Namespace | Ecosystem | HA Mode | Deployed |
 |---|---------|-----------|-----------|---------|----------|
@@ -165,32 +165,33 @@ When a real workload needs resources, pause pods are preempted and become Pendin
 
 ## Deployment Method
 
-All platform services are deployed **via Fleet GitOps** as **58 HelmOp CRs** from a single unified script. The deployment workflow is:
+All platform services are deployed **via Fleet GitOps** as **62 HelmOp CRs** from a single unified script. Each HelmOp carries a `deploy-version` annotation that tracks the bundle version at deployment time, enabling quick verification of what version is running on any resource. The deployment workflow is:
 
 ```
 ./deploy.sh
 ├─ Phase 1: Push Helm charts to Harbor (upstream charts)
 ├─ Phase 2: Seed Root CA on downstream cluster
 ├─ Phase 3: Push OCI bundles to Harbor (raw manifests)
-├─ Phase 4: Create 58 Fleet HelmOps on Rancher management cluster
+├─ Phase 4: Create 62 Fleet HelmOps on Rancher management cluster
 ├─ Phase 5: Sign Vault intermediate CSR with offline Root CA
 └─ Phase 6: Seed manual secrets (GitLab license, watcher credentials, kubeconfigs)
 ```
 
 Total deployment time: ~30-40 minutes (including 15-min wait for Vault initialization)
 
-## Bundle Groups (58 Total)
+## Bundle Groups (62 Total across 9 Groups)
 
 ```mermaid
 graph TD
     A["00-operators (8)"]
     B["05-pki-secrets (8)"]
-    C["10-identity (3)"]
+    C["10-identity (4)"]
     D["11-infra-auth (3)"]
     E["20-monitoring (7)"]
     F["30-harbor (7)"]
-    G["40-gitops (9)"]
-    H["50-gitlab (13)"]
+    G["40-gitops (12)"]
+    H["50-gitlab (10)"]
+    I["60-cicd-onboard (3)"]
 
     A --> B
     B --> C
@@ -200,6 +201,8 @@ graph TD
     D --> G
     F --> H
     E --> G
+    H --> I
+    F --> I
 
     style A fill:#198754,color:#fff
     style B fill:#dc3545,color:#fff
@@ -209,17 +212,19 @@ graph TD
     style F fill:#0dcaf0,color:#000
     style G fill:#198754,color:#fff
     style H fill:#0d6efd,color:#fff
+    style I fill:#ffc107,color:#000
 ```
 
 **Key dependency insights:**
 - 00-operators: Foundation operators (CNPG, Redis)
 - 05-pki-secrets: PKI + Vault (foundation for all others)
-- 10-identity: Keycloak OIDC + database
+- 10-identity: Keycloak OIDC + database + configuration
 - 11-infra-auth: Auth gateways for infrastructure services
 - 20-monitoring: Observability stack (Prometheus, Grafana, Loki, Alloy)
 - 30-harbor: Container registry (uses shared MinIO)
-- 40-gitops: ArgoCD + Rollouts + Workflows
-- 50-gitlab: Source control + CI/CD (13 bundles, includes shared + terraform runners)
+- 40-gitops: ArgoCD + Rollouts + Workflows (12 bundles including analysis templates)
+- 50-gitlab: Source control + CI/CD (10 bundles, includes shared + terraform runners)
+- 60-cicd-onboard: App platform onboarding (shared RBAC + per-app Harbor/Keycloak provisioning)
 
 ---
 
