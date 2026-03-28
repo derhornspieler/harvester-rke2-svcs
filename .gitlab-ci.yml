@@ -19,6 +19,7 @@ stages:
 variables:
   GIT_SSL_CAINFO: /etc/ssl/certs/vault-root-ca.pem
   CURL_CA_BUNDLE: /etc/ssl/certs/vault-root-ca.pem
+  DOMAIN: "example.com"
 
 default:
   tags:
