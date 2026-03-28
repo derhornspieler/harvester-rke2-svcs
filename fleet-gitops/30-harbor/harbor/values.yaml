@@ -65,7 +65,7 @@ redis:
     addr: "${HARBOR_REDIS_SENTINEL}"
     # Password injected at deploy time from downstream K8s secret by deploy-fleet-helmops.sh
     # (Fleet's Helm rendering doesn't support lookup() for existingSecret)
-    password: "PLACEHOLDER_REPLACED_AT_DEPLOY" # gitleaks:allow (injected at deploy time from Vault)
+    password: "PLACEHOLDER_REPLACED_AT_DEPLOY"  # gitleaks:allow (injected at deploy time from Vault)
     coreDatabaseIndex: "0"
     jobserviceDatabaseIndex: "1"
     registryDatabaseIndex: "2"
@@ -74,6 +74,8 @@ redis:
 # --- Core (API server, auth, token service) ---
 core:
   replicas: 2  # Match HPA min to prevent Fleet drift detection
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
   resources:
     requests:
       cpu: 250m
@@ -112,6 +114,8 @@ portal:
 # --- Registry (Docker distribution — image blob handling) ---
 registry:
   replicas: 2  # Match HPA min to prevent Fleet drift detection
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
   registry:
     resources:
       requests:
@@ -137,6 +141,8 @@ registry:
 # --- JobService (async tasks: replication, GC, scans) ---
 jobservice:
   replicas: 2
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
   maxJobWorkers: 10
   jobLoggers:
     - database  # Not filesystem — required for multi-replica HA

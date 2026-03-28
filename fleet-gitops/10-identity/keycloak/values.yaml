@@ -16,6 +16,10 @@ replicas: 2
 podManagementPolicy: Parallel
 updateStrategy: RollingUpdate
 
+# --- Pod Annotations (deploy-version forces rollout on version bump) ---
+podAnnotations:
+  deploy-version: "${BUNDLE_VERSION}"
+
 # --- Service Account & RBAC (needed for KUBE_PING cache discovery) ---
 serviceAccount:
   create: true
@@ -95,6 +99,8 @@ extraEnv: |
         key: KC_BOOTSTRAP_ADMIN_PASSWORD
   - name: KC_TRUSTSTORE_PATHS
     value: /etc/keycloak/certs/ca.crt
+  - name: KC_PERSISTENT_USER_SESSIONS
+    value: "true"
 
 # --- Extra ports (JGroups for kubernetes cache stack) ---
 extraPorts:

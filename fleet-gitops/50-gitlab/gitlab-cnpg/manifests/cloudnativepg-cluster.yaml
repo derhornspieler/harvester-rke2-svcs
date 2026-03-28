@@ -14,6 +14,8 @@ kind: Cluster
 metadata:
   name: gitlab-postgresql
   namespace: database
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     app: gitlab
     component: postgresql

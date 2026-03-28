@@ -1,6 +1,15 @@
 ---
 extends: default
 
+ignore:
+  - fleet-gitops/rendered/
+  # Template files with ${ROOT_CA_PEM_INDENT*} break YAML syntax pre-rendering
+  - fleet-gitops/20-monitoring/monitoring-secrets/manifests/vault-root-ca.yaml
+  - fleet-gitops/40-gitops/argo-rollouts-manifests/manifests/vault-root-ca.yaml
+  - fleet-gitops/40-gitops/argo-workflows-manifests/manifests/vault-root-ca.yaml
+  - fleet-gitops/40-gitops/argocd/values.yaml
+  - fleet-gitops/50-gitlab/gitlab-credentials/manifests/secret-root-ca.yaml
+
 rules:
   line-length: disable
   comments-indentation: disable

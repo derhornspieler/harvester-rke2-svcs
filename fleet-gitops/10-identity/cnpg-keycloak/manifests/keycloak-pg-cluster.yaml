@@ -6,6 +6,8 @@ kind: Cluster
 metadata:
   name: keycloak-pg
   namespace: database
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   instances: 3
   imageName: ${IMAGE_POSTGRESQL_16}
