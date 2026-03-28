@@ -6,7 +6,7 @@ ArgoCD handles **application deployment** for all services across dev, staging, 
 
 All application deployments are managed through a single repository: `platform/platform-deployments`. This is the single source of truth for what is deployed where across all environments.
 
-- **Your team repo** (e.g., `forge/svc-forge`) — builds and pushes container images
+- **Your team repo** (e.g., `<TEAM>/<APP>`) — builds and pushes container images
 - **platform-deployments repo** — defines how those images are deployed across dev/staging/prod
 - **ArgoCD** — watches `platform-deployments` and auto-syncs all applications
 
@@ -52,83 +52,93 @@ ArgoCD auto-discovers applications from the `platform-deployments` repository st
 
 ```
 platform-deployments/
-  base/
-    microservice/              # Shared Deployment, Service, HPA
+  dev/
+    <TEAM>/<APP>/              # Dev overlay (self-contained)
+      kustomization.yaml
       deployment.yaml
       service.yaml
-      hpa.yaml
-      kustomization.yaml
 
-  dev/
-    forge/svc-forge/           # Dev overlay for svc-forge
+  staged/
+    <TEAM>/<APP>/              # Staged overlay
       kustomization.yaml
-    identity/identity-webui/
-      kustomization.yaml
-
-  staging/
-    forge/svc-forge/           # Staging overlay
-      kustomization.yaml
-    identity/identity-webui/
-      kustomization.yaml
+      deployment.yaml
+      service.yaml
 
   prod/
-    forge/svc-forge/           # Production overlay
+    <TEAM>/<APP>/              # Production overlay
       kustomization.yaml
-    identity/identity-webui/
-      kustomization.yaml
+      deployment.yaml
+      service.yaml
 ```
 
-Each overlay is a Kustomize `kustomization.yaml` that references the base and sets environment-specific values:
+Each team owns their overlay — define Deployment, Service, Ingress, HPA,
+and any other resources directly. No shared base required.
+
+Each overlay is a self-contained Kustomize directory. Teams define their own
+Deployment, Service, Ingress, HPA, and other resources directly — no shared
+base required.
 
 ```yaml
-# base/microservice/kustomization.yaml
+# dev/<TEAM>/<APP>/kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: dev-<APP>
 resources:
   - deployment.yaml
   - service.yaml
-  - hpa.yaml
+images:
+  - name: CHANGEME_IMAGE
+    newName: harbor.dev.<DOMAIN>/<TEAM>/<APP>
+    newTag: latest
 ```
 
 ```yaml
-# dev/forge/svc-forge/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: dev-svc-forge
-bases:
-  - ../../../base/microservice
-images:
-  - name: CHANGEME_IMAGE
-    newName: harbor.dev.<DOMAIN>/forge/svc-forge
-    newTag: latest
-replicas:
-  - name: svc-forge
-    count: 1
+# dev/<TEAM>/<APP>/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <APP>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: <APP>
+  template:
+    metadata:
+      labels:
+        app: <APP>
+    spec:
+      containers:
+        - name: <APP>
+          image: CHANGEME_IMAGE
+          ports:
+            - containerPort: 8080
 ```
 
 ## Adding a New Application
 
 To add a new application to the platform-deployments repository:
 
-1. **Create folder structure** (platform team may seed this):
+1. **Create folder structure:**
    ```bash
-   mkdir -p base/microservice
-   mkdir -p dev/<team>/<app>
-   mkdir -p staging/<team>/<app>
-   mkdir -p prod/<team>/<app>
+   mkdir -p dev/<TEAM>/<APP>
+   mkdir -p staged/<TEAM>/<APP>
+   mkdir -p prod/<TEAM>/<APP>
    ```
 
-2. **Create Kustomize overlays** — use the base as a template:
+2. **Define your manifests** in each overlay — Deployment, Service, Ingress,
+   HPA, etc. Each team owns their resource definitions:
    ```yaml
-   # dev/<team>/<app>/kustomization.yaml
+   # dev/<TEAM>/<APP>/kustomization.yaml
    apiVersion: kustomize.config.k8s.io/v1beta1
    kind: Kustomization
-   namespace: dev-<app>
-   bases:
-     - ../../../base/microservice
+   namespace: dev-<APP>
+   resources:
+     - deployment.yaml
+     - service.yaml
    images:
      - name: CHANGEME_IMAGE
-       newName: harbor.dev.<DOMAIN>/<team>/<app>
+       newName: harbor.dev.<DOMAIN>/<TEAM>/<APP>
        newTag: latest
    ```
 
@@ -143,7 +153,7 @@ To add a new application to the platform-deployments repository:
 Promotion follows a gated workflow from dev → staging → prod:
 
 ```
-Your Repo (forge/svc-forge)
+Your Repo (<TEAM>/<APP>)
   ↓ Push image to Harbor
   ↓
 Dev Deployment (Auto-Sync)
@@ -165,21 +175,21 @@ Production Deployment (MR + Platform Team Approval)
 
 ArgoCD uses the **git directory generator** to auto-discover applications from folder structure. Each overlay folder in `platform-deployments` becomes an Application.
 
-For example, `dev/forge/svc-forge/kustomization.yaml` automatically creates an Application:
+For example, `dev/<TEAM>/<APP>/kustomization.yaml` automatically creates an Application:
 
 ```yaml
 metadata:
-  name: svc-forge-dev
+  name: <APP>-dev
   namespace: argocd
 spec:
   project: developer-dev
   source:
     repoURL: https://gitlab.<DOMAIN>/platform/platform-deployments.git
     targetRevision: main
-    path: dev/forge/svc-forge
+    path: dev/<TEAM>/<APP>
   destination:
     server: https://kubernetes.default.svc
-    namespace: dev-svc-forge
+    namespace: dev-<APP>
   syncPolicy:
     automated:
       prune: true
@@ -202,7 +212,7 @@ These projects are automatically configured during the `argocd-gitlab-setup` job
 
 Argo Rollouts is deployed alongside ArgoCD (Fleet bundle `40-gitops/argo-rollouts`). It replaces standard Kubernetes `Deployment` resources with `Rollout` resources that support canary and blue-green strategies.
 
-Define Rollout resources in the `base/microservice/deployment.yaml` (use `Rollout` instead of `Deployment`). ArgoCD automatically applies them via the `platform-deployments` overlays.
+Define Rollout resources in your overlay's `deployment.yaml` (use `Rollout` instead of `Deployment`). ArgoCD automatically applies them via the `platform-deployments` overlays.
 
 ### Canary Deployments
 
@@ -212,7 +222,7 @@ Gradually shift traffic to a new version while validating metrics:
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: svc-forge
+  name: <APP>
 spec:
   replicas: 5
   strategy:
@@ -230,15 +240,15 @@ spec:
         - pause: { duration: 5m }
   selector:
     matchLabels:
-      app: svc-forge
+      app: <APP>
   template:
     metadata:
       labels:
-        app: svc-forge
+        app: <APP>
     spec:
       containers:
-        - name: svc-forge
-          image: harbor.dev.<DOMAIN>/forge/svc-forge:v1.2.3
+        - name: <APP>
+          image: harbor.dev.<DOMAIN>/<TEAM>/<APP>:v1.2.3
 ```
 
 ### Shared Analysis Templates
@@ -259,33 +269,33 @@ For instant switchover with a preview environment:
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: svc-forge
+  name: <APP>
 spec:
   replicas: 3
   strategy:
     blueGreen:
-      activeService: svc-forge
-      previewService: svc-forge-preview
+      activeService: <APP>
+      previewService: <APP>-preview
       autoPromotionEnabled: false
       previewReplicaCount: 3
       scaleDownDelaySeconds: 30
   selector:
     matchLabels:
-      app: svc-forge
+      app: <APP>
   template:
     metadata:
       labels:
-        app: svc-forge
+        app: <APP>
     spec:
       containers:
-        - name: svc-forge
-          image: harbor.dev.<DOMAIN>/forge/svc-forge:v1.2.3
+        - name: <APP>
+          image: harbor.dev.<DOMAIN>/<TEAM>/<APP>:v1.2.3
 ```
 
-This deploys the new version behind `svc-forge-preview`. After validation, promote manually:
+This deploys the new version behind `<APP>-preview`. After validation, promote manually:
 
 ```bash
-kubectl argo rollouts promote svc-forge -n dev-svc-forge
+kubectl argo rollouts promote <APP> -n dev-<APP>
 ```
 
 ## Rollback Strategies
@@ -332,8 +342,8 @@ argocd app list
 Check sync status of a specific app:
 
 ```bash
-argocd app get svc-forge-dev
-argocd app sync svc-forge-dev --dry-run
+argocd app get <APP>-dev
+argocd app sync <APP>-dev --dry-run
 ```
 
 ### View ArgoCD events
@@ -341,15 +351,15 @@ argocd app sync svc-forge-dev --dry-run
 If an app is stuck in "OutOfSync" or "Unknown" state:
 
 ```bash
-kubectl describe app svc-forge-dev -n argocd
+kubectl describe app <APP>-dev -n argocd
 kubectl logs -n argocd deployment/argocd-application-controller | tail -50
 ```
 
 ### Check Argo Rollouts status
 
 ```bash
-kubectl argo rollouts status svc-forge -n dev-svc-forge
-kubectl argo rollouts get rollout svc-forge -n dev-svc-forge
+kubectl argo rollouts status <APP> -n dev-<APP>
+kubectl argo rollouts get rollout <APP> -n dev-<APP>
 ```
 
 ### Verify git directory generator is discovering apps
@@ -381,7 +391,7 @@ If the key is missing, the `argocd-gitlab-setup` Job will re-upload it on next r
 ### Manual sync if auto-sync stalls
 
 ```bash
-argocd app sync svc-forge-dev
+argocd app sync <APP>-dev
 ```
 
 Or sync all apps:
