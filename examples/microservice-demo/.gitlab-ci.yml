@@ -72,7 +72,17 @@ scan:image:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
 
-# Deploy to dev via platform-deployments (GDT from Vault)
+# Deploy to dev via platform-deployments (SSH deploy key from Vault)
+# For production projects, use the reusable template instead of inline:
+#   include:
+#     - project: 'infra_and_platform_services/harvester-rke2-svcs'
+#       ref: main
+#       file: '/services/gitlab/ci-templates/jobs/deploy.yml'
+#   deploy:dev:
+#     extends: .deploy:platform-deployments
+#     variables:
+#       DEPLOY_TEAM: library
+#       DEPLOY_APP: microservice-demo
 deploy:dev:
   stage: deploy
   image: docker.io/alpine/k8s:1.32.4
@@ -99,35 +109,38 @@ deploy:dev:
       DEPLOY_KEY=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
         -H "X-Vault-Token: ${VAULT_TOKEN}" \
         "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" | \
-        jq -r '.data.data["private-key"]')
+        jq -r '.data.data["private_key"] // .data.data["private-key"]')
 
       if [ -z "${DEPLOY_KEY}" ] || [ "${DEPLOY_KEY}" = "null" ]; then
-        echo "ERROR: Could not fetch deploy key from Vault"
+        echo "ERROR: No deploy key in Vault at kv/services/ci/platform-deploy-key"
         exit 1
       fi
-      echo "Deploy key loaded from Vault"
 
       # Configure SSH
       mkdir -p ~/.ssh
       echo "${DEPLOY_KEY}" > ~/.ssh/deploy_key
       chmod 600 ~/.ssh/deploy_key
-      ssh-keyscan gitlab.${DOMAIN} >> ~/.ssh/known_hosts 2>/dev/null
+      ssh-keyscan "gitlab.${DOMAIN}" >> ~/.ssh/known_hosts 2>/dev/null
       export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
 
       # Clone platform-deployments (dev branch) via SSH
       git config --global user.name "CI Deploy"
       git config --global user.email "ci@deploy.local"
-      git clone --branch dev \
+      git clone --branch dev --depth 1 \
         "git@gitlab.${DOMAIN}:platform/platform-deployments.git" \
         /tmp/deploy
 
       # Update image tag
-      cd /tmp/deploy/dev/${DEPLOY_TEAM}/${DEPLOY_APP}
+      cd "/tmp/deploy/dev/${DEPLOY_TEAM}/${DEPLOY_APP}"
       kustomize edit set image \
-        CHANGEME_IMAGE=${REGISTRY}/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}
+        "CHANGEME_IMAGE=${REGISTRY}/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}"
 
       # Commit and push
       git add .
-      git commit -m "deploy: ${DEPLOY_APP} ${CI_COMMIT_SHORT_SHA} to dev"
-      git push origin dev
-      echo "Deployed to dev — ArgoCD will sync within ~3 minutes"
+      if git diff --cached --quiet; then
+        echo "No changes — image tag already up to date"
+      else
+        git commit -m "deploy: ${DEPLOY_APP} ${CI_COMMIT_SHORT_SHA} to dev"
+        git push origin dev
+        echo "Deployed to dev — ArgoCD syncs within ~3 minutes"
+      fi
