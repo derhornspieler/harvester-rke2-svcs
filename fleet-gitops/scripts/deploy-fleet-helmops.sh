@@ -178,6 +178,8 @@ HELMOP_DEFS=(
   "gitlab-runners|oci://${HARBOR}/fleet/gitlab-runners|${BUNDLE_VERSION}|gitlab-runners|gitlab-runners|gitlab-ready|"
   "gitlab-runner-shared|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-shared|gitlab-runners|50-gitlab/gitlab-runner-shared/values.yaml"
   "gitlab-runner-terraform|${OCI_CHART_GITLAB_RUNNER}|${CHART_VER_GITLAB_RUNNER}|gitlab-runners|gitlab-runner-terraform|gitlab-runners|50-gitlab/gitlab-runner-terraform/values.yaml"
+  # 60-cicd-onboard: per-app platform onboarding jobs
+  "onboard-identity-portal|oci://${HARBOR}/fleet/onboard-identity-portal|${BUNDLE_VERSION}|harbor|onboard-identity-portal|harbor-init,identity-keycloak-config|"
 )
 
 # ============================================================
