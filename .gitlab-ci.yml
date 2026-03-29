@@ -166,7 +166,6 @@ push-bundles:
     - |
       cd fleet-gitops
       bash scripts/ci-build-env.sh
-      source .env
       bash scripts/render-templates.sh
       bash scripts/push-bundles.sh
 
@@ -190,7 +189,6 @@ deploy-fleet:
     - |
       cd fleet-gitops
       bash scripts/ci-build-env.sh
-      source .env
 
       if [ "${CHANGED_GROUPS}" = "ALL" ] || [ "${FORCE_FULL_DEPLOY:-}" = "true" ]; then
         echo "Deploying ALL groups..."
@@ -227,7 +225,6 @@ deploy-fleet-full:
     - |
       cd fleet-gitops
       bash scripts/ci-build-env.sh
-      source .env
       echo "Full deploy — all groups..."
       bash scripts/deploy-fleet-helmops.sh --ci-mode
       echo ""
