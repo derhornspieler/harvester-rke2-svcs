@@ -83,7 +83,9 @@ log "[INFO] Credentials loaded"
 
 # --- Build .env from .env.example ---
 log "[INFO] Building .env from .env.example..."
-cp "${FLEET_DIR}/.env.example" "${FLEET_DIR}/.env"
+# Comment out lines with <PLACEHOLDER> syntax that bash would interpret as
+# input redirection (e.g., git@github.com:<USER>/<REPO>.git)
+sed 's/=.*<[A-Z_]*>.*/=""/' "${FLEET_DIR}/.env.example" > "${FLEET_DIR}/.env"
 
 # Inject secrets and variables
 {
