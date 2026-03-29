@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backup-s3
+  namespace: backup
+spec:
+  parentRefs:
+    - name: backup
+      namespace: backup
+      sectionName: https
+  hostnames:
+    - "${BACKUP_FQDN}"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backup-minio
+          port: 9000

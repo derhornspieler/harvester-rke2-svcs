@@ -1,0 +1,23 @@
+defaultNamespace: redis-operator
+helm:
+  releaseName: redis-operator
+  chart: ${OCI_HELM_PREFIX}/redis-operator
+  version: "${CHART_VER_REDIS_OPERATOR}"
+  valuesFiles:
+    - values.yaml
+diff:
+  comparePatches:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      operations:
+        - op: remove
+          path: /spec/resources/requests/storage
+        - op: remove
+          path: /spec/resources/requests
+    - apiVersion: batch/v1
+      kind: Job
+      operations:
+        - op: remove
+          path: /status
+targets:
+  - clusterName: ${FLEET_TARGET_CLUSTER}

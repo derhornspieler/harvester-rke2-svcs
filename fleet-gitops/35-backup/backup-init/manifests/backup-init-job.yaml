@@ -1,0 +1,215 @@
+# backup-init: Bootstrap Vault ESO roles, MinIO buckets, and per-consumer
+# access keys for the dedicated backup MinIO instance.
+#
+# Auth: K8s auth to Vault (bootstrap-base-backup role). NO root token.
+# Requires: Vault unsealed, backup MinIO running.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup-init
+  namespace: backup
+  labels:
+    app.kubernetes.io/name: backup-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backup-init
+      annotations:
+        deploy-version: "${BUNDLE_VERSION}"
+    spec:
+      serviceAccountName: backup-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: vault-bin
+          emptyDir: {}
+        - name: mc-bin
+          emptyDir: {}
+      initContainers:
+        - name: vault-bin
+          image: ${IMAGE_VAULT}
+          command: ["cp", "/bin/vault", "/vault-bin/vault"]
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+        - name: mc-bin
+          image: ${IMAGE_MINIO_MC}
+          command: ["cp", "/usr/bin/mc", "/mc-bin/mc"]
+          volumeMounts:
+            - name: mc-bin
+              mountPath: /mc-bin
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      containers:
+        - name: backup-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: PATH
+              value: "/vault-bin:/mc-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            - name: HOME
+              value: "/tmp"
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+            - name: MINIO_ENDPOINT
+              value: "http://backup-minio.backup.svc.cluster.local:9000"
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+
+              vault_k8s_login() {
+                local role="$1"
+                local sa_token
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                  role="${role}" jwt="${sa_token}")
+                export VAULT_TOKEN
+                log "[INFO] Authenticated to Vault as role: ${role}"
+              }
+
+              vault_get_or_generate() {
+                local path="$1" property="$2" length="${3:-32}"
+                local existing
+                existing=$(vault kv get -field="${property}" "kv/${path}" 2>/dev/null || true)
+                if [[ -n "${existing}" ]]; then
+                  echo "${existing}"
+                  return 0
+                fi
+                head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "${length}" || true
+              }
+
+              # --- Authenticate to Vault ---
+              vault_k8s_login "bootstrap-base-minio"
+
+              # --- Bind ESO roles for backup namespace ---
+              log "[INFO] Binding ESO roles for backup namespace..."
+              for role_type in reader writer; do
+                vault write "auth/kubernetes/role/eso-${role_type}-backup" \
+                  bound_service_account_names="eso-secrets,external-secrets" \
+                  bound_service_account_namespaces="backup" \
+                  policies="eso-${role_type}-backup" \
+                  ttl=1h
+              done
+              log "[INFO] ESO roles bound"
+
+              # --- Wait for MinIO to be ready ---
+              log "[INFO] Waiting for backup MinIO..."
+              for i in $(seq 1 60); do
+                if curl -sf "${MINIO_ENDPOINT}/minio/health/ready" >/dev/null 2>&1; then
+                  log "[INFO] MinIO ready (attempt ${i})"
+                  break
+                fi
+                sleep 5
+              done
+
+              # --- Get or generate root credentials ---
+              ROOT_USER=$(vault_get_or_generate "admin/backup" "root-user")
+              if [[ -z "${ROOT_USER}" ]]; then
+                ROOT_USER="backup-admin"
+              fi
+              ROOT_PASS=$(vault_get_or_generate "admin/backup" "root-password")
+              vault kv put "kv/admin/backup" \
+                root-user="${ROOT_USER}" \
+                root-password="${ROOT_PASS}"
+              log "[INFO] Root credentials stored in Vault"
+
+              # --- Configure mc ---
+              # Use the deployment's root credentials (from ExternalSecret)
+              DEPLOY_USER=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token | head -c 0 || true)
+              # Read from the K8s secret directly
+              mc alias set backup "${MINIO_ENDPOINT}" "${ROOT_USER}" "${ROOT_PASS}" --api S3v4 2>/dev/null || {
+                log "[WARN] Cannot connect with Vault creds — MinIO may still be initializing"
+                log "[INFO] Skipping bucket creation — will succeed on next deploy"
+                exit 0
+              }
+              log "[INFO] mc configured"
+
+              # --- Create buckets ---
+              for bucket in rancher-backups velero etcd-snapshots; do
+                mc mb --ignore-existing "backup/${bucket}"
+                log "[INFO] Bucket '${bucket}' ready"
+              done
+
+              # --- Create per-consumer access keys ---
+              for consumer in rancher-backup velero etcd-snapshot; do
+                AK=$(vault_get_or_generate "services/backup/${consumer}" "access-key" 20)
+                SK=$(vault_get_or_generate "services/backup/${consumer}" "secret-key" 40)
+
+                # Create MinIO user if not exists
+                mc admin user add backup "${AK}" "${SK}" 2>/dev/null || true
+
+                # Determine bucket
+                case "${consumer}" in
+                  rancher-backup) BUCKET="rancher-backups" ;;
+                  velero)         BUCKET="velero" ;;
+                  etcd-snapshot)  BUCKET="etcd-snapshots" ;;
+                esac
+
+                # Create scoped policy
+                mc admin policy create backup "${consumer}-policy" /dev/stdin <<POLICY 2>/dev/null || true
+              {
+                "Version": "2012-10-17",
+                "Statement": [{
+                  "Effect": "Allow",
+                  "Action": ["s3:*"],
+                  "Resource": [
+                    "arn:aws:s3:::${BUCKET}",
+                    "arn:aws:s3:::${BUCKET}/*"
+                  ]
+                }]
+              }
+              POLICY
+                mc admin policy attach backup "${consumer}-policy" --user "${AK}" 2>/dev/null || true
+
+                # Store in Vault
+                vault kv put "kv/services/backup/${consumer}" \
+                  access-key="${AK}" \
+                  secret-key="${SK}" \
+                  bucket="${BUCKET}" \
+                  endpoint="https://backup.${DOMAIN}"
+                log "[INFO] Consumer '${consumer}' provisioned (bucket: ${BUCKET})"
+              done
+
+              log "[INFO] backup-init complete"
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+            - name: mc-bin
+              mountPath: /mc-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi

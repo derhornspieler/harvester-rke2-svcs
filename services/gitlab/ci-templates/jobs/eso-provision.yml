@@ -1,0 +1,61 @@
+# Self-service ESO provisioning via Vault JWT auth
+#
+# Creates scoped Vault policy + K8s auth role so ESO can sync secrets
+# for this service. Runs only when ExternalSecret manifests change.
+#
+# Required variables:
+#   ESO_NAMESPACE — target K8s namespace for SecretStore
+#   ESO_VAULT_PATHS — space-separated Vault KV paths (e.g., "services/my-svc/creds")
+#
+# Uses Vault JWT role: gitlab-ci-eso (scoped to eso-* policy/role creation)
+
+.provision:eso:
+  stage: provision
+  image:
+    name: hashicorp/vault:1.18
+    entrypoint: [""]
+  variables:
+    VAULT_ROLE: gitlab-ci-eso
+    ESO_NAMESPACE: ${CI_PROJECT_NAME}
+    ESO_VAULT_PATHS: ""
+  before_script:
+    - |
+      export VAULT_TOKEN=$(vault write -field=token auth/jwt/login \
+        role="${VAULT_ROLE}" \
+        jwt="${VAULT_ID_TOKEN}")
+  script:
+    - |
+      if [ -z "${ESO_VAULT_PATHS}" ]; then
+        echo "ESO_VAULT_PATHS not set — skipping ESO provisioning"
+        exit 0
+      fi
+
+      POLICY_NAME="eso-${ESO_NAMESPACE}"
+
+      # Build scoped Vault policy (read-only on service's KV paths)
+      POLICY=""
+      for path in ${ESO_VAULT_PATHS}; do
+        POLICY="${POLICY}path \"kv/data/${path}\" { capabilities = [\"read\"] }
+      "
+        POLICY="${POLICY}path \"kv/metadata/${path}\" { capabilities = [\"read\"] }
+      "
+      done
+      echo "$POLICY" | vault policy write "$POLICY_NAME" -
+
+      # Create K8s auth role bound to eso-secrets ServiceAccount
+      vault write "auth/kubernetes/role/${POLICY_NAME}" \
+        bound_service_account_names="eso-secrets" \
+        bound_service_account_namespaces="${ESO_NAMESPACE}" \
+        policies="${POLICY_NAME}" \
+        ttl=1h
+
+      echo "ESO provisioned: policy=${POLICY_NAME}, namespace=${ESO_NAMESPACE}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - k8s/base/external-secret*.yaml
+        - k8s/base/secretstore.yaml
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true

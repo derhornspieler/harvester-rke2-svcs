@@ -1,0 +1,177 @@
+---
+# Overprovisioning pause pods for the general node pool
+# Reserve capacity on general nodes (4 CPU, 16Gi per node)
+# 1 replica x 2 CPU/6Gi = buffer on one node
+# Using 1 replica so Fleet sees 1/1 Ready (Pending pause pods are by-design
+# but Fleet interprets them as "not minimum availability")
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overprovisioning-general
+  namespace: cluster-autoscaler
+  labels:
+    app.kubernetes.io/name: overprovisioning
+    app.kubernetes.io/component: general
+    app.kubernetes.io/part-of: cluster-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: overprovisioning
+      app.kubernetes.io/component: general
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: overprovisioning
+        app.kubernetes.io/component: general
+    spec:
+      priorityClassName: overprovisioning
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        workload-type: general
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: overprovisioning
+                    app.kubernetes.io/component: general
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: ${IMAGE_PAUSE}
+          resources:
+            requests:
+              cpu: "2"
+              memory: 6Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+---
+# Overprovisioning pause pods for the compute node pool
+# Reserve half a compute node (16 CPU, 32Gi per node)
+# 1 replica x 8 CPU/16Gi = ~50% of node capacity
+# Will sit Pending if node is full — autoscaler ignores it (priority < 0)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overprovisioning-compute
+  namespace: cluster-autoscaler
+  labels:
+    app.kubernetes.io/name: overprovisioning
+    app.kubernetes.io/component: compute
+    app.kubernetes.io/part-of: cluster-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: overprovisioning
+      app.kubernetes.io/component: compute
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: overprovisioning
+        app.kubernetes.io/component: compute
+    spec:
+      priorityClassName: overprovisioning
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        workload-type: compute
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: overprovisioning
+                    app.kubernetes.io/component: compute
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: ${IMAGE_PAUSE}
+          resources:
+            requests:
+              cpu: "8"
+              memory: 16Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+---
+# Overprovisioning pause pods for the database node pool
+# Reserve capacity on database nodes (4 CPU, 24Gi per node)
+# 1 replica x 2 CPU/10Gi = buffer on one node
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overprovisioning-database
+  namespace: cluster-autoscaler
+  labels:
+    app.kubernetes.io/name: overprovisioning
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: cluster-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: overprovisioning
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: overprovisioning
+        app.kubernetes.io/component: database
+    spec:
+      priorityClassName: overprovisioning
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        workload-type: database
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: overprovisioning
+                    app.kubernetes.io/component: database
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: ${IMAGE_PAUSE}
+          resources:
+            requests:
+              cpu: "2"
+              memory: 10Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true

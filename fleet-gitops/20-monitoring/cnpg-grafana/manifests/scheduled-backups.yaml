@@ -1,0 +1,41 @@
+# Tiered backup schedule for grafana-pg
+# Daily: 7-day recovery window | Weekly: 30-day rollback | Monthly: 90-day compliance
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: grafana-pg-daily
+  namespace: database
+spec:
+  schedule: "0 15 3 * * *"  # 03:15 UTC daily
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: grafana-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: grafana-pg-weekly
+  namespace: database
+spec:
+  schedule: "0 15 4 * * 0"  # 04:15 UTC Sunday
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: grafana-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: grafana-pg-monthly
+  namespace: database
+spec:
+  schedule: "0 15 5 1 * *"  # 05:15 UTC 1st of month
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: grafana-pg
+  method: barmanObjectStore

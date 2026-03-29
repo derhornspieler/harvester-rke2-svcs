@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: prod-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: "https://${GITLAB_FQDN}/platform/platform-deployments.git"
+        revision: main
+        directories:
+          - path: "production/*/*"
+  template:
+    metadata:
+      name: '{{ "{{ .path.basename }}" }}'
+      labels:
+        app.kubernetes.io/part-of: '{{ "{{ index .path.segments 1 }}" }}'
+        environment: production
+    spec:
+      project: developer-apps
+      source:
+        repoURL: "https://${GITLAB_FQDN}/platform/platform-deployments.git"
+        targetRevision: main
+        path: '{{ "{{ .path.path }}" }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'app-{{ "{{ .path.basename }}" }}'
+      syncPolicy:
+        managedNamespaceMetadata:
+          labels:
+            ${LABEL_PREFIX}/environment: production
+            ${LABEL_PREFIX}/managed-by: argocd
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true

@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-coredns
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Networking
+data:
+  coredns.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": false, "type": "link"}],
+      "panels": [
+        {
+          "title": "CoreDNS Instances Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "count(up{job=\"coredns\"} == 1)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Total DNS Requests/s",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {"defaults": {"unit": "reqps", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 10000}, {"color": "red", "value": 50000}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(rate(coredns_dns_requests_total{job=\"coredns\"}[5m]))", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Cache Hit Rate %",
+          "description": "Percentage of DNS queries served from cache. Green (>40%) = normal for Kubernetes (many unique pod lookups keep hit rate around 50-70%). Orange (20-40%) = investigate. Red (<20%) = likely misconfigured.",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 20}, {"color": "green", "value": 40}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(rate(coredns_cache_hits_total{job=\"coredns\"}[5m])) / (sum(rate(coredns_cache_hits_total{job=\"coredns\"}[5m])) + sum(rate(coredns_cache_misses_total{job=\"coredns\"}[5m]))) * 100", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Panics",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 10,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "coredns_panics_total{job=\"coredns\"}", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "DNS Request Rate by Type",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "id": 4,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false, "thresholdsStyle": {"mode": "line+area"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "orange", "value": 5000}]}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "sum by (type) (rate(coredns_dns_requests_total{job=\"coredns\"}[5m]))", "legendFormat": "{{type}}", "refId": "A"}]
+        },
+        {
+          "title": "DNS Request Rate by Rcode",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "sum by (rcode) (rate(coredns_dns_responses_total{job=\"coredns\"}[5m]))", "legendFormat": "{{rcode}}", "refId": "A"}]
+        },
+        {
+          "title": "DNS Request Duration (p50, p90, p99)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job=\"coredns\"}[5m])))", "legendFormat": "p50", "refId": "A"},
+            {"expr": "histogram_quantile(0.90, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job=\"coredns\"}[5m])))", "legendFormat": "p90", "refId": "B"},
+            {"expr": "histogram_quantile(0.99, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket{job=\"coredns\"}[5m])))", "legendFormat": "p99", "refId": "C"}
+          ]
+        },
+        {
+          "title": "Cache Size",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "coredns_cache_entries{job=\"coredns\"}", "legendFormat": "{{type}}", "refId": "A"}]
+        },
+        {
+          "title": "Cache Hit/Miss Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum by (type) (rate(coredns_cache_hits_total{job=\"coredns\"}[5m]))", "legendFormat": "hits: {{type}}", "refId": "A"},
+            {"expr": "sum(rate(coredns_cache_misses_total{job=\"coredns\"}[5m]))", "legendFormat": "misses", "refId": "B"}
+          ]
+        },
+        {
+          "title": "DNS Errors (SERVFAIL)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+          "id": 9,
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "fixed", "fixedColor": "red"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "sum(rate(coredns_dns_responses_total{job=\"coredns\",rcode=\"SERVFAIL\"}[5m]))", "legendFormat": "SERVFAIL", "refId": "A"}]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["coredns", "dns", "rke2", "platform"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "CoreDNS",
+      "uid": "coredns-dashboard",
+      "version": 1,
+      "description": "CoreDNS monitoring dashboard for DNS request rates, latency, cache performance, and error tracking."
+    }

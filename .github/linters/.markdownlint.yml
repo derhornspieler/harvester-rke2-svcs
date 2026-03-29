@@ -1,0 +1,36 @@
+---
+# Markdown linting rules
+default: true
+
+# Line length - disabled (tables, mermaid, URLs exceed limits)
+MD013: false
+
+# Inline HTML - allow common elements for Mermaid diagrams
+MD033:
+  allowed_elements:
+    - br
+    - details
+    - summary
+    - img
+    - sub
+    - sup
+
+# First line heading - disabled (badges at top of README)
+MD041: false
+
+# Duplicate headings - only flag siblings
+MD024:
+  siblings_only: true
+
+# Blanks around fences/lists - disabled for tight formatting
+MD031: false
+MD032: false
+
+# Code fence style - disabled (indented blocks used in service READMEs)
+MD046: false
+
+# Code block language - not required
+MD040: false
+
+# Table column style - disabled (compact separators are readable)
+MD060: false

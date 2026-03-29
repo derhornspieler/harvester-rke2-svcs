@@ -1,0 +1,52 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: harbor-minio
+  namespace: minio
+spec:
+  target:
+    pvcName: minio-data
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 500Gi
+  increasePercent: 20
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: harbor-pg
+  namespace: database
+spec:
+  target:
+    selector:
+      matchLabels:
+        cnpg.io/cluster: harbor-pg
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 100Gi
+  increasePercent: 25
+  increaseMinimum: 5Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: harbor-valkey
+  namespace: harbor
+spec:
+  target:
+    selector:
+      matchLabels:
+        app: harbor-redis
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 10Gi
+  increasePercent: 25
+  increaseMinimum: 1Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m

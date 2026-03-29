@@ -1,0 +1,345 @@
+# minio-init: Create bootstrap admin user in MinIO, store creds in Vault.
+# Auth: K8s auth to Vault (bootstrap-base-minio role). NO root token.
+# Requires: Vault unsealed, MinIO running with PushSecret-generated root creds.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: minio
+  labels:
+    app.kubernetes.io/name: minio-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-init
+    spec:
+      serviceAccountName: minio-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: vault-bin
+          emptyDir: {}
+        - name: mc-bin
+          emptyDir: {}
+      initContainers:
+        - name: vault-bin
+          image: ${IMAGE_VAULT}
+          command: ["cp", "/bin/vault", "/vault-bin/vault"]
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+        - name: mc-bin
+          image: ${IMAGE_MINIO_MC}
+          command: ["cp", "/usr/bin/mc", "/mc-bin/mc"]
+          volumeMounts:
+            - name: mc-bin
+              mountPath: /mc-bin
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      containers:
+        - name: minio-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: PATH
+              value: "/vault-bin:/mc-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            - name: HOME
+              value: "/tmp"
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+            - name: MINIO_ENDPOINT
+              value: "${MINIO_INTERNAL_URL}"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root-credentials
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-root-credentials
+                  key: root-password
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # minio-init: Bind ESO roles, create SecretStores, create bootstrap
+              # admin user, store creds in Vault. Idempotent — safe to re-run.
+
+              #################################################################
+              # Inline helpers (no init-lib.sh dependency)
+              #################################################################
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+
+              vault_k8s_login() {
+                local role="$1"
+                local sa_token
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                  role="${role}" jwt="${sa_token}")
+                export VAULT_TOKEN
+                log "[INFO] Authenticated to Vault as role: ${role}"
+              }
+
+              vault_get_or_generate() {
+                local path="$1" property="$2" length="${3:-32}"
+                local existing
+                existing=$(vault kv get -field="${property}" "kv/${path}" 2>/dev/null || true)
+                if [[ -n "${existing}" ]]; then
+                  echo "${existing}"
+                  return 0
+                fi
+                head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "${length}" || true
+              }
+
+              vault_kv_put() {
+                local path="$1"; shift
+                vault kv put "kv/${path}" "$@"
+                log "[INFO] Written to kv/${path}"
+              }
+
+              vault_bind_eso_roles() {
+                local namespace="$1"
+                local sa_names="eso-secrets,external-secrets"
+                vault write "auth/kubernetes/role/eso-reader-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-reader-${namespace}" \
+                  ttl=1h
+                vault write "auth/kubernetes/role/eso-writer-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-writer-${namespace}" \
+                  ttl=1h
+                log "[INFO] Bound ESO roles for namespace: ${namespace}"
+              }
+
+              vault_create_secretstore() {
+                local namespace="$1"
+                local vault_url="${VAULT_ADDR}"
+                kubectl apply -f - <<SSEOF
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-backend
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-reader-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              ---
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-writer
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-writer-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              SSEOF
+                log "[INFO] Created SecretStores (reader + writer) in namespace: ${namespace}"
+              }
+
+              #################################################################
+              # Main logic
+              #################################################################
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-base-minio"
+
+              # --- Bind ESO reader/writer roles for minio namespace ---
+              vault_bind_eso_roles "minio"
+
+              # NOTE: SecretStores for minio namespace are managed by Fleet
+              # (secretstore.yaml in the minio bundle). Do NOT create them here
+              # to avoid Fleet "Modified" drift.
+
+              # --- Wait for MinIO to be ready ---
+              log "[INFO] Waiting for MinIO at ${MINIO_ENDPOINT}..."
+              for attempt in $(seq 1 60); do
+                if curl -sf "${MINIO_ENDPOINT}/minio/health/live" >/dev/null 2>&1; then
+                  log "[INFO] MinIO is ready (attempt ${attempt})"
+                  break
+                fi
+                sleep 5
+              done
+              curl -sf "${MINIO_ENDPOINT}/minio/health/live" >/dev/null 2>&1 || {
+                log "[ERROR] MinIO not ready after 5 minutes"
+                exit 1
+              }
+
+              # --- Setup mc alias with root credentials ---
+              mc alias set myminio "${MINIO_ENDPOINT}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api S3v4
+              log "[INFO] MinIO alias configured"
+
+              # --- Create bootstrap admin user (idempotent) ---
+              log "[INFO] Creating MinIO bootstrap admin user..."
+              ADMIN_USER="minio-bootstrap-admin"
+              EXISTING_PASS=$(vault kv get -field=root-password kv/admin/minio 2>/dev/null || true)
+
+              if [[ -n "${EXISTING_PASS}" ]]; then
+                ADMIN_PASS="${EXISTING_PASS}"
+                log "[INFO] Bootstrap admin password already in Vault, reusing"
+              else
+                ADMIN_PASS=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 32 || true)
+                log "[INFO] Generated new bootstrap admin password"
+              fi
+
+              # Create or update the IAM user with consoleAdmin policy
+              if mc admin user info myminio "${ADMIN_USER}" >/dev/null 2>&1; then
+                log "[INFO] Bootstrap admin user already exists, updating password"
+              fi
+              mc admin user add myminio "${ADMIN_USER}" "${ADMIN_PASS}"
+              mc admin policy attach myminio consoleAdmin --user "${ADMIN_USER}"
+              log "[INFO] Bootstrap admin user created with consoleAdmin policy"
+
+              # --- Store bootstrap admin credentials in Vault ---
+              vault_kv_put "admin/minio" \
+                root-user="${ADMIN_USER}" \
+                root-password="${ADMIN_PASS}"
+              log "[INFO] Bootstrap admin credentials stored at admin/minio"
+
+              # --- Create cnpg-backups bucket for CNPG ---
+              mc mb --ignore-existing "myminio/${MINIO_BUCKET_CNPG_BACKUPS}"
+              log "[INFO] Ensured bucket exists: ${MINIO_BUCKET_CNPG_BACKUPS}"
+
+              # --- Create CNPG backup service account in MinIO ---
+              # Credentials are generated by ESO Password generators and pushed to
+              # Vault by PushSecret (cnpg-harbor bundle). Read them back and create
+              # the corresponding MinIO user with a policy scoped to cnpg-backups.
+              log "[INFO] Creating CNPG backup MinIO user..."
+              CNPG_ACCESS_KEY=$(vault kv get -field=ACCESS_KEY_ID kv/services/database/cnpg-minio 2>/dev/null || true)
+              CNPG_SECRET_KEY=$(vault kv get -field=ACCESS_SECRET_KEY kv/services/database/cnpg-minio 2>/dev/null || true)
+
+              if [[ -n "${CNPG_ACCESS_KEY}" && -n "${CNPG_SECRET_KEY}" ]]; then
+                mc admin user add myminio "${CNPG_ACCESS_KEY}" "${CNPG_SECRET_KEY}"
+
+                # Create a policy scoped to the cnpg-backups bucket
+                cnpg_policy_json=$(cat <<'POLICYJSON'
+              {
+                "Version": "2012-10-17",
+                "Statement": [{
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetBucketLocation",
+                    "s3:ListBucket",
+                    "s3:ListBucketMultipartUploads"
+                  ],
+                  "Resource": ["arn:aws:s3:::${MINIO_BUCKET_CNPG_BACKUPS}"]
+                }, {
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:ListMultipartUploadParts",
+                    "s3:AbortMultipartUpload"
+                  ],
+                  "Resource": ["arn:aws:s3:::${MINIO_BUCKET_CNPG_BACKUPS}/*"]
+                }]
+              }
+              POLICYJSON
+              )
+                echo "${cnpg_policy_json}" | mc admin policy create myminio "cnpg-backup-policy" /dev/stdin
+                mc admin policy attach myminio "cnpg-backup-policy" --user "${CNPG_ACCESS_KEY}"
+                log "[INFO] CNPG backup MinIO user created with cnpg-backup-policy"
+              else
+                log "[WARN] CNPG MinIO credentials not yet in Vault — skipping user creation"
+                log "[WARN] Re-run minio-init after cnpg-harbor PushSecret completes"
+              fi
+
+              # --- Create grafana-plugins bucket and upload plugin from Harbor ---
+              PLUGIN_VER="${GRAFANA_PLUGIN_LOKIEXPLORE_VER}"
+              if [[ -n "${PLUGIN_VER}" ]]; then
+                mc mb --ignore-existing "myminio/${MINIO_BUCKET_GRAFANA_PLUGINS}"
+                mc anonymous set download "myminio/${MINIO_BUCKET_GRAFANA_PLUGINS}"
+                log "[INFO] Ensured bucket exists: ${MINIO_BUCKET_GRAFANA_PLUGINS} (public read)"
+
+                # Check if plugin already uploaded
+                if mc stat "myminio/${MINIO_BUCKET_GRAFANA_PLUGINS}/grafana-lokiexplore-app-${PLUGIN_VER}.zip" >/dev/null 2>&1; then
+                  log "[INFO] Plugin grafana-lokiexplore-app-${PLUGIN_VER}.zip already in MinIO — skipping"
+                else
+                  # Download plugin layer from Harbor OCI artifact (authenticated)
+                  log "[INFO] Downloading grafana-lokiexplore-app:${PLUGIN_VER} from Harbor..."
+                  HARBOR_URL="https://${HARBOR_HOST}"
+                  MANIFEST=$(curl -sk -u "${HARBOR_USER}:${HARBOR_PASS}" \
+                    "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/manifests/${PLUGIN_VER}" \
+                    -H "Accept: application/vnd.oci.image.manifest.v1+json" 2>/dev/null || true)
+                  DIGEST=$(echo "${MANIFEST}" | jq -r '.layers[0].digest // empty' 2>/dev/null || true)
+
+                  if [[ -n "${DIGEST}" ]]; then
+                    curl -sk -u "${HARBOR_USER}:${HARBOR_PASS}" \
+                      "${HARBOR_URL}/v2/library/grafana-lokiexplore-app/blobs/${DIGEST}" \
+                      -o /tmp/plugin-layer.tar.gz
+                    tar xzf /tmp/plugin-layer.tar.gz -C /tmp/
+                    mc cp "/tmp/grafana-lokiexplore-app-${PLUGIN_VER}.zip" \
+                      "myminio/${MINIO_BUCKET_GRAFANA_PLUGINS}/"
+                    rm -f /tmp/plugin-layer.tar.gz "/tmp/grafana-lokiexplore-app-${PLUGIN_VER}.zip"
+                    log "[INFO] Uploaded grafana-lokiexplore-app-${PLUGIN_VER}.zip to ${MINIO_BUCKET_GRAFANA_PLUGINS}"
+                  else
+                    log "[WARN] Could not fetch grafana-lokiexplore-app:${PLUGIN_VER} from Harbor — skipping"
+                    log "[WARN] Ensure push-charts.sh was run with the plugin file in plugins/"
+                  fi
+                fi
+              fi
+
+              log "[INFO] minio-init complete"
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+              readOnly: true
+            - name: mc-bin
+              mountPath: /mc-bin
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

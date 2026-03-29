@@ -1,0 +1,176 @@
+# Platform Demo — CI/CD Pipeline
+#
+# Uses CI Catalog components for standardized build/scan/deploy.
+# Browse components: https://gitlab.<DOMAIN>/explore/catalog
+#
+# Required: DOMAIN group-level CI variable (set by platform team)
+# All other credentials fetched from Vault at runtime.
+
+stages:
+  - lint
+  - build
+  - scan
+  - deploy
+
+# ---------------------------------------------------------------------------
+# Lint — only runs when relevant files change
+# ---------------------------------------------------------------------------
+lint:go:
+  stage: lint
+  image: docker.io/golangci/golangci-lint:v2.7.2-alpine
+  script:
+    - golangci-lint run --timeout 5m ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+
+lint:dockerfile:
+  stage: lint
+  image: docker.io/hadolint/hadolint:v2.12.0-alpine
+  script:
+    - hadolint Dockerfile
+  rules:
+    - changes:
+        - Dockerfile
+
+# ---------------------------------------------------------------------------
+# Build — skip if source files haven't changed
+# ---------------------------------------------------------------------------
+build:image:
+  stage: build
+  image: quay.io/buildah/stable:v1.39
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
+  variables:
+    VAULT_ADDR: "https://vault.${DOMAIN}"
+    REGISTRY: "harbor.dev.${DOMAIN}"
+    IMAGE: "harbor.dev.${DOMAIN}/examples/platform-demo"
+    STORAGE_DRIVER: vfs
+    BUILDAH_FORMAT: docker
+  before_script:
+    - |
+      # Fetch Harbor push credentials from Vault
+      VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        --request POST \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" | jq -r '.auth.client_token')
+
+      HARBOR_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot")
+
+      HARBOR_USER=$(echo "${HARBOR_CREDS}" | jq -r '.data.data.username')
+      HARBOR_PASS=$(echo "${HARBOR_CREDS}" | jq -r '.data.data.password')
+      buildah login -u "${HARBOR_USER}" -p "${HARBOR_PASS}" "${REGISTRY}"
+  script:
+    - |
+      buildah bud --layers \
+        --build-arg "VERSION=${CI_COMMIT_SHORT_SHA}" \
+        -f Dockerfile \
+        -t "${IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        -t "${IMAGE}:${CI_COMMIT_REF_SLUG}" \
+        .
+      buildah push "${IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      buildah push "${IMAGE}:${CI_COMMIT_REF_SLUG}"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - "**/*.go"
+        - go.mod
+        - go.sum
+        - Dockerfile
+        - .dockerignore
+
+# ---------------------------------------------------------------------------
+# Scan — runs on MRs and main
+# ---------------------------------------------------------------------------
+scan:trivy:
+  stage: scan
+  image: docker.io/aquasec/trivy:0.60.0
+  script:
+    - trivy fs --severity HIGH,CRITICAL .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+  allow_failure: true
+
+scan:gitleaks:
+  stage: scan
+  image: docker.io/zricethezav/gitleaks:v8.24.3
+  script:
+    - gitleaks detect --source . --verbose --no-git
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+  allow_failure: true
+
+# ---------------------------------------------------------------------------
+# Deploy — push image tag to platform-deployments (SSH deploy key from Vault)
+# ---------------------------------------------------------------------------
+deploy:dev:
+  stage: deploy
+  image: docker.io/alpine/k8s:1.32.4
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
+  variables:
+    VAULT_ADDR: "https://vault.${DOMAIN}"
+    DEPLOY_TEAM: examples
+    DEPLOY_APP: platform-demo
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - apk add --no-cache git openssh-client curl jq
+  script:
+    - |
+      # Authenticate to Vault
+      VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        --request POST \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" | jq -r '.auth.client_token')
+
+      # Fetch SSH deploy key
+      DEPLOY_KEY=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/ci/platform-deploy-key" | \
+        jq -r '.data.data["private_key"] // .data.data["private-key"]')
+
+      if [ -z "${DEPLOY_KEY}" ] || [ "${DEPLOY_KEY}" = "null" ]; then
+        echo "ERROR: No deploy key in Vault at kv/services/ci/platform-deploy-key"
+        exit 1
+      fi
+
+      # Configure SSH
+      mkdir -p ~/.ssh
+      echo "${DEPLOY_KEY}" > ~/.ssh/deploy_key
+      chmod 600 ~/.ssh/deploy_key
+      ssh-keyscan "gitlab.${DOMAIN}" >> ~/.ssh/known_hosts 2>/dev/null
+      export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+      git config --global user.name "CI Deploy"
+      git config --global user.email "ci@deploy.local"
+
+      # Clone platform-deployments and update image tag
+      git clone --branch dev --depth 1 \
+        "git@gitlab.${DOMAIN}:platform/platform-deployments.git" /tmp/deploy
+      cd "/tmp/deploy/dev/${DEPLOY_TEAM}/${DEPLOY_APP}"
+      kustomize edit set image \
+        "CHANGEME_IMAGE=harbor.dev.${DOMAIN}/${DEPLOY_TEAM}/${DEPLOY_APP}:${CI_COMMIT_SHORT_SHA}"
+
+      # Push only if tag changed
+      git add .
+      if git diff --cached --quiet; then
+        echo "No changes — image tag already up to date"
+      else
+        git commit -m "deploy: ${DEPLOY_APP} ${CI_COMMIT_SHORT_SHA} to dev"
+        git push origin dev
+        echo "Deployed to dev — ArgoCD syncs within ~3 minutes"
+      fi

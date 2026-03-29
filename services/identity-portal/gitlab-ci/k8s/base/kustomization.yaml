@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - backend/rollout.yaml
+  - backend/service-active.yaml
+  - backend/service-preview.yaml
+  - backend/configmap.yaml
+  - backend/serviceaccount.yaml
+  - frontend/rollout.yaml
+  - frontend/service-active.yaml
+  - frontend/service-preview.yaml
+  - frontend/configmap.yaml
+  - gateway.yaml
+  - httproute.yaml
+  - secretstore.yaml
+  - push-secret.yaml
+  - external-secret.yaml
+  - hpa-backend.yaml
+  - hpa-frontend.yaml
+  - pdb-backend.yaml
+  - pdb-frontend.yaml
+  - monitoring/service-monitor.yaml
+  - monitoring/alerts.yaml

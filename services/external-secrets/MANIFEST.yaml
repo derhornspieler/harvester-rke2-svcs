@@ -1,0 +1,30 @@
+# External Secrets Operator — Bill of Materials
+# All Helm charts, container images, and Kustomize resources required.
+
+helm:
+  chart: external-secrets/external-secrets
+  version: "2.0.1"
+  repository: https://charts.external-secrets.io
+  values: inline  # Values passed via --set flags in deploy script
+
+images:
+  - name: external-secrets/external-secrets
+    tag: "v2.0.1"
+    registry: ghcr.io
+    # Override for Harbor: harbor.example.com/ghcr/external-secrets/external-secrets:v2.0.1
+
+manifests:
+  kustomize: kustomization.yaml
+  resources:
+    - namespace.yaml
+  monitoring:
+    - monitoring/servicemonitor.yaml
+    - monitoring/external-secrets-alerts.yaml
+    - monitoring/configmap-dashboard-external-secrets.yaml
+
+deploy:
+  script: scripts/deploy-pki-secrets.sh
+  phases: [6, 7]
+  description: |
+    Phase 6: Helm install with CRDs and ServiceMonitor
+    Phase 7: Apply monitoring via Kustomize

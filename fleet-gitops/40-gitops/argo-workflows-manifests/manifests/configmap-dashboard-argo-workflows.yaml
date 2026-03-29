@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-argo-workflows
+  namespace: argo-workflows
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Services
+data:
+  argo-workflows-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": false, "type": "link"}],
+      "panels": [
+        {
+          "title": "Workflows Running",
+          "description": "Currently running Argo Workflows across all namespaces",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 10}, {"color": "red", "value": 20}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(argo_workflows_gauge{status=\"Running\"}) or vector(0)", "legendFormat": "Running", "refId": "A"}]
+        },
+        {
+          "title": "Workflows Succeeded (1h)",
+          "description": "Workflows that succeeded in the last hour",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(argo_workflows_gauge{status=\"Succeeded\"}) or vector(0)", "legendFormat": "Succeeded", "refId": "A"}]
+        },
+        {
+          "title": "Workflows Failed (1h)",
+          "description": "Workflows that failed in the last hour",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(argo_workflows_gauge{status=\"Failed\"}) or vector(0)", "legendFormat": "Failed", "refId": "A"}]
+        },
+        {
+          "title": "Queue Depth",
+          "description": "Workflows waiting in the workflow queue",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 10}, {"color": "red", "value": 50}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(argo_workflows_queue_depth_gauge) or vector(0)", "legendFormat": "Queue Depth", "refId": "A"}]
+        },
+        {
+          "title": "Workflow Count by Status",
+          "description": "Workflow count over time broken down by status",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(argo_workflows_gauge) by (status)", "legendFormat": "{{ "{{status}}" }}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Workflow Duration",
+          "description": "Workflow execution duration trend",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum(rate(argo_workflows_k8s_request_duration_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+            {"expr": "histogram_quantile(0.95, sum(rate(argo_workflows_k8s_request_duration_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"},
+            {"expr": "histogram_quantile(0.99, sum(rate(argo_workflows_k8s_request_duration_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C"}
+          ]
+        },
+        {
+          "title": "Error Rate",
+          "description": "Rate of workflow operation errors over time",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(argo_workflows_error_count[5m]))", "legendFormat": "Errors/s", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Workflows by Namespace",
+          "description": "Running workflows grouped by namespace",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 8,
+          "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "normal"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(argo_workflows_gauge{status=\"Running\"}) by (namespace)", "legendFormat": "{{ "{{namespace}}" }}", "refId": "A"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["argo", "workflows", "cicd"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Argo Workflows Overview",
+      "uid": "argo-workflows-overview",
+      "version": 1,
+      "description": "Argo Workflows monitoring dashboard covering workflow count by status, queue depth, workflow duration, and error rate."
+    }

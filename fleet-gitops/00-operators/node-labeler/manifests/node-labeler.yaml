@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: node-labeler
+  namespace: node-labeler
+spec:
+  namespaceSelector:
+    matchNames:
+      - node-labeler
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-labeler
+  endpoints:
+    - port: metrics

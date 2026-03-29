@@ -1,0 +1,540 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-oauth2-proxy
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Security
+data:
+  oauth2-proxy-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [
+        {"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"},
+        {"title": "Keycloak IAM", "url": "/d/keycloak-overview/keycloak-iam-overview", "targetBlank": true, "icon": "external link"},
+        {"title": "Security Operations", "url": "/d/security-advanced/advanced-security-monitoring", "targetBlank": true, "icon": "external link"}
+      ],
+      "panels": [
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "mode": "markdown",
+            "content": "## oauth2-proxy ForwardAuth Overview\nMonitors the oauth2-proxy instances providing per-service Keycloak OIDC authentication for Prometheus, AlertManager, Hubble, and Traefik Dashboard. Combines oauth2-proxy native metrics (scraped on port 44180), container-level metrics (cAdvisor, kube-state-metrics), Traefik service metrics, and Keycloak Micrometer OIDC analytics."
+          }
+        },
+        {
+          "title": "Proxies Ready",
+          "description": "Number of oauth2-proxy pods in Ready state (from kube-state-metrics). Expected: 5 (Prometheus, AlertManager, Hubble, Traefik Dashboard, Rollouts)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 3},
+          "id": 2,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 2},
+                  {"color": "green", "value": 5}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(kube_deployment_status_replicas_ready{deployment=~\"oauth2-proxy.*\"}) OR on() vector(0)", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Token Request Rate",
+          "description": "Current rate of successful OIDC token requests (logins + refreshes) across all clients (from Keycloak Micrometer HTTP metrics)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 3},
+          "id": 3,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "blue", "value": null}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\",status=\"200\"}[5m])) OR on() vector(0)", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Token Failure Rate",
+          "description": "Current rate of failed OIDC token requests (4xx) across all clients (from Keycloak Micrometer HTTP metrics)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 3},
+          "id": 4,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 0.01},
+                  {"color": "red", "value": 0.1}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\",status=~\"4..\"}[5m])) OR on() vector(0)", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Proxy Request Rate",
+          "description": "Total request rate through oauth2-proxy Traefik services (container-level, from Traefik metrics)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 3},
+          "id": 5,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "blue", "value": null}
+                ]
+              },
+              "noValue": "N/A"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(rate(traefik_service_requests_total{service=~\".*oauth2-proxy.*\"}[5m])) OR on() vector(0)", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Total Container Memory",
+          "description": "Total container working set memory across all oauth2-proxy pods (from cAdvisor)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 3},
+          "id": 6,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 268435456},
+                  {"color": "red", "value": 536870912}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(container_memory_working_set_bytes{pod=~\"oauth2-proxy.*\",container!=\"\"})", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Total Container CPU",
+          "description": "Total CPU cores used across all oauth2-proxy containers (from cAdvisor)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 3},
+          "id": 7,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 3,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 0.5}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [
+            {"expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"oauth2-proxy.*\",container!=\"\"}[5m]))", "legendFormat": "", "refId": "A"}
+          ]
+        },
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 2, "w": 24, "x": 0, "y": 7},
+          "id": 20,
+          "options": {
+            "mode": "markdown",
+            "content": "### Per-Service Proxy Status"
+          }
+        },
+        {
+          "title": "Prometheus",
+          "description": "oauth2-proxy for Prometheus UI",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 3, "w": 5, "x": 0, "y": 9},
+          "id": 8,
+          "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-prometheus\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "AlertManager",
+          "description": "oauth2-proxy for AlertManager UI",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 3, "w": 5, "x": 5, "y": 9},
+          "id": 24,
+          "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-alertmanager\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Hubble",
+          "description": "oauth2-proxy for Hubble UI",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 3, "w": 5, "x": 10, "y": 9},
+          "id": 25,
+          "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-hubble\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Traefik Dash",
+          "description": "oauth2-proxy for Traefik Dashboard",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 3, "w": 5, "x": 15, "y": 9},
+          "id": 26,
+          "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-traefik\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Rollouts",
+          "description": "oauth2-proxy for Argo Rollouts Dashboard",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 3, "w": 4, "x": 20, "y": 9},
+          "id": 27,
+          "fieldConfig": {"defaults": {"noValue": "0", "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "value"},
+          "targets": [{"expr": "kube_deployment_status_replicas_ready{deployment=\"oauth2-proxy-rollouts\"} OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 2, "w": 24, "x": 0, "y": 13},
+          "id": 21,
+          "options": {
+            "mode": "markdown",
+            "content": "### Keycloak Authentication Analytics (per OIDC client)"
+          }
+        },
+        {
+          "title": "OIDC Token Request Rate by URI",
+          "description": "Successful Keycloak OIDC token request rate (HTTP 200) from Micrometer http_server_requests metrics",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+          "id": 9,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "sum by (uri) (rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\",status=\"200\"}[5m]))", "legendFormat": "{{uri}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "OIDC Token Failures by Status",
+          "description": "Failed Keycloak OIDC token requests (4xx) from Micrometer http_server_requests metrics. Includes invalid credentials, expired tokens, and unauthorized clients.",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+          "id": 10,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byRegexp", "options": ".*"},
+                "properties": [
+                  {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}
+                ]
+              }
+            ]
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "sum by (status) (rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\",status=~\"4..\"}[5m]))", "legendFormat": "HTTP {{status}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Traefik Request Rate by Service",
+          "description": "Request rate through Traefik for oauth2-proxy services (container-level, from Traefik metrics)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+          "id": 11,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "sum by (service) (rate(traefik_service_requests_total{service=~\".*oauth2-proxy.*\"}[5m]))", "legendFormat": "{{service}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "OIDC Token Error Rate %",
+          "description": "Percentage of failed OIDC token requests (4xx / total) from Keycloak Micrometer HTTP metrics",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+          "id": 12,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 10},
+                  {"color": "red", "value": 30}
+                ]
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\",status=~\"4..\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"keycloak\",uri=~\".*/protocol/.*/token\"}[5m])) * 100", "legendFormat": "Error %", "refId": "A"}
+          ]
+        },
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 2, "w": 24, "x": 0, "y": 31},
+          "id": 22,
+          "options": {
+            "mode": "markdown",
+            "content": "### Container Resource Usage & Traffic"
+          }
+        },
+        {
+          "title": "Container Memory by Pod",
+          "description": "Container working set memory per oauth2-proxy pod (from cAdvisor)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+          "id": 13,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "container_memory_working_set_bytes{pod=~\"oauth2-proxy.*\",container!=\"\"}", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Container CPU Usage by Pod",
+          "description": "Container CPU usage rate per oauth2-proxy pod (from cAdvisor)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+          "id": 14,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "rate(container_cpu_usage_seconds_total{pod=~\"oauth2-proxy.*\",container!=\"\"}[5m])", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Traefik Response Codes by Service",
+          "description": "HTTP response code distribution for oauth2-proxy Traefik services (from Traefik metrics)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 41},
+          "id": 15,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              },
+              "noValue": "N/A"
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "sum by (service, code) (rate(traefik_service_requests_total{service=~\".*oauth2-proxy.*\"}[5m]))", "legendFormat": "{{service}} [{{code}}]", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Container Restarts by Pod",
+          "description": "Container restart count per oauth2-proxy pod (from kube-state-metrics)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 41},
+          "id": 16,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "pointSize": 5,
+                "showPoints": "auto",
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [
+            {"expr": "kube_pod_container_status_restarts_total{pod=~\"oauth2-proxy.*\"}", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 2, "w": 24, "x": 0, "y": 49},
+          "id": 23,
+          "options": {
+            "mode": "markdown",
+            "content": "### Auth Error Logs"
+          }
+        },
+        {
+          "title": "oauth2-proxy Error Logs",
+          "description": "Recent error and warning logs from all oauth2-proxy pods via Loki",
+          "type": "logs",
+          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 51},
+          "id": 17,
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending",
+            "dedupStrategy": "none"
+          },
+          "targets": [
+            {"expr": "{app_kubernetes_io_name=\"oauth2-proxy\"} |~ \"error|ERR|401|403|500|invalid|denied\"", "refId": "A"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["oauth2-proxy", "authentication", "security", "keycloak"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "oauth2-proxy ForwardAuth",
+      "uid": "oauth2-proxy-overview",
+      "version": 1,
+      "description": "oauth2-proxy ForwardAuth monitoring dashboard using oauth2-proxy native metrics (port 4180), container-level metrics (cAdvisor, kube-state-metrics, Traefik) for proxy health and resource usage, Keycloak Micrometer HTTP metrics for OIDC login analytics, and Loki for authentication error logs."
+    }

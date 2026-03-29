@@ -1,0 +1,71 @@
+## Traefik HelmChartConfig — RKE2 system Traefik overrides
+## Applied as a HelmChartConfig CR to patch the system-managed rke2-traefik chart.
+## IMPORTANT: This must be re-applied after rolling cluster upgrades, as new CP
+## nodes may reset to default values (dashboard disabled, no custom args).
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-traefik
+  namespace: kube-system
+spec:
+  failurePolicy: reinstall
+  valuesContent: |
+    additionalArguments:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--entryPoints.web.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entryPoints.web.transport.respondingTimeouts.writeTimeout=1800s"
+      - "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=1800s"
+      - "--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=1800s"
+    deployment:
+      initContainers:
+        - name: combine-ca
+          image: docker.io/library/alpine:3.21
+          securityContext:
+            allowPrivilegeEscalation: false
+          command:
+            - sh
+            - -c
+            - >-
+              cp /etc/ssl/certs/ca-certificates.crt /combined-ca/ca-certificates.crt 2>/dev/null || true;
+              if [ -s /vault-ca/ca.crt ]; then cat /vault-ca/ca.crt >> /combined-ca/ca-certificates.crt; fi
+          volumeMounts:
+            - mountPath: /vault-ca
+              name: vault-root-ca
+              readOnly: true
+            - mountPath: /combined-ca
+              name: combined-ca
+    env:
+      - name: SSL_CERT_FILE
+        value: /combined-ca/ca-certificates.crt
+    logs:
+      access:
+        enabled: true
+    ports:
+      ssh:
+        expose:
+          default: true
+        exposedPort: 22
+        port: 2222
+        protocol: TCP
+      web:
+        redirections:
+          entryPoint:
+            scheme: https
+            to: websecure
+    providers:
+      kubernetesGateway:
+        enabled: true
+        experimentalChannel: true
+    service:
+      spec:
+        loadBalancerIP: "CHANGEME_TRAEFIK_LB_IP"
+      type: LoadBalancer
+    volumes:
+      - mountPath: /vault-ca
+        name: vault-root-ca
+        type: configMap
+      - mountPath: /combined-ca
+        name: combined-ca
+        type: emptyDir

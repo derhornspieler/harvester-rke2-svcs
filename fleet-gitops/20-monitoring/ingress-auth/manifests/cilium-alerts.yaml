@@ -1,0 +1,73 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cilium-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: cilium-alerts
+      rules:
+        - alert: CiliumAgentDown
+          expr: up{job="hubble-relay"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cilium networking is down (via hubble-relay)"
+            description: "Hubble relay has been unreachable for more than 2 minutes. Direct cilium-agent scraping is blocked by host firewall on port 9962."
+
+        - alert: CiliumEndpointNotReady
+          expr: cilium_endpoint_state{endpoint_state="not-ready"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Cilium endpoints not ready on {{ "{{ $labels.node  }}" }}'
+            description: '{{ "{{ $value  }}" }} Cilium endpoints are in not-ready state on {{ "{{ $labels.node  }}" }}.'
+
+        - alert: CiliumHighDropRate
+          expr: sum(rate(cilium_drop_count_total{reason!="Policy denied"}[5m])) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High packet drop rate across cluster"
+            description: 'Cilium is dropping {{ "{{ $value | humanize }}" }} packets/sec. Check network policies and endpoint health.'
+
+        - alert: HubbleDNSErrorSpike
+          expr: sum(rate(hubble_dns_responses_total{rcode!="No Error"}[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Elevated DNS error rate"
+            description: 'Hubble reports {{ "{{ $value | humanize }}" }} DNS errors/sec. Potential DNS resolution issues.'
+
+        - alert: HubbleHTTPServerErrors
+          expr: sum(rate(hubble_http_responses_total{status=~"5.."}[5m])) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HTTP 5xx errors detected via Hubble"
+            description: '{{ "{{ $value | humanize }}" }} HTTP 5xx responses/sec observed in service mesh traffic.'
+
+        - alert: HubbleLostEvents
+          expr: sum(rate(hubble_lost_events_total[5m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hubble losing flow events"
+            description: 'Hubble is losing {{ "{{ $value | humanize }}" }} events/sec. Ring buffer may be too small.'
+
+        - alert: CiliumPolicyImportErrors
+          expr: sum(rate(cilium_policy_import_errors_total[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cilium policy import failures"
+            description: "Cilium is failing to import network policies. This may leave workloads unprotected."
