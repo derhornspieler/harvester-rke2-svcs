@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cluster-autoscaler
+  namespace: cluster-autoscaler
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Platform
+data:
+  cluster-autoscaler.json: |
+    {
+      "annotations": {"list": []},
+      "description": "Cluster Autoscaler — node scaling decisions, unneeded nodes, errors, and cloud provider latency.",
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": false, "type": "link"}],
+      "panels": [
+        {
+          "title": "Autoscaler Status",
+          "description": "Whether the cluster autoscaler is running and safe to autoscale",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "UNSAFE", "color": "red"}, "1": {"text": "SAFE", "color": "green"}}}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+            }
+          },
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "cluster_autoscaler_cluster_safe_to_autoscale", "refId": "A", "instant": true}]
+        },
+        {
+          "title": "CPU Cores (Current)",
+          "description": "Total CPU cores visible to the autoscaler across all node groups",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {"defaults": {"noValue": "N/A", "unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "cluster_autoscaler_cluster_cpu_current_cores", "refId": "A", "instant": true}]
+        },
+        {
+          "title": "Memory (Current)",
+          "description": "Total memory visible to the autoscaler across all node groups",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {"defaults": {"noValue": "N/A", "unit": "bytes", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "cluster_autoscaler_cluster_memory_current_bytes", "refId": "A", "instant": true}]
+        },
+        {
+          "title": "Unneeded Nodes",
+          "description": "Number of nodes currently considered unneeded (candidates for scale-down)",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "fieldConfig": {"defaults": {"noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 3}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "cluster_autoscaler_unneeded_nodes_count", "refId": "A", "instant": true}]
+        },
+        {
+          "title": "Scale-Up / Scale-Down Events",
+          "description": "Cumulative count of successful scale-up and scale-down operations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "increase(cluster_autoscaler_scaled_up_nodes_total[1h])", "legendFormat": "Nodes scaled up", "refId": "A"},
+            {"expr": "increase(cluster_autoscaler_scaled_down_nodes_total[1h])", "legendFormat": "Nodes scaled down", "refId": "B"}
+          ]
+        },
+        {
+          "title": "Errors by Type",
+          "description": "Autoscaler errors by category",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "increase(cluster_autoscaler_errors_total[5m])", "legendFormat": "{{ "{{type}}" }}", "refId": "A"}]
+        },
+        {
+          "title": "Cluster CPU Cores Over Time",
+          "description": "Total CPU cores tracked by the autoscaler",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "cluster_autoscaler_cluster_cpu_current_cores", "legendFormat": "Current cores", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Unneeded Nodes Over Time",
+          "description": "Nodes the autoscaler considers unneeded over time",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "cluster_autoscaler_unneeded_nodes_count", "legendFormat": "Unneeded", "refId": "A"}]
+        },
+        {
+          "title": "Cloud Provider Latency p99",
+          "description": "99th percentile latency of cloud provider operations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "id": 9,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "cluster_autoscaler_function_duration_quantile_seconds{function=\"cloudProviderRefresh\",quantile=\"0.99\"}", "legendFormat": "cloudProviderRefresh p99", "refId": "A"}]
+        },
+        {
+          "title": "Evicted Pods",
+          "description": "Pods evicted during scale-down operations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+          "id": 10,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "increase(cluster_autoscaler_evicted_pods_total{eviction_result=\"succeeded\"}[5m])", "legendFormat": "Succeeded", "refId": "A"},
+            {"expr": "increase(cluster_autoscaler_evicted_pods_total{eviction_result=\"failed\"}[5m])", "legendFormat": "Failed", "refId": "B"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["autoscaler", "cluster", "infrastructure"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Cluster Autoscaler",
+      "uid": "cluster-autoscaler",
+      "version": 1
+    }

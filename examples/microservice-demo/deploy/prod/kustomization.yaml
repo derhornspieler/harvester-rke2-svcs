@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod-platform-demo
+resources:
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml
+images:
+  - name: CHANGEME_IMAGE
+    newName: harbor.dev.<DOMAIN>/examples/platform-demo
+    newTag: latest

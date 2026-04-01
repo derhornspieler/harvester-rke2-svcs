@@ -1,0 +1,63 @@
+# CloudNativePG Cluster for Grafana
+# Requires: CNPG operator in cnpg-system namespace (already deployed)
+# Creates: 3-instance PostgreSQL cluster with 'grafana' database
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: grafana-pg
+  namespace: database
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+
+  bootstrap:
+    initdb:
+      database: grafana
+      owner: grafana
+      secret:
+        name: grafana-pg-credentials
+      dataChecksums: true
+      localeCollate: "en_US.UTF-8"
+      localeCType: "en_US.UTF-8"
+
+  postgresql:
+    parameters:
+      max_connections: "50"
+      shared_buffers: "128MB"
+      effective_cache_size: "512MB"
+      work_mem: "4MB"
+      maintenance_work_mem: "64MB"
+      wal_buffers: "4MB"
+      random_page_cost: "1.1"
+      log_min_duration_statement: "500"
+
+  storage:
+    size: 5Gi
+    storageClass: harvester
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+  affinity:
+    nodeSelector:
+      workload-type: database
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  monitoring:
+    enablePodMonitor: false
+
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://cnpg-backups/grafana-pg"
+      endpointURL: "CHANGEME_MINIO_ENDPOINT"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+    retentionPolicy: "1d"

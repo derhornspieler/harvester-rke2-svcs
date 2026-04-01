@@ -1,0 +1,50 @@
+crds:
+  enabled: true
+
+# HA: 2 replicas with leader election (built-in)
+replicaCount: 2
+nodeSelector:
+  workload-type: general
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: cert-manager
+
+webhook:
+  replicaCount: 2
+  nodeSelector:
+    workload-type: general
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: webhook
+
+cainjector:
+  replicaCount: 2
+  nodeSelector:
+    workload-type: general
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: cainjector
+
+# Gateway API shim for Certificate resources
+extraArgs:
+  - --enable-gateway-api
+
+# Prometheus ServiceMonitor
+# Disabled: CRDs from kube-prometheus-stack may not be available yet
+# Re-enable once monitoring is deployed
+prometheus:
+  enabled: false
+  servicemonitor:
+    enabled: false

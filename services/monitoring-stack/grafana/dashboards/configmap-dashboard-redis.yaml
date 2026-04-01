@@ -1,0 +1,627 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-redis
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Services
+data:
+  redis-overview.json: |
+    {
+      "annotations": {"list": []},
+      "description": "Redis cluster metrics — health, memory, operations, replication, and network I/O across all Redis instances.",
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}],
+      "panels": [
+        {
+          "title": "Instances Up",
+          "description": "Redis exporter targets responding for the selected cluster",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "green", "value": 2}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "count(up{job=~\"$cluster\"} == 1) OR on() vector(0)",
+              "legendFormat": "targets up",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Replication Role",
+          "description": "Shows MASTER or REPLICA for each instance. master_link_status=ok means replica is synced.",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "MASTER", "color": "green", "index": 0}}},
+                {"type": "value", "options": {"1": {"text": "REPLICA", "color": "blue", "index": 1}}}
+              ],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "orientation": "horizontal"
+          },
+          "targets": [
+            {
+              "expr": "redis_instance_info{job=~\"$cluster\", role=\"master\"} * 0",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "redis_instance_info{job=~\"$cluster\", role=\"slave\"} * 0 + 1",
+              "legendFormat": "{{pod}}",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "title": "Memory Usage %",
+          "description": "Redis memory usage as percentage of maxmemory. Shows 'No Limit' if maxmemory is not set.",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 70},
+                  {"color": "red", "value": 90}
+                ]
+              },
+              "noValue": "No Limit",
+              "mappings": [
+                {"type": "special", "options": {"match": "null", "result": {"text": "No Limit", "color": "blue", "index": 0}}}
+              ]
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(redis_memory_used_bytes{job=~\"$cluster\"} / (redis_memory_max_bytes{job=~\"$cluster\"} > 0) * 100)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Connected Clients",
+          "description": "Total connected Redis clients across all instances. GitLab alone uses ~170 connections (Sidekiq workers + Puma threads + Gitaly + internal services). Green (<500) = normal. Orange (500-900) = review connection pooling. Red (>900) = near default maxclients limit (10000).",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 500},
+                  {"color": "red", "value": 900}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(redis_connected_clients{job=~\"$cluster\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+
+        {
+          "title": "Cache Hit Ratio",
+          "description": "Keyspace hit ratio. These Redis instances serve as session stores and job queues (Sidekiq, ActionCable), not traditional caches — most operations are writes or unique key lookups. Green (>20%) = normal for queue/session workloads. Orange (10-20%) = investigate. Red (<10%) = likely misconfigured.",
+          "type": "gauge",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4},
+          "id": 5,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 0.1},
+                  {"color": "green", "value": 0.2}
+                ]
+              },
+              "noValue": "N/A"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "showThresholdMarkers": true,
+            "showThresholdLabels": false
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m])) / (sum(rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m])) + sum(rate(redis_keyspace_misses_total{job=~\"$cluster\"}[5m])))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Connected Replicas",
+          "description": "Number of replicas connected to the master instance",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 4},
+          "id": 6,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "orange", "value": null},
+                  {"color": "green", "value": 1}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(redis_connected_slaves{job=~\"$cluster\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Keys Total",
+          "description": "Total number of keys stored across all databases",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 4},
+          "id": 7,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "blue", "value": null}]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(redis_db_keys{job=~\"$cluster\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Evicted Keys/sec",
+          "description": "Keys evicted due to memory pressure. Non-zero indicates memory contention.",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 4},
+          "id": 8,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 0.01},
+                  {"color": "red", "value": 1}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(redis_evicted_keys_total{job=~\"$cluster\"}[5m]))",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+
+        {
+          "title": "Commands/sec",
+          "description": "Redis commands processed per second, broken down by instance",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "id": 10,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "rate(redis_commands_processed_total{job=~\"$cluster\"}[5m])",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Cache Hit Rate Over Time",
+          "description": "Keyspace hit ratio trending. For session/queue workloads, 20-50% is normal. Sustained drops below 10% indicate misconfiguration.",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "id": 11,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false,
+                "thresholdsStyle": {"mode": "line"}
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "green", "value": 0.2}
+                ]
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "min"]}
+          },
+          "targets": [
+            {
+              "expr": "rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m]) / (rate(redis_keyspace_hits_total{job=~\"$cluster\"}[5m]) + rate(redis_keyspace_misses_total{job=~\"$cluster\"}[5m]))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+
+        {
+          "title": "Memory Usage Over Time",
+          "description": "Redis memory consumption vs maxmemory limit per instance",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "id": 12,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "redis_memory_used_bytes{job=~\"$cluster\"}",
+              "legendFormat": "used {{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "redis_memory_max_bytes{job=~\"$cluster\"} > 0",
+              "legendFormat": "limit {{pod}}",
+              "refId": "B"
+            },
+            {
+              "expr": "redis_memory_used_rss_bytes{job=~\"$cluster\"}",
+              "legendFormat": "rss {{pod}}",
+              "refId": "C"
+            }
+          ]
+        },
+        {
+          "title": "Connected Clients Over Time",
+          "description": "Client connection count per Redis instance over time",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "id": 13,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "redis_connected_clients{job=~\"$cluster\"}",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "redis_blocked_clients{job=~\"$cluster\"}",
+              "legendFormat": "blocked {{pod}}",
+              "refId": "B"
+            }
+          ]
+        },
+
+        {
+          "title": "Key Evictions & Expirations",
+          "description": "Rate of key evictions (memory pressure) and key expirations (TTL)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "id": 14,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "rate(redis_evicted_keys_total{job=~\"$cluster\"}[5m])",
+              "legendFormat": "evicted {{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(redis_expired_keys_total{job=~\"$cluster\"}[5m])",
+              "legendFormat": "expired {{pod}}",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "title": "Network I/O",
+          "description": "Redis network throughput — input (rx) and output (tx) bytes per second",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "id": 15,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "rate(redis_net_input_bytes_total{job=~\"$cluster\"}[5m])",
+              "legendFormat": "rx {{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "rate(redis_net_output_bytes_total{job=~\"$cluster\"}[5m])",
+              "legendFormat": "tx {{pod}}",
+              "refId": "B"
+            }
+          ]
+        },
+
+        {
+          "title": "Replication Offset",
+          "description": "Master replication offset vs replica offset — gap indicates replication lag",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+          "id": 16,
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 5,
+                "lineWidth": 1,
+                "stacking": {"mode": "none"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"]}
+          },
+          "targets": [
+            {
+              "expr": "redis_master_repl_offset{job=~\"$cluster\"}",
+              "legendFormat": "master offset {{pod}}",
+              "refId": "A"
+            },
+            {
+              "expr": "redis_slave_repl_offset{job=~\"$cluster\"}",
+              "legendFormat": "replica offset {{pod}}",
+              "refId": "B"
+            }
+          ]
+        },
+        {
+          "title": "Keys by Database",
+          "description": "Number of keys per Redis database (db0, db1, etc.)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+          "id": 17,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 15,
+                "lineWidth": 1,
+                "stacking": {"mode": "normal"},
+                "spanNulls": false
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"]}
+          },
+          "targets": [
+            {
+              "expr": "redis_db_keys{job=~\"$cluster\", db=~\"$db\"}",
+              "legendFormat": "{{db}} ({{pod}})",
+              "refId": "A"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["services", "redis", "database"],
+      "templating": {
+        "list": [
+          {
+            "name": "cluster",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(redis_up, job)",
+            "refresh": 1,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": false,
+            "sort": 1,
+            "current": {"text": "All", "value": "$__all"},
+            "label": "Redis Cluster"
+          },
+          {
+            "name": "db",
+            "type": "query",
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "query": "label_values(redis_db_keys{job=~\"$cluster\"}, db)",
+            "refresh": 1,
+            "includeAll": true,
+            "allValue": ".*",
+            "multi": false,
+            "sort": 1,
+            "current": {"text": "All", "value": "$__all"},
+            "label": "Database"
+          }
+        ]
+      },
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Redis Overview",
+      "uid": "redis-overview",
+      "version": 1
+    }

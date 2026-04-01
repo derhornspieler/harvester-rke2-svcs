@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: developer-staging
+  namespace: argocd
+spec:
+  description: Staging environment mirroring production (staging-* namespaces)
+  sourceRepos:
+    - "https://${GITLAB_FQDN}/platform/platform-deployments.git"
+  destinations:
+    - namespace: "staging-*"
+      server: "https://kubernetes.default.svc"
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
