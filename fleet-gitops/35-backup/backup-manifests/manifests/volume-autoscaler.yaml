@@ -1,0 +1,15 @@
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: backup-minio
+  namespace: backup
+spec:
+  target:
+    pvcName: backup-minio-data
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 2Ti
+  increasePercent: 25
+  increaseMinimum: 20Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m

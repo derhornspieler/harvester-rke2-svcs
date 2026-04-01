@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy-hubble
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: oauth2-proxy
+    app.kubernetes.io/instance: hubble
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: hubble
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oauth2-proxy
+        app.kubernetes.io/instance: hubble
+      annotations:
+        deploy-version: "${BUNDLE_VERSION}"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        workload-type: general
+      containers:
+        - name: oauth2-proxy
+          image: ${IMAGE_OAUTH2_PROXY}
+          args:
+            - --provider=keycloak-oidc
+            - --ssl-insecure-skip-verify=true
+            - --client-id=hubble-oidc
+            - --oidc-issuer-url=${OIDC_ISSUER_URL}
+            - --oidc-groups-claim=groups
+            - --allowed-group=${RBAC_GROUP_ADMINS}
+            - --allowed-group=${RBAC_GROUP_INFRA}
+            - --allowed-group=${RBAC_GROUP_NETWORK}
+            - --redirect-url=https://${HUBBLE_FQDN}/oauth2/callback
+            - --upstream=static://202
+            - --skip-provider-button=true
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --cookie-expire=4h
+            - --cookie-refresh=2h
+            - --cookie-name=_oauth2_proxy_hubble
+            - --http-address=0.0.0.0:4180
+            - --metrics-address=0.0.0.0:44180
+            - --email-domain=*
+            - --provider-ca-file=/etc/ssl/certs/vault-root-ca.pem
+            - --skip-jwt-bearer-tokens=true
+            - --code-challenge-method=S256
+            - --reverse-proxy=true
+            - --session-store-type=cookie
+            - --whitelist-domain=.${DOMAIN}
+          env:
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-hubble
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-hubble
+                  key: cookie-secret
+          ports:
+            - containerPort: 4180
+              name: http
+              protocol: TCP
+            - containerPort: 44180
+              name: metrics
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: vault-root-ca
+              mountPath: /etc/ssl/certs/vault-root-ca.pem
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: vault-root-ca
+          configMap:
+            name: vault-root-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-hubble
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: oauth2-proxy
+    app.kubernetes.io/instance: hubble
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4180
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: oauth2-proxy
+    app.kubernetes.io/instance: hubble

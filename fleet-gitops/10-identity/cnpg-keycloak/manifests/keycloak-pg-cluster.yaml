@@ -1,0 +1,68 @@
+# CloudNativePG Cluster for Keycloak
+# Requires: CNPG operator in cnpg-system namespace (already deployed)
+# Creates: 3-instance PostgreSQL cluster with 'keycloak' database
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-pg
+  namespace: database
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  instances: 3
+  imageName: ${IMAGE_POSTGRESQL_16}
+
+  bootstrap:
+    initdb:
+      database: ${KEYCLOAK_DB_NAME}
+      owner: keycloak
+      secret:
+        name: keycloak-pg-credentials
+      dataChecksums: true
+      localeCollate: "en_US.UTF-8"
+      localeCType: "en_US.UTF-8"
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      effective_cache_size: "1GB"
+      work_mem: "4MB"
+      maintenance_work_mem: "64MB"
+      wal_buffers: "8MB"
+      random_page_cost: "1.1"
+      log_min_duration_statement: "500"
+
+  storage:
+    size: 10Gi
+    storageClass: ${STORAGE_CLASS}
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  affinity:
+    nodeSelector:
+      workload-type: database
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  monitoring:
+    enablePodMonitor: true
+
+  # NOTE: cnpg-minio-credentials Secret is created by harbor-cnpg bundle (30-harbor).
+  # Until that bundle deploys, backups are non-functional. CNPG tolerates this and
+  # starts backups automatically once the secret appears.
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://${MINIO_BUCKET_CNPG_BACKUPS}/keycloak-pg"
+      endpointURL: "${MINIO_INTERNAL_URL}"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+    retentionPolicy: "90d"

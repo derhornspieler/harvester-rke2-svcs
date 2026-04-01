@@ -1,0 +1,154 @@
+# Harbor Service Manifest
+# Tracks Helm chart, container images, Kustomize resources, and deploy phases.
+---
+service: harbor
+version: "2.14"
+
+helm:
+  chart: oci://registry-1.docker.io/goharbor/harbor-helm
+  version: "1.18.2"
+  namespace: harbor
+  valuesFile: harbor-values.yaml
+
+images:
+  # Harbor components (chart v1.18.2 → Harbor v2.14.x)
+  - name: harbor-core
+    image: goharbor/harbor-core
+    tag: v2.14.2
+  - name: harbor-portal
+    image: goharbor/harbor-portal
+    tag: v2.14.2
+  - name: harbor-registry
+    image: goharbor/harbor-registryctl
+    tag: v2.14.2
+  - name: harbor-jobservice
+    image: goharbor/harbor-jobservice
+    tag: v2.14.2
+  - name: harbor-trivy-adapter
+    image: goharbor/trivy-adapter-photon
+    tag: v2.14.2
+  - name: harbor-exporter
+    image: goharbor/harbor-exporter
+    tag: v2.14.2
+  - name: harbor-nginx
+    image: goharbor/nginx-photon
+    tag: v2.14.2
+
+  # MinIO (S3-compatible object storage)
+  - name: minio
+    image: quay.io/minio/minio
+    tag: RELEASE.2024-11-07T00-52-20Z
+  - name: minio-mc
+    image: quay.io/minio/mc
+    tag: RELEASE.2024-11-07T00-52-20Z
+
+  # PostgreSQL (CNPG-managed)
+  - name: postgresql
+    image: ghcr.io/cloudnative-pg/postgresql
+    tag: "16.6"
+
+  # Redis / Valkey (OpsTree Redis Operator)
+  - name: redis
+    image: quay.io/opstree/redis
+    tag: v7.0.15
+  - name: redis-sentinel
+    image: quay.io/opstree/redis-sentinel
+    tag: v7.0.15
+  - name: redis-exporter
+    image: oliver006/redis_exporter
+    tag: v1.66.0
+
+resources:
+  # Harbor namespace
+  - namespace.yaml
+
+  # MinIO sub-component
+  - minio/namespace.yaml
+  - minio/external-secret.yaml
+  - minio/pvc.yaml
+  - minio/deployment.yaml
+  - minio/service.yaml
+  - minio/job-create-buckets.yaml
+
+  # PostgreSQL (CNPG) sub-component
+  - postgres/external-secret.yaml
+  - postgres/harbor-pg-cluster.yaml
+  - postgres/harbor-pg-scheduled-backup.yaml
+
+  # Valkey (Redis Sentinel) sub-component
+  - valkey/external-secret.yaml
+  - valkey/replication.yaml
+  - valkey/sentinel.yaml
+
+  # Ingress (Gateway API)
+  - gateway.yaml
+  - httproute.yaml
+
+  # Scaling
+  - hpa-core.yaml
+  - hpa-registry.yaml
+  - hpa-trivy.yaml
+
+  # Monitoring
+  - monitoring/configmap-dashboard-harbor.yaml
+  - monitoring/configmap-dashboard-minio.yaml
+  - monitoring/service-monitor.yaml
+  - monitoring/service-monitor-valkey.yaml
+  - monitoring/service-monitor-minio.yaml
+  - monitoring/harbor-alerts.yaml
+  - monitoring/minio-alerts.yaml
+
+deploy:
+  phases:
+    - phase: 1
+      description: Create namespaces (harbor, minio)
+      resources:
+        - namespace.yaml
+        - minio/namespace.yaml
+
+    - phase: 2
+      description: Deploy ExternalSecrets (Vault-synced credentials)
+      resources:
+        - minio/external-secret.yaml
+        - postgres/external-secret.yaml
+        - valkey/external-secret.yaml
+
+    - phase: 3
+      description: Deploy MinIO (PVC, Deployment, Service)
+      resources:
+        - minio/pvc.yaml
+        - minio/deployment.yaml
+        - minio/service.yaml
+
+    - phase: 4
+      description: Create MinIO buckets (harbor, cnpg-backups)
+      resources:
+        - minio/job-create-buckets.yaml
+
+    - phase: 5
+      description: Deploy PostgreSQL HA cluster (CNPG) and scheduled backup
+      resources:
+        - postgres/harbor-pg-cluster.yaml
+        - postgres/harbor-pg-scheduled-backup.yaml
+
+    - phase: 6
+      description: Deploy Valkey Redis Replication and Sentinel
+      resources:
+        - valkey/replication.yaml
+        - valkey/sentinel.yaml
+
+    - phase: 7
+      description: Install Harbor Helm chart
+      command: |
+        helm install harbor oci://registry-1.docker.io/goharbor/harbor-helm \
+          -n harbor -f harbor-values.yaml --version 1.18.2
+
+    - phase: 8
+      description: Deploy ingress, HPAs, and monitoring
+      resources:
+        - gateway.yaml
+        - httproute.yaml
+        - hpa-core.yaml
+        - hpa-registry.yaml
+        - hpa-trivy.yaml
+        - monitoring/

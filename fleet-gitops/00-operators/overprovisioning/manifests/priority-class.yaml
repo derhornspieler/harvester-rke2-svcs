@@ -1,0 +1,15 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: overprovisioning
+  labels:
+    app.kubernetes.io/name: cluster-autoscaler
+    app.kubernetes.io/component: overprovisioning
+globalDefault: false
+# Lowest priority — real workloads preempt these pods
+value: -10
+preemptionPolicy: Never
+description: >-
+  Low-priority class for cluster-autoscaler overprovisioning pause pods.
+  These pods reserve headroom capacity and get preempted when real
+  workloads need the resources, triggering autoscaler scale-up.

@@ -1,0 +1,28 @@
+stages:
+  - test
+  - publish
+
+test:
+  stage: test
+  image: golang:1.24-alpine
+  script:
+    - go test -v ./...
+    - go build ./...
+  only:
+    - main
+
+publish:package:
+  stage: publish
+  image: golang:1.24-alpine
+  script:
+    - |
+      go get -u github.com/golang/protobuf/protoc-gen-go
+      go mod tidy
+      go mod vendor
+  artifacts:
+    paths:
+      - go.mod
+      - go.sum
+      - vendor/
+  only:
+    - tags

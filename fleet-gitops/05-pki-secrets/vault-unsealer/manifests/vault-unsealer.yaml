@@ -1,0 +1,183 @@
+---
+# vault-unsealer: Continuously monitors Vault pods and auto-unseals them.
+#
+# Reads unseal keys from the vault-init-keys Secret (created by vault-init Job)
+# and applies them to any sealed Vault pod every 30 seconds.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-unsealer
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-unsealer
+  namespace: vault
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-unsealer
+  namespace: vault
+subjects:
+  - kind: ServiceAccount
+    name: vault-unsealer
+    namespace: vault
+roleRef:
+  kind: Role
+  name: vault-unsealer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-unsealer
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault-unsealer
+    app.kubernetes.io/component: auto-unseal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-unsealer
+      app.kubernetes.io/component: auto-unseal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-unsealer
+        app.kubernetes.io/component: auto-unseal
+    spec:
+      serviceAccountName: vault-unsealer
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vault-unsealer
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # vault-unsealer: Continuous auto-unseal loop for Vault pods.
+              # Checks seal status every 30 seconds and unseals with the first
+              # 3 keys from the vault-init-keys Secret.
+
+              NAMESPACE="vault"
+              PODS="vault-0 vault-1 vault-2"
+              CHECK_INTERVAL=30
+
+              log()  { echo "[$(date +%H:%M:%S)] $*"; }
+              warn() { echo "[$(date +%H:%M:%S)] WARN: $*" >&2; }
+
+              log "vault-unsealer starting — monitoring pods: ${PODS}"
+
+              while true; do
+                # Load unseal keys from Secret each iteration so we pick up
+                # any rotation without requiring a pod restart.
+                init_json_b64=$(kubectl get secret vault-init-keys \
+                  -n "${NAMESPACE}" \
+                  -o jsonpath='{.data.init\.json}' 2>/dev/null || true)
+
+                if [[ -z "${init_json_b64}" ]]; then
+                  warn "vault-init-keys Secret not found or empty — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                init_json=$(echo "${init_json_b64}" | base64 -d)
+                init_oneline=$(echo "${init_json}" | tr -d '\n ')
+
+                # Parse unseal keys using sed (no jq in alpine/k8s)
+                keys_csv=$(echo "${init_oneline}" | sed -n 's/.*"unseal_keys_hex" *:\[\([^]]*\)\].*/\1/p')
+                if [[ -z "${keys_csv}" ]]; then
+                  keys_csv=$(echo "${init_oneline}" | sed -n 's/.*"keys" *:\[\([^]]*\)\].*/\1/p')
+                fi
+
+                if [[ -z "${keys_csv}" ]]; then
+                  warn "Could not parse unseal keys from vault-init-keys — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                # Split CSV into array
+                mapfile -t UNSEAL_KEYS < <(echo "${keys_csv}" | tr ',' '\n' | tr -d '"' | tr -d ' ')
+
+                if [[ ${#UNSEAL_KEYS[@]} -lt 3 ]]; then
+                  warn "Need at least 3 unseal keys, got ${#UNSEAL_KEYS[@]} — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                for pod in ${PODS}; do
+                  # Check if pod exists and is Running
+                  pod_phase=$(kubectl get pod -n "${NAMESPACE}" "${pod}" \
+                    -o jsonpath='{.status.phase}' 2>/dev/null || true)
+
+                  if [[ "${pod_phase}" != "Running" ]]; then
+                    continue
+                  fi
+
+                  # Check seal status (vault status exits 2 when sealed, so use || true)
+                  status_json=$(kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                    env VAULT_ADDR=http://127.0.0.1:8200 \
+                    vault status -format=json 2>/dev/null || true)
+
+                  if [[ -z "${status_json}" ]]; then
+                    continue
+                  fi
+
+                  sealed=$(echo "${status_json}" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+
+                  if [[ "${sealed}" == "true" ]]; then
+                    log "${pod} is sealed — unsealing..."
+                    for k in 0 1 2; do
+                      kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                        env VAULT_ADDR=http://127.0.0.1:8200 \
+                        vault operator unseal "${UNSEAL_KEYS[$k]}" \
+                        >/dev/null 2>&1 || true
+                    done
+
+                    # Verify unseal succeeded
+                    verify_json=$(kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                      env VAULT_ADDR=http://127.0.0.1:8200 \
+                      vault status -format=json 2>/dev/null || true)
+                    verify_sealed=$(echo "${verify_json}" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+
+                    if [[ "${verify_sealed}" == "false" ]]; then
+                      log "${pod} unsealed successfully"
+                    else
+                      warn "${pod} still sealed after unseal attempt"
+                    fi
+                  fi
+                done
+
+                sleep "${CHECK_INTERVAL}"
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

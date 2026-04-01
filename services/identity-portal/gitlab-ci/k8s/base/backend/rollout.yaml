@@ -1,0 +1,107 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: identity-portal-backend
+  namespace: identity-portal
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: identity-portal
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: identity-portal
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: identity-portal
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: identity-portal
+              component: backend
+      nodeSelector:
+        workload-type: general
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - identity-portal
+                    - key: component
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: backend
+          image: harbor.CHANGEME_DOMAIN/idp/identity-portal-backend:v0.5.0
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: identity-portal-config
+            - secretRef:
+                name: identity-portal-secret
+          volumeMounts:
+            - name: vault-root-ca
+              mountPath: /etc/ssl/certs/vault-root-ca.pem
+              subPath: ca.crt
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: vault-root-ca
+          configMap:
+            name: vault-root-ca
+  strategy:
+    blueGreen:
+      activeService: identity-portal-backend-active
+      previewService: identity-portal-backend-preview
+      autoPromotionEnabled: false
+      prePromotionAnalysis:
+        templates:
+          - templateName: identity-portal-success-rate
+        args:
+          - name: service-name
+            value: identity-portal-backend-preview
+      scaleDownDelaySeconds: 30

@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # ArgoCD
+  - argocd/namespace.yaml
+  - argocd/gateway.yaml
+  - argocd/httproute.yaml
+  # Argo Rollouts
+  - argo-rollouts/namespace.yaml
+  - argo-rollouts/gateway.yaml
+  - argo-rollouts/httproute.yaml
+  - argo-rollouts/middleware-oauth2-proxy.yaml
+  # Argo Workflows
+  - argo-workflows/namespace.yaml
+  - argo-workflows/external-secret-oauth2-proxy.yaml
+  - argo-workflows/gateway.yaml
+  - argo-workflows/httproute.yaml
+  - argo-workflows/middleware-oauth2-proxy.yaml
+  # AnalysisTemplates
+  - analysis-templates/success-rate.yaml
+  - analysis-templates/latency-check.yaml
+  - analysis-templates/error-rate.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscalers.yaml
+  # Monitoring
+  - monitoring/

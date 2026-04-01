@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: minio
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ${STORAGE_CLASS}
+  resources:
+    requests:
+      # Must match cluster PVC size — Fleet cannot shrink PVCs.
+      # VolumeAutoscaler manages growth; resource-policy: keep prevents deletion.
+      storage: 346Gi

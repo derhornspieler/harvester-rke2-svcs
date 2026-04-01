@@ -1,0 +1,18 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: argocd-redis
+  namespace: argocd
+spec:
+  target:
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: redis-ha
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 30Gi
+  increasePercent: 25
+  increaseMinimum: 2Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
