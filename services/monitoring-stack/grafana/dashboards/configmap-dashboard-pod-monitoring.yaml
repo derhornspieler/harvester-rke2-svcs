@@ -1,0 +1,324 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-pod-monitoring
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Platform
+data:
+  pod-monitoring.json: |
+    {
+      "annotations": {"list": []},
+      "description": "Pod health overview — not-ready pods, restarts, phase breakdown by namespace.",
+      "editable": true,
+      "id": null,
+      "links": [
+        {"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}
+      ],
+      "panels": [
+        {
+          "title": "Pods Not Ready",
+          "description": "Pods in Pending, Failed, or Unknown phase",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [
+            {
+              "expr": "count(kube_pod_status_phase{phase=~\"Pending|Unknown|Failed\", job=\"kube-state-metrics\"} == 1) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "CrashLooping Pods",
+          "description": "Pods with containers restarting frequently",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "red", "value": 3}
+                ]
+              },
+              "noValue": "0"
+            }
+          },
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [
+            {
+              "expr": "count(increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\"}[1h]) > 3) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Total Pods",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "blue", "value": null}]
+              }
+            }
+          },
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [
+            {
+              "expr": "count(kube_pod_info{job=\"kube-state-metrics\"})",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Pods by Phase",
+          "type": "piechart",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "legend": {"displayMode": "list", "placement": "right"},
+            "pieType": "donut"
+          },
+          "fieldConfig": {
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Running"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Succeeded"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Pending"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Failed"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Unknown"}, "properties": [{"id": "color", "value": {"fixedColor": "yellow", "mode": "fixed"}}]}
+            ]
+          },
+          "targets": [
+            {
+              "expr": "count by (phase) (kube_pod_status_phase{job=\"kube-state-metrics\"} == 1)",
+              "legendFormat": "{{phase}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Not-Ready Pods",
+          "description": "All pods currently in Pending, Failed, or Unknown phase",
+          "type": "table",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 4},
+          "id": 5,
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "Time"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "__name__"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "job"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "uid"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "instance"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "phase"}, "properties": [
+                {"id": "custom.width", "value": 100},
+                {"id": "mappings", "value": [
+                  {"type": "value", "options": {"Pending": {"color": "orange", "text": "Pending"}, "Failed": {"color": "red", "text": "Failed"}, "Unknown": {"color": "yellow", "text": "Unknown"}}}
+                ]}
+              ]}
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [{"displayName": "namespace", "desc": false}]
+          },
+          "transformations": [
+            {"id": "sortBy", "options": {"fields": {}, "sort": [{"field": "namespace"}]}}
+          ],
+          "targets": [
+            {
+              "expr": "kube_pod_status_phase{phase=~\"Pending|Unknown|Failed\", job=\"kube-state-metrics\"} == 1",
+              "legendFormat": "",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "title": "Pods by Namespace",
+          "description": "Pod count per namespace with phase breakdown",
+          "type": "bargauge",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 6,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "blue", "value": null}]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true
+          },
+          "targets": [
+            {
+              "expr": "count by (namespace) (kube_pod_info{job=\"kube-state-metrics\"})",
+              "legendFormat": "{{namespace}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Container Restarts (Last 1h)",
+          "description": "Containers with restarts in the past hour",
+          "type": "table",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 7,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              }
+            },
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Time"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "job"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "uid"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "instance"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "displayName", "value": "Restarts"}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}}, {"id": "custom.cellOptions", "value": {"type": "color-background"}}]}
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [{"displayName": "Restarts", "desc": true}]
+          },
+          "targets": [
+            {
+              "expr": "topk(20, increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\"}[1h]) > 0)",
+              "legendFormat": "",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ]
+        },
+        {
+          "title": "Pod Restart Rate (24h)",
+          "description": "Container restart rate over the past 24 hours",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+          "id": 8,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "pointSize": 5,
+                "showPoints": "auto"
+              }
+            }
+          },
+          "options": {
+            "legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]},
+            "tooltip": {"mode": "multi"}
+          },
+          "targets": [
+            {
+              "expr": "topk(10, round(increase(kube_pod_container_status_restarts_total{job=\"kube-state-metrics\"}[1h])))",
+              "legendFormat": "{{namespace}}/{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Waiting Containers",
+          "description": "Containers in waiting state with reason",
+          "type": "table",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28},
+          "id": 9,
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Time"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "Value"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "job"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "uid"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "instance"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "__name__"}, "properties": [{"id": "custom.hidden", "value": true}]},
+              {"matcher": {"id": "byName", "options": "reason"}, "properties": [
+                {"id": "custom.width", "value": 180},
+                {"id": "mappings", "value": [
+                  {"type": "value", "options": {
+                    "CrashLoopBackOff": {"color": "red", "text": "CrashLoopBackOff"},
+                    "ImagePullBackOff": {"color": "orange", "text": "ImagePullBackOff"},
+                    "ErrImagePull": {"color": "orange", "text": "ErrImagePull"},
+                    "CreateContainerConfigError": {"color": "yellow", "text": "ConfigError"},
+                    "ContainerCreating": {"color": "blue", "text": "Creating"}
+                  }}
+                ]}
+              ]}
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [{"displayName": "reason", "desc": false}]
+          },
+          "targets": [
+            {
+              "expr": "kube_pod_container_status_waiting_reason{job=\"kube-state-metrics\", reason!=\"\"} == 1",
+              "legendFormat": "",
+              "refId": "A",
+              "format": "table",
+              "instant": true
+            }
+          ]
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["kubernetes", "pods"],
+      "templating": {"list": []},
+      "time": {"from": "now-24h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Pod Monitoring",
+      "uid": "pod-monitoring"
+    }

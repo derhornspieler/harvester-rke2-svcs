@@ -1,0 +1,31 @@
+# ClusterRole + ClusterRoleBinding for app onboarding jobs.
+# Allows harbor-init SA to create SecretStores and manage ESO resources
+# in any namespace (needed for cross-namespace onboarding).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: app-onboard
+  labels:
+    app.kubernetes.io/component: app-onboard
+rules:
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores"]
+    verbs: ["get", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: app-onboard
+  labels:
+    app.kubernetes.io/component: app-onboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: app-onboard
+subjects:
+  - kind: ServiceAccount
+    name: harbor-init
+    namespace: harbor

@@ -1,0 +1,41 @@
+# Tiered backup schedule for gitlab-postgresql
+# Daily: 7-day recovery window | Weekly: 30-day rollback | Monthly: 90-day compliance
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gitlab-postgresql-daily
+  namespace: database
+spec:
+  schedule: "0 45 3 * * *"  # 03:45 UTC daily
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: gitlab-postgresql
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gitlab-postgresql-weekly
+  namespace: database
+spec:
+  schedule: "0 45 4 * * 0"  # 04:45 UTC Sunday
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: gitlab-postgresql
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gitlab-postgresql-monthly
+  namespace: database
+spec:
+  schedule: "0 45 5 1 * *"  # 05:45 UTC 1st of month
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: gitlab-postgresql
+  method: barmanObjectStore

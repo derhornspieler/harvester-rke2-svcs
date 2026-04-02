@@ -1,0 +1,326 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cilium
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Networking
+data:
+  cilium-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}],
+      "panels": [
+        {
+          "title": "Cilium Agents Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 4},
+          "id": 1,
+          "fieldConfig": {"defaults": {"unit": "short", "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [{"expr": "count(up{job=\"cilium-agent\"} == 1) OR on() vector(0)", "refId": "A"}]
+        },
+        {
+          "title": "Cilium Agents Down",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 4},
+          "id": 2,
+          "fieldConfig": {"defaults": {"unit": "short", "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [{"expr": "count(up{job=\"cilium-agent\"} == 0) OR on() vector(0)", "refId": "A"}]
+        },
+        {
+          "title": "Total Endpoints",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 4},
+          "id": 3,
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [{"expr": "sum(cilium_endpoint_state)", "refId": "A"}]
+        },
+        {
+          "title": "Endpoints Ready",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 4},
+          "id": 4,
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [{"expr": "sum(cilium_endpoint_state{endpoint_state=\"ready\"})", "refId": "A"}]
+        },
+        {
+          "title": "Endpoints Not Ready",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Counts endpoints in any state other than ready.",
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"unit": "short", "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none", "textMode": "auto"},
+          "targets": [{"expr": "sum(cilium_endpoint_state{endpoint_state!=\"ready\"}) OR on() vector(0)", "refId": "A"}]
+        },
+        {
+          "title": "Policy Changes/s",
+          "description": "Rate of Cilium network policy updates per second. Green (0) means policies are stable. Red (>1) indicates policy churn — investigate if sustained.",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 4},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "ops", "decimals": 1, "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 0.5}, {"color": "red", "value": 1}]}}},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area", "textMode": "auto"},
+          "targets": [{"expr": "sum(rate(cilium_policy_change_total[5m])) OR on() vector(0)", "refId": "A"}]
+        },
+        {
+          "title": "Drops per Second",
+          "description": "Total Cilium packet drops across all nodes",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+          "id": 19,
+          "fieldConfig": {"defaults": {"unit": "pps", "noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(rate(cilium_drop_count_total[5m]))", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Endpoint State by Node",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "cilium_endpoint_state", "legendFormat": "{{instance}} - {{endpoint_state}}", "refId": "A"}]
+        },
+        {
+          "title": "Policy Count",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "cilium_policy", "legendFormat": "{{instance}}", "refId": "A"}]
+        },
+        {
+          "title": "Forwarded Bytes",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "id": 9,
+          "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "rate(cilium_forward_bytes_total[5m])", "legendFormat": "{{direction}}", "refId": "A"}]
+        },
+        {
+          "title": "Forwarded Packets",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+          "id": 10,
+          "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "rate(cilium_forward_count_total[5m])", "legendFormat": "{{direction}}", "refId": "A"}]
+        },
+        {
+          "title": "Drop Reason",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+          "id": 11,
+          "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "rate(cilium_drop_count_total[5m])", "legendFormat": "{{reason}}", "refId": "A"}]
+        },
+        {
+          "title": "API Limiter Processing Duration",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+          "id": 12,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "cilium_api_limiter_processing_duration_seconds", "legendFormat": "{{api_call}}", "refId": "A"}]
+        },
+        {
+          "title": "BPF Map Operations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 36},
+          "id": 13,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "rate(cilium_bpf_map_ops_total[5m])", "legendFormat": "{{operation}}", "refId": "A"}]
+        },
+        {
+          "title": "IP Addresses by Family",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 36},
+          "id": 14,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(cilium_ip_addresses) by (family)", "legendFormat": "{{family}}", "refId": "A"}]
+        },
+        {
+          "title": "Hubble Relay",
+          "type": "row",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 44},
+          "id": 16,
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "title": "Hubble gRPC Requests",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of gRPC requests handled by hubble-relay, broken down by method.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 45},
+          "id": 17,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(grpc_server_handled_total{job=\"hubble-relay-metrics\"}[5m])) by (grpc_method)", "legendFormat": "{{grpc_method}}", "refId": "A"}]
+        },
+        {
+          "title": "Hubble gRPC Latency p99",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "99th percentile latency of gRPC requests handled by hubble-relay.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 45},
+          "id": 18,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{job=\"hubble-relay-metrics\"}[5m])) by (le))", "legendFormat": "p99", "refId": "A"}]
+        },
+        {
+          "title": "Hubble Metrics",
+          "type": "row",
+          "gridPos": {"h": 1, "w": 24, "x": 0, "y": 53},
+          "id": 20,
+          "collapsed": false,
+          "panels": []
+        },
+        {
+          "title": "DNS Queries/s",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of DNS queries observed by Hubble, by query type.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 54},
+          "id": 21,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_dns_queries_total[5m])) by (query_type)", "legendFormat": "{{query_type}}", "refId": "A"}]
+        },
+        {
+          "title": "DNS Errors/s",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of DNS responses with non-success return codes.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 54},
+          "id": 22,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_dns_responses_total{rcode!=\"No Error\"}[5m])) by (rcode)", "legendFormat": "{{rcode}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Request Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of HTTP requests observed by Hubble L7 visibility.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 62},
+          "id": 23,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_http_requests_total[5m])) by (method, protocol)", "legendFormat": "{{method}} {{protocol}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Error Rate (5xx)",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of HTTP 5xx server error responses.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 62},
+          "id": 24,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_http_responses_total{status=~\"5..\"}[5m])) by (status)", "legendFormat": "{{status}}", "refId": "A"}]
+        },
+        {
+          "title": "HTTP Latency P99",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "99th percentile HTTP request duration observed by Hubble.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 70},
+          "id": 25,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "histogram_quantile(0.99, sum(rate(hubble_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "A"}]
+        },
+        {
+          "title": "TCP Flags",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "TCP flag events observed by Hubble (SYN, FIN, RST).",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 70},
+          "id": 26,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_tcp_flags_total[5m])) by (flag, family)", "legendFormat": "{{flag}} ({{family}})", "refId": "A"}]
+        },
+        {
+          "title": "Flows Processed by Verdict",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of flows processed by Hubble, grouped by verdict (FORWARDED, DROPPED, etc).",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 78},
+          "id": 27,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_flows_processed_total[5m])) by (verdict)", "legendFormat": "{{verdict}}", "refId": "A"}]
+        },
+        {
+          "title": "Drops by Reason",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Top 10 drop reasons observed by Hubble.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 78},
+          "id": 28,
+          "fieldConfig": {"defaults": {"unit": "pps", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "topk(10, sum(rate(hubble_drop_total[5m])) by (reason))", "legendFormat": "{{reason}}", "refId": "A"}]
+        },
+        {
+          "title": "Hubble Lost Events",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "description": "Rate of events lost by Hubble. Non-zero indicates ring buffer pressure.",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 86},
+          "id": 29,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+          "targets": [{"expr": "sum(rate(hubble_lost_events_total[5m])) by (source)", "legendFormat": "{{source}}", "refId": "A"}]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["cilium", "cni", "networking", "kubernetes"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Cilium CNI Overview",
+      "uid": "cilium-cni-overview",
+      "version": 1,
+      "description": "Overview dashboard for Cilium CNI monitoring including agent health, endpoint state, network policy, forwarding, drops, API latency, BPF operations, and IPAM."
+    }
