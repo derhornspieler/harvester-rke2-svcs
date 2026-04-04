@@ -1,0 +1,555 @@
+---
+# gitlab-admin-setup: Creates platform users, groups, deploy keys, and GDT
+# via GitLab REST API. Bootstrap PAT created via one-line Rails command,
+# then all operations use HTTP API calls (no complex Rails scripts).
+#
+# Users created:
+#   - Platform admin — GitLab admin + Owner on project groups
+#   - Senior developer — Maintainer on project groups (can merge to main)
+#   - CI service account — Developer on platform group (owns deploy keys)
+#
+# Also configures:
+#   - Group sharing (forge, infra_and_platform_services → platform)
+#   - CI job token access from dev groups to platform-deployments
+#   - SSH deploy key on platform-deployments (owned by gitlab-ci)
+#   - Instance setting: allow_deploy_tokens_and_keys_with_external_authn
+#
+# Idempotent — safe to re-run on every deploy.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+subjects:
+  - kind: ServiceAccount
+    name: gitlab-admin-setup
+    namespace: gitlab
+roleRef:
+  kind: Role
+  name: gitlab-admin-setup
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitlab-admin-setup
+  namespace: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab-admin-setup
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitlab-admin-setup
+    spec:
+      serviceAccountName: gitlab-admin-setup
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gitlab-admin-setup
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # Use external URL with -k (skip TLS verify for private CA)
+              # Internal ports (8080/8181) don't reliably handle PAT auth
+              # Variable names prefixed with _ to avoid envsubst collision
+              _GL_BASE="https://gitlab.${DOMAIN}"
+              _GL_API="${_GL_BASE}/api/v4"
+              OIDC_PROVIDER="openid_connect"
+              VAULT_ADDR="${VAULT_INTERNAL_URL}"
+
+              ###############################################################
+              # Helpers
+              ###############################################################
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+              die() { log "FATAL: $*"; exit 1; }
+
+              # Vault K8s auth — sets V_TOKEN for curl calls
+              vault_login() {
+                local sa_token v_resp
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                v_resp=$(curl -sf --connect-timeout 10 --max-time 30 \
+                  -X POST -d "{\"jwt\":\"${sa_token}\",\"role\":\"gitlab-admin-setup\"}" \
+                  "${VAULT_ADDR}/v1/auth/kubernetes/login") || die "Vault K8s auth failed"
+                V_TOKEN=$(echo "${v_resp}" | python3 -c \
+                  "import json,sys; print(json.load(sys.stdin)['auth']['client_token'])")
+                [[ -n "${V_TOKEN}" ]] || die "Empty Vault token"
+                log "Authenticated to Vault"
+              }
+
+              vault_read() {
+                local path="$1" field="$2"
+                curl -sf -H "X-Vault-Token: ${V_TOKEN}" \
+                  "${VAULT_ADDR}/v1/kv/data/${path}" 2>/dev/null | \
+                  python3 -c "import json,sys; print(json.load(sys.stdin)['data']['data']['${field}'])" 2>/dev/null || true
+              }
+
+              vault_write() {
+                local path="$1"; shift
+                local payload
+                payload=$(python3 -c "
+              import json,sys
+              pairs = [a.split('=',1) for a in sys.argv[1:]]
+              print(json.dumps({'data': dict(pairs)}))
+              " "$@")
+                local code
+                code=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -H "X-Vault-Token: ${V_TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  -X POST -d "${payload}" \
+                  "${VAULT_ADDR}/v1/kv/data/${path}") || code="000"
+                [[ "${code}" == "200" || "${code}" == "204" ]] || {
+                  log "WARNING: Vault write to ${path} returned HTTP ${code}"
+                  return 1
+                }
+                log "Written to kv/${path}"
+              }
+
+              # GitLab API helpers — all use ADMIN_PAT, -k for private CA
+              gl_api() {
+                local method="$1" endpoint="$2"
+                shift 2
+                curl -sfk --connect-timeout 10 --max-time 60 \
+                  -X "${method}" "${_GL_API}${endpoint}" \
+                  -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                  -H "Content-Type: application/json" \
+                  "$@"
+              }
+
+              # Get or create a user, returns user ID. Sets OIDC identity inline.
+              ensure_user() {
+                local username="$1" email="$2" name="$3" is_admin="$4"
+                local user_id existing
+
+                existing=$(gl_api GET "/users?username=${username}" 2>/dev/null || echo "[]")
+                user_id=$(echo "${existing}" | python3 -c "import json,sys; u=json.load(sys.stdin); print(u[0]['id'] if u else '')" 2>/dev/null || true)
+
+                if [[ -n "${user_id}" ]]; then
+                  log "User ${username} exists (ID: ${user_id})"
+                  # Update admin status and name if needed
+                  gl_api PUT "/users/${user_id}" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'name': sys.argv[1],
+                      'admin': sys.argv[2] == 'true'
+                    }))" "${name}" "${is_admin}")" >/dev/null 2>&1 || true
+                else
+                  log "Creating user ${username}..."
+                  local random_pass
+                  random_pass=$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n' | head -c 40)
+                  local resp
+                  resp=$(gl_api POST "/users" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'username': sys.argv[1],
+                      'email': sys.argv[2],
+                      'name': sys.argv[3],
+                      'password': sys.argv[4],
+                      'skip_confirmation': True,
+                      'admin': sys.argv[5] == 'true',
+                      'extern_uid': sys.argv[1],
+                      'provider': '${OIDC_PROVIDER}'
+                    }))" "${username}" "${email}" "${name}" "${random_pass}" "${is_admin}")") || die "Failed to create user ${username}"
+                  user_id=$(echo "${resp}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+                  log "Created user ${username} (ID: ${user_id})"
+                fi
+
+                # Ensure OIDC identity exists (idempotent — may already exist from creation)
+                local identities
+                identities=$(gl_api GET "/users/${user_id}/identities" 2>/dev/null || echo "[]")
+                local has_oidc
+                has_oidc=$(echo "${identities}" | python3 -c "
+              import json,sys
+              ids = json.load(sys.stdin)
+              print('yes' if any(i.get('provider')=='${OIDC_PROVIDER}' and i.get('extern_uid')=='${username}' for i in ids) else 'no')
+              " 2>/dev/null || echo "no")
+                if [[ "${has_oidc}" != "yes" ]]; then
+                  gl_api POST "/users/${user_id}/identities" \
+                    -d "{\"provider\":\"${OIDC_PROVIDER}\",\"extern_uid\":\"${username}\"}" >/dev/null 2>&1 || true
+                  log "Linked OIDC identity for ${username}"
+                fi
+
+                echo "${user_id}"
+              }
+
+              # Get or create a group, returns group ID
+              ensure_group() {
+                local path="$1" name="$2" visibility="${3:-internal}"
+                local group_id
+                group_id=$(gl_api GET "/groups?search=${path}" 2>/dev/null | \
+                  python3 -c "import json,sys; gs=[g for g in json.load(sys.stdin) if g['full_path']=='${path}']; print(gs[0]['id'] if gs else '')" 2>/dev/null || true)
+                if [[ -n "${group_id}" ]]; then
+                  log "Group ${path} exists (ID: ${group_id})"
+                else
+                  log "Creating group ${path}..."
+                  local resp
+                  resp=$(gl_api POST "/groups" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'name': sys.argv[1],
+                      'path': sys.argv[2],
+                      'visibility': sys.argv[3]
+                    }))" "${name}" "${path}" "${visibility}")") || die "Failed to create group ${path}"
+                  group_id=$(echo "${resp}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+                  log "Created group ${path} (ID: ${group_id})"
+                fi
+                echo "${group_id}"
+              }
+
+              # Get group ID by path, returns empty if not found
+              get_group_id() {
+                local path="$1"
+                gl_api GET "/groups?search=${path}" 2>/dev/null | \
+                  python3 -c "import json,sys; gs=[g for g in json.load(sys.stdin) if g['full_path']=='${path}']; print(gs[0]['id'] if gs else '')" 2>/dev/null || true
+              }
+
+              # Get or create a project under a group, returns project ID
+              ensure_project() {
+                local group_id="$1" project_path="$2" project_name="$3" full_path="$4"
+                local project_id
+                project_id=$(gl_api GET "/projects?search=${project_path}&search_namespaces=true" 2>/dev/null | \
+                  python3 -c "import json,sys; ps=[p for p in json.load(sys.stdin) if p['path_with_namespace']=='${full_path}']; print(ps[0]['id'] if ps else '')" 2>/dev/null || true)
+                if [[ -n "${project_id}" ]]; then
+                  log "Project ${full_path} exists (ID: ${project_id})"
+                else
+                  log "Creating project ${full_path}..."
+                  local resp
+                  resp=$(gl_api POST "/projects" \
+                    -d "$(python3 -c "import json,sys; print(json.dumps({
+                      'name': sys.argv[1],
+                      'path': sys.argv[2],
+                      'namespace_id': int(sys.argv[3]),
+                      'visibility': 'internal',
+                      'default_branch': 'main',
+                      'initialize_with_readme': False
+                    }))" "${project_name}" "${project_path}" "${group_id}")") || die "Failed to create project ${full_path}"
+                  project_id=$(echo "${resp}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+                  log "Created project ${full_path} (ID: ${project_id})"
+
+                  # Initialize with scaffold commit (dev/staging/production dirs + README)
+                  log "Initializing ${full_path} with directory scaffold..."
+                  gl_api POST "/projects/${project_id}/repository/commits" \
+                    -d "$(python3 -c "
+              import json
+              actions = [
+                  {'action':'create','file_path':'README.md','content':'# platform-deployments\n\nArgoCD-managed application deployments.\n\n## Structure\n\n- \`dev/<team>/<app>/\` — Development (auto-sync from dev branch)\n- \`staging/<team>/<app>/\` — Staging (auto-sync from main)\n- \`production/<team>/<app>/\` — Production (manual sync from main)\n'},
+                  {'action':'create','file_path':'dev/.gitkeep','content':''},
+                  {'action':'create','file_path':'staging/.gitkeep','content':''},
+                  {'action':'create','file_path':'production/.gitkeep','content':''},
+              ]
+              print(json.dumps({
+                  'branch': 'main',
+                  'commit_message': 'chore: initialize platform-deployments scaffold',
+                  'actions': actions
+              }))
+              ")" >/dev/null 2>&1 || log "WARNING: scaffold commit failed (repo may already have content)"
+
+                  # Create dev branch from main
+                  gl_api POST "/projects/${project_id}/repository/branches" \
+                    -d '{"branch":"dev","ref":"main"}' >/dev/null 2>&1 || log "WARNING: dev branch creation failed (may already exist)"
+                  log "Created dev branch"
+                fi
+                echo "${project_id}"
+              }
+
+              # Add member to group (idempotent)
+              ensure_group_member() {
+                local group_id="$1" user_id="$2" access_level="$3" username="$4"
+                # Try to add; if already exists, update access level
+                local code body payload
+                payload=$(python3 -c "import json,sys; print(json.dumps({'user_id':int(sys.argv[1]),'access_level':int(sys.argv[2])}))" "${user_id}" "${access_level}")
+                body=$(mktemp)
+                code=$(curl -sk -o "${body}" -w "%{http_code}" \
+                  --connect-timeout 10 --max-time 30 \
+                  -X POST "${_GL_API}/groups/${group_id}/members" \
+                  -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                  -H "Content-Type: application/json" \
+                  -d "${payload}")
+                case "${code}" in
+                  200|201) log "Added ${username} to group ${group_id} (level ${access_level})" ;;
+                  409)
+                    # Already a member — update access level
+                    gl_api PUT "/groups/${group_id}/members/${user_id}" \
+                      -d "{\"access_level\":${access_level}}" >/dev/null 2>&1 || true
+                    log "${username} already member of group ${group_id} — ensured level ${access_level}"
+                    ;;
+                  *) log "WARNING: Add member returned HTTP ${code}: $(cat "${body}")" ;;
+                esac
+                rm -f "${body}"
+              }
+
+              # Share group with another group (idempotent)
+              share_group() {
+                local group_id="$1" share_with_id="$2" access_level="$3" share_name="$4"
+                local body code
+                body=$(mktemp)
+                code=$(curl -sk -o "${body}" -w "%{http_code}" \
+                  --connect-timeout 10 --max-time 30 \
+                  -X POST "${_GL_API}/groups/${group_id}/share" \
+                  -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"group_id\":${share_with_id},\"group_access\":${access_level}}")
+                case "${code}" in
+                  200|201) log "Shared group with ${share_name} (level ${access_level})" ;;
+                  400|409) log "Group already shared with ${share_name}" ;;
+                  *) log "WARNING: Share group returned HTTP ${code}: $(cat "${body}")" ;;
+                esac
+                rm -f "${body}"
+              }
+
+              ###############################################################
+              # Phase 0: Vault auth + read credentials
+              ###############################################################
+              vault_login
+
+              ROOT_PASS=$(vault_read "services/gitlab/initial-root-password" "password")
+              [[ -n "${ROOT_PASS}" ]] || die "Cannot read GitLab root password from Vault"
+              log "GitLab root password loaded from Vault"
+
+              ###############################################################
+              # Phase 1: Bootstrap admin PAT via one-line Rails command
+              ###############################################################
+              # This is the ONLY Rails interaction — creates a short-lived
+              # admin PAT we use for all subsequent API calls.
+              log "Waiting for GitLab toolbox pod..."
+              TOOLBOX_POD=""
+              for i in $(seq 1 120); do
+                TOOLBOX_POD=$(kubectl get pods -n gitlab \
+                  -l app=toolbox,release=gitlab \
+                  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                if [[ -n "${TOOLBOX_POD}" ]]; then
+                  READY=$(kubectl get pod -n gitlab "${TOOLBOX_POD}" \
+                    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+                  if [[ "${READY}" == "True" ]]; then
+                    break
+                  fi
+                fi
+                TOOLBOX_POD=""
+                sleep 5
+              done
+              [[ -n "${TOOLBOX_POD}" ]] || die "Toolbox pod not ready after 10 minutes"
+              log "Toolbox ready: ${TOOLBOX_POD}"
+
+              log "Creating temporary admin PAT..."
+              ADMIN_PAT=$(kubectl exec -n gitlab "${TOOLBOX_POD}" -- \
+                gitlab-rails runner \
+                "t=PersonalAccessToken.create!(user:User.find_by(username:'root'),name:'admin-setup-$(date +%s)',scopes:['api','admin_mode'],expires_at:2.days.from_now);puts t.token" \
+                2>/dev/null | tail -1 | tr -d '\r\n ') || ADMIN_PAT=""
+              [[ -n "${ADMIN_PAT}" && "${ADMIN_PAT}" == glpat-* ]] || die "Failed to create admin PAT (got: ${ADMIN_PAT:-empty})"
+              log "Admin PAT created (expires in 2 days, revoked at end of job)"
+
+              # Verify API access — use verbose curl for debugging
+              _verify_code=$(curl -sk -o /dev/null -w "%{http_code}" \
+                --connect-timeout 10 --max-time 30 \
+                -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                "${_GL_API}/version") || _verify_code="000"
+              if [[ "${_verify_code}" != "200" ]]; then
+                log "WARNING: API version check returned HTTP ${_verify_code}"
+                log "API URL: ${_GL_API}/version"
+                log "PAT prefix: ${ADMIN_PAT:0:10}..."
+                die "GitLab API not accessible (HTTP ${_verify_code})"
+              fi
+              log "GitLab API verified (HTTP ${_verify_code})"
+
+              ###############################################################
+              # Phase 2: Create/update users with OIDC identities
+              ###############################################################
+              # GitLab access levels: Guest=10, Reporter=20, Developer=30, Maintainer=40, Owner=50
+
+              ADMIN_ID=$(ensure_user "${PLATFORM_ADMIN_USER}" "${PLATFORM_ADMIN_EMAIL}" "${PLATFORM_ADMIN_NAME}" "true")
+              [[ -n "${ADMIN_ID}" ]] || die "Failed to get/create platform admin user"
+
+              SENIOR_DEV_ID=$(ensure_user "${SENIOR_DEV_USER}" "${SENIOR_DEV_EMAIL}" "${SENIOR_DEV_NAME}" "false")
+              [[ -n "${SENIOR_DEV_ID}" ]] || die "Failed to get/create senior dev user"
+
+              CI_USER_ID=$(ensure_user "${CI_SERVICE_USER}" "${CI_SERVICE_EMAIL}" "${CI_SERVICE_NAME}" "false")
+              [[ -n "${CI_USER_ID}" ]] || die "Failed to get/create CI service user"
+
+              log "All users created/verified"
+
+              ###############################################################
+              # Phase 3: Group memberships
+              ###############################################################
+              INFRA_GROUP_ID=$(ensure_group "infra_and_platform_services" "Infra and Platform Services" "internal")
+              PLATFORM_GROUP_ID=$(ensure_group "platform" "Platform" "internal")
+              FORGE_GROUP_ID=$(get_group_id "forge")
+
+              # infra_and_platform_services group access
+              if [[ -n "${INFRA_GROUP_ID}" ]]; then
+                ensure_group_member "${INFRA_GROUP_ID}" "${ADMIN_ID}" 50 "${PLATFORM_ADMIN_USER}"
+                ensure_group_member "${INFRA_GROUP_ID}" "${SENIOR_DEV_ID}" 40 "${SENIOR_DEV_USER}"
+              else
+                log "WARNING: infra_and_platform_services group not found"
+              fi
+
+              # platform group access
+              if [[ -n "${PLATFORM_GROUP_ID}" ]]; then
+                ensure_group_member "${PLATFORM_GROUP_ID}" "${ADMIN_ID}" 50 "${PLATFORM_ADMIN_USER}"
+                ensure_group_member "${PLATFORM_GROUP_ID}" "${SENIOR_DEV_ID}" 40 "${SENIOR_DEV_USER}"
+                ensure_group_member "${PLATFORM_GROUP_ID}" "${CI_USER_ID}" 30 "${CI_SERVICE_USER}"
+                log "Platform group memberships configured"
+
+                # Share platform group with dev groups (Developer access)
+                for _share_name in infra_and_platform_services forge; do
+                  case "${_share_name}" in
+                    infra_and_platform_services) _share_id="${INFRA_GROUP_ID}" ;;
+                    forge) _share_id="${FORGE_GROUP_ID}" ;;
+                  esac
+                  if [[ -n "${_share_id:-}" ]]; then
+                    share_group "${PLATFORM_GROUP_ID}" "${_share_id}" 30 "${_share_name}"
+                  fi
+                done
+              else
+                log "WARNING: platform group not found — skipping memberships and sharing"
+              fi
+
+              ###############################################################
+              # Phase 4: Create platform-deployments + CI job token access
+              ###############################################################
+              DEPLOY_PROJECT_ID=$(ensure_project "${PLATFORM_GROUP_ID}" "platform-deployments" "Platform Deployments" "platform/platform-deployments")
+
+              if [[ -n "${DEPLOY_PROJECT_ID}" ]]; then
+                log "platform-deployments project ID: ${DEPLOY_PROJECT_ID}"
+
+                # Add CI job token group allowlist entries
+                for _grp_name in infra_and_platform_services forge; do
+                  case "${_grp_name}" in
+                    infra_and_platform_services) _grp_id="${INFRA_GROUP_ID}" ;;
+                    forge) _grp_id="${FORGE_GROUP_ID}" ;;
+                  esac
+                  if [[ -n "${_grp_id:-}" ]]; then
+                    local_body=$(mktemp)
+                    local_code=$(curl -sk -o "${local_body}" -w "%{http_code}" \
+                      --connect-timeout 10 --max-time 30 \
+                      -X POST "${_GL_API}/projects/${DEPLOY_PROJECT_ID}/job_token_scope/groups_allowlist" \
+                      -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                      -H "Content-Type: application/json" \
+                      -d "{\"target_group_id\":${_grp_id}}")
+                    case "${local_code}" in
+                      200|201) log "Added ${_grp_name} to CI job token allowlist" ;;
+                      400|409) log "${_grp_name} already in CI job token allowlist" ;;
+                      *) log "WARNING: CI token allowlist returned HTTP ${local_code}" ;;
+                    esac
+                    rm -f "${local_body}"
+                  fi
+                done
+              else
+                log "WARNING: platform-deployments project ID is empty — skipping CI token config"
+              fi
+
+              ###############################################################
+              # Phase 5: SSH deploy key (owned by gitlab-ci)
+              ###############################################################
+              # Public key: injected via envsubst from CI_DEPLOY_PUBLIC_KEY_FILE
+              # Private key: base64-encoded via envsubst, decoded at runtime
+              _DEPLOY_PUB_KEY="${CI_DEPLOY_PUBLIC_KEY}"
+              _DEPLOY_PRIV_KEY_B64="${CI_DEPLOY_PRIVATE_KEY_B64}"
+              _DEPLOY_PRIV_KEY=""
+              if [[ -n "${_DEPLOY_PRIV_KEY_B64}" ]]; then
+                _DEPLOY_PRIV_KEY=$(echo "${_DEPLOY_PRIV_KEY_B64}" | base64 -d)
+              fi
+
+              if [[ -z "${_DEPLOY_PUB_KEY}" ]]; then
+                log "WARNING: No SSH deploy public key provided (CI_DEPLOY_PUBLIC_KEY_FILE) — skipping deploy key setup"
+              elif [[ -n "${DEPLOY_PROJECT_ID}" ]]; then
+                # Store private key in Vault for CI pipelines
+                if [[ -n "${_DEPLOY_PRIV_KEY}" ]]; then
+                  vault_write "services/ci/platform-deploy-key" \
+                    "private_key=${_DEPLOY_PRIV_KEY}" \
+                    "public_key=${_DEPLOY_PUB_KEY}" || log "WARNING: Failed to store deploy key in Vault"
+                  log "SSH deploy key stored in Vault"
+                fi
+
+                # Delete existing deploy keys with same title (using admin PAT)
+                EXISTING_KEYS=$(gl_api GET "/projects/${DEPLOY_PROJECT_ID}/deploy_keys" 2>/dev/null || echo "[]")
+                OLD_KEY_IDS=$(echo "${EXISTING_KEYS}" | python3 -c "
+              import json,sys
+              keys = json.load(sys.stdin)
+              for k in keys:
+                if 'ci-deploy' in k.get('title','').lower() or 'platform-deploy' in k.get('title','').lower():
+                  print(k['id'])
+              " 2>/dev/null || true)
+
+                for _old_id in ${OLD_KEY_IDS}; do
+                  gl_api DELETE "/projects/${DEPLOY_PROJECT_ID}/deploy_keys/${_old_id}" >/dev/null 2>&1 || true
+                  log "Deleted old deploy key ID ${_old_id}"
+                done
+
+                # Upload deploy key using admin PAT (requires Maintainer+)
+                log "Uploading SSH deploy key to platform-deployments..."
+                DK_PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({
+                  'title': 'ci-deploy-push',
+                  'key': sys.argv[1],
+                  'can_push': True
+                }))" "${_DEPLOY_PUB_KEY}")
+
+                DK_BODY=$(mktemp)
+                DK_CODE=$(curl -sk -o "${DK_BODY}" -w "%{http_code}" \
+                  --connect-timeout 10 --max-time 30 \
+                  -X POST "${_GL_API}/projects/${DEPLOY_PROJECT_ID}/deploy_keys" \
+                  -H "PRIVATE-TOKEN: ${ADMIN_PAT}" \
+                  -H "Content-Type: application/json" \
+                  -d "${DK_PAYLOAD}")
+                case "${DK_CODE}" in
+                  200|201) log "SSH deploy key uploaded (can_push=true)" ;;
+                  *) log "WARNING: Deploy key upload returned HTTP ${DK_CODE}: $(cat "${DK_BODY}")" ;;
+                esac
+                rm -f "${DK_BODY}"
+              fi
+
+              ###############################################################
+              # Phase 6: Instance settings
+              ###############################################################
+              gl_api PUT "/application/settings" \
+                -d '{"allow_deploy_tokens_and_keys_with_external_authn":true}' >/dev/null 2>&1 || \
+                log "WARNING: Could not update instance setting allow_deploy_tokens_and_keys_with_external_authn"
+              log "Instance setting: allow_deploy_tokens_and_keys_with_external_authn=true"
+
+              ###############################################################
+              # Cleanup: Revoke temporary admin PAT
+              ###############################################################
+              # Find and revoke our bootstrap PAT (name starts with admin-setup-)
+              ADMIN_PAT_ID=$(gl_api GET "/personal_access_tokens/self" 2>/dev/null | \
+                python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+              if [[ -n "${ADMIN_PAT_ID}" ]]; then
+                gl_api DELETE "/personal_access_tokens/${ADMIN_PAT_ID}" >/dev/null 2>&1 || true
+                log "Revoked temporary admin PAT"
+              fi
+
+              log "gitlab-admin-setup complete"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi

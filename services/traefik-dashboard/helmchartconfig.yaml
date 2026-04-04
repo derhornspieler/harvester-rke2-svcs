@@ -1,0 +1,96 @@
+## Traefik HelmChartConfig — RKE2 system Traefik overrides
+## Applied as a HelmChartConfig CR to patch the system-managed rke2-traefik chart.
+## IMPORTANT: This must be re-applied after rolling cluster upgrades, as new CP
+## nodes may reset to default values (dashboard disabled, no custom args).
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-traefik
+  namespace: kube-system
+spec:
+  failurePolicy: reinstall
+  valuesContent: |
+    additionalArguments:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--entryPoints.web.transport.respondingTimeouts.readTimeout=600s"
+      - "--entryPoints.web.transport.respondingTimeouts.writeTimeout=600s"
+      - "--entryPoints.web.transport.respondingTimeouts.idleTimeout=180s"
+      - "--entryPoints.websecure.transport.respondingTimeouts.readTimeout=600s"
+      - "--entryPoints.websecure.transport.respondingTimeouts.writeTimeout=600s"
+      - "--entryPoints.websecure.transport.respondingTimeouts.idleTimeout=180s"
+      - "--entryPoints.web.transport.lifeCycle.graceTimeOut=30s"
+      - "--entryPoints.websecure.transport.lifeCycle.graceTimeOut=30s"
+    deployment:
+      initContainers:
+        - name: combine-ca
+          image: docker.io/library/alpine:3.21
+          securityContext:
+            allowPrivilegeEscalation: false
+          command:
+            - sh
+            - -c
+            - >-
+              cp /etc/ssl/certs/ca-certificates.crt /combined-ca/ca-certificates.crt 2>/dev/null || true;
+              if [ -s /vault-ca/ca.crt ]; then cat /vault-ca/ca.crt >> /combined-ca/ca-certificates.crt; fi
+          volumeMounts:
+            - mountPath: /vault-ca
+              name: vault-root-ca
+              readOnly: true
+            - mountPath: /combined-ca
+              name: combined-ca
+    env:
+      - name: SSL_CERT_FILE
+        value: /combined-ca/ca-certificates.crt
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    logs:
+      access:
+        enabled: true
+        bufferingSize: 100
+    ports:
+      ssh:
+        expose:
+          default: true
+        exposedPort: 22
+        port: 2222
+        protocol: TCP
+      web:
+        redirections:
+          entryPoint:
+            scheme: https
+            to: websecure
+    providers:
+      kubernetesIngress:
+        enabled: false
+      kubernetesGateway:
+        enabled: true
+        experimentalChannel: true
+    priorityClassName: system-cluster-critical
+    # nodeSelector removed — Traefik must run on all worker nodes for cross-VLAN
+    # connectivity. The dev VM (172.16.3.x) reaches the services network (192.168.48.x)
+    # through database nodes that bridge both networks. Restricting to general nodes
+    # breaks this path. Re-enable only after adding a static route on the dev VM
+    # or switching to a network topology where all VLANs are routed.
+    # nodeSelector:
+    #   workload-type: general
+    # tolerations:
+    #   - key: node-role.kubernetes.io/control-plane
+    #     operator: Exists
+    #     effect: NoSchedule
+    service:
+      spec:
+        # externalTrafficPolicy: Local — requires Cilium L2 + nodeSelector alignment
+        externalTrafficPolicy: Cluster
+        loadBalancerIP: "CHANGEME_TRAEFIK_LB_IP"
+      type: LoadBalancer
+    volumes:
+      - mountPath: /vault-ca
+        name: vault-root-ca
+        type: configMap
+      - mountPath: /combined-ca
+        name: combined-ca
+        type: emptyDir

@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-alloy
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Observability
+data:
+  alloy-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [{"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": false, "type": "link"}],
+      "panels": [
+        {
+          "title": "Alloy Instances",
+          "description": "Number of healthy Alloy DaemonSet pods",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {"defaults": {"noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "count(up{job=\"alloy\"} == 1) OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Targets Active",
+          "description": "Total number of healthy scrape targets across all Alloy instances",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {"defaults": {"noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(alloy_component_targets{health=\"up\"}) OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Targets Unhealthy",
+          "description": "Scrape targets in not_ready state — should be 0",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {"defaults": {"noValue": "0", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(alloy_component_targets{health=\"not_ready\"}) OR on() vector(0)", "legendFormat": "", "refId": "A"}]
+        },
+        {
+          "title": "Log Entries Rate",
+          "description": "Rate of log entries sent to Loki and dropped by reason",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "id": 4,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "sum(rate(loki_write_sent_entries_total{job=\"alloy\"}[5m]))", "legendFormat": "Sent", "refId": "A"},
+            {"expr": "sum(rate(loki_process_dropped_lines_total{job=\"alloy\"}[5m])) by (reason)", "legendFormat": "Dropped ({{reason}})", "refId": "B"}
+          ]
+        },
+        {
+          "title": "Sent Bytes/s",
+          "description": "Bytes per second sent to Loki by each Alloy instance",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "sum(rate(loki_write_sent_bytes_total{job=\"alloy\"}[5m])) by (instance)", "legendFormat": "{{instance}}", "refId": "A"}]
+        },
+        {
+          "title": "Component Evaluation Duration",
+          "description": "p99 duration of Alloy component evaluations",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "histogram_quantile(0.99, sum(rate(alloy_component_evaluation_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "A"}]
+        },
+        {
+          "title": "CPU Usage",
+          "description": "CPU usage per Alloy instance",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "rate(process_cpu_seconds_total{job=\"alloy\"}[5m])", "legendFormat": "{{instance}}", "refId": "A"}]
+        },
+        {
+          "title": "Memory RSS",
+          "description": "Resident memory per Alloy instance",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "stacking": {"mode": "none"}, "spanNulls": false}}},
+          "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "process_resident_memory_bytes{job=\"alloy\"}", "legendFormat": "{{instance}}", "refId": "A"}]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["alloy", "monitoring", "logs"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Alloy Log Collector Overview",
+      "uid": "alloy-overview",
+      "version": 1,
+      "description": "Grafana Alloy DaemonSet log collector overview — instances, targets, throughput, and resource usage."
+    }

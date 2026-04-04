@@ -1,0 +1,69 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gitlab-alerts
+  namespace: gitlab
+spec:
+  groups:
+    - name: gitlab-alerts
+      rules:
+        - alert: GitLabDown
+          expr: up{job="gitlab-exporter"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GitLab exporter is down"
+            description: "GitLab exporter has been unreachable for more than 5 minutes."
+
+        - alert: GitLabSidekiqHighFailureRate
+          expr: |
+            (sum(rate(sidekiq_jobs_failed_total{namespace="gitlab"}[5m]))
+            / sum(rate(sidekiq_jobs_processed_total{namespace="gitlab"}[5m]))) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitLab Sidekiq job failure rate is high"
+            description: 'Sidekiq failure rate is {{ "{{ $value | humanize }}" }}% over the last 10 minutes.'
+
+        - alert: GitLabSidekiqQueueBacklog
+          expr: sum(sidekiq_queue_size{namespace="gitlab"}) > 1000
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitLab Sidekiq queue backlog is growing"
+            description: '{{ "{{ $value | humanize }}" }} jobs are waiting in Sidekiq queues.'
+
+        - alert: GitLabGitalyHighLatency
+          expr: |
+            histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{namespace="gitlab", grpc_type="unary"}[5m])) by (le)) > 5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Gitaly p99 latency is above 5 seconds"
+            description: 'Gitaly unary RPC p99 latency is {{ "{{ $value | humanize }}" }}s.'
+
+        - alert: GitLabPumaThreadExhaustion
+          expr: |
+            (1 - sum(puma_pool_capacity{namespace="gitlab"})
+            / sum(puma_max_threads{namespace="gitlab"})) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitLab Puma thread pool nearly exhausted"
+            description: 'Puma thread utilization is {{ "{{ $value | humanizePercentage  }}" }}.'
+
+        - alert: GitLabHighServerErrorRate
+          expr: |
+            sum(rate(http_requests_total{namespace="gitlab", status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{namespace="gitlab"}[5m])) * 100 > 5
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GitLab HTTP 5xx error rate is high"
+            description: 'GitLab HTTP 5xx error rate is {{ "{{ $value | humanize }}" }}%.'

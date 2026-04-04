@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: developer-dev
+  namespace: argocd
+spec:
+  description: Self-service dev/sandbox environment (dev-* namespaces)
+  sourceRepos:
+    - "https://${GITLAB_FQDN}/platform/platform-deployments.git"
+  destinations:
+    - namespace: "dev-*"
+      server: "https://kubernetes.default.svc"
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

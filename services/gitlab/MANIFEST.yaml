@@ -1,0 +1,198 @@
+# MANIFEST.yaml — GitLab service component inventory
+# Lists all Helm charts, container images, Kustomize resources,
+# and deployment phases for the GitLab bundle.
+
+service: gitlab
+namespace: gitlab
+additional_namespaces:
+  - gitlab-runners
+  - database          # shared CNPG namespace
+
+## ── Helm Charts ─────────────────────────────────────────────────────────────
+helm_charts:
+  - name: gitlab/gitlab
+    repo: https://charts.gitlab.io
+    values: values-rke2-prod.yaml
+    description: GitLab EE (webservice, sidekiq, shell, kas, gitaly, praefect, minio, toolbox, migrations, exporter)
+  - name: gitlab/gitlab-runner
+    repo: https://charts.gitlab.io
+    instances: 3
+    values:
+      - runners/shared-runner-values.yaml
+      - runners/security-runner-values.yaml
+      - runners/group-runner-values.yaml
+    description: GitLab Runner (Kubernetes executor) — shared, security, and group pools
+
+## ── Container Images ────────────────────────────────────────────────────────
+images:
+  # GitLab EE components (pulled by Helm chart)
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ee
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-sidekiq-ee
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-shell
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-kas
+  - registry.gitlab.com/gitlab-org/build/cng/gitaly
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ee
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-exporter
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-toolbox-ee
+  - registry.gitlab.com/gitlab-org/build/cng/gitlab-container-registry
+  - registry.gitlab.com/gitlab-org/build/cng/kubectl
+  - registry.gitlab.com/gitlab-org/build/cng/certificates
+  - registry.gitlab.com/gitlab-org/build/cng/cfssl-self-sign
+
+  # GitLab Runner
+  - registry.gitlab.com/gitlab-org/gitlab-runner
+
+  # PostgreSQL (CloudNativePG operand)
+  - ghcr.io/cloudnative-pg/postgresql:17.6
+
+  # Redis (OpsTree Redis Operator)
+  - quay.io/opstree/redis:v7.0.15
+  - quay.io/opstree/redis-sentinel:v7.0.15
+  - oliver006/redis_exporter:v1.66.0
+
+  # MinIO (bundled object storage)
+  - minio/minio
+
+  # CI/CD tool images (used in CI templates)
+  - gcr.io/kaniko-project/executor:v1.23.2-debug
+  - aquasec/trivy:0.69.3
+  - semgrep/semgrep:1.153.1
+  - zricethezav/gitleaks:v8.30.0
+  - anchore/syft:v1.38.0
+  - hadolint/hadolint:v2.12.0-alpine
+  - gcr.io/go-containerregistry/crane:v0.21.1
+  - argoproj/argocd:v2.14.0
+  - hashicorp/vault:1.18
+  - bitnami/kubectl:1.32
+  - bitnami/git:2.47.1
+  - cytopia/yamllint:0.14
+  - koalaman/shellcheck-alpine:v0.10.0
+
+## ── Kustomize Resources ─────────────────────────────────────────────────────
+kustomize:
+  base: kustomization.yaml
+  resources:
+    - namespace.yaml
+    - gateway.yaml
+    - tcproute-ssh.yaml
+    - cloudnativepg-cluster.yaml
+    - cloudnativepg-scheduled-backup.yaml
+    - redis/replication.yaml
+    - redis/sentinel.yaml
+    - redis/external-secret.yaml
+    - gitaly/external-secret.yaml
+    - praefect/external-secret-dbsecret.yaml
+    - praefect/external-secret-token.yaml
+    - oidc/external-secret.yaml
+    - root/external-secret.yaml
+    - pgbouncer-poolers.yaml
+    - volume-autoscalers.yaml
+    - monitoring/
+
+  runners: runners/kustomization.yaml
+  runner_resources:
+    - runners/namespace.yaml
+    - runners/rbac.yaml
+    - runners/external-secret-harbor-push.yaml
+
+  ci_templates:
+    - ci-templates/base.yml
+    - ci-templates/stages.yml
+    - ci-templates/jobs/build.yml
+    - ci-templates/jobs/deploy.yml
+    - ci-templates/jobs/eso-provision.yml
+    - ci-templates/jobs/lint.yml
+    - ci-templates/jobs/promote.yml
+    - ci-templates/jobs/rollout.yml
+    - ci-templates/jobs/scan.yml
+    - ci-templates/jobs/test.yml
+    - ci-templates/patterns/infrastructure.yml
+    - ci-templates/patterns/library.yml
+    - ci-templates/patterns/microservice.yml
+    - ci-templates/patterns/platform-service.yml
+
+## ── Deployment Phases ───────────────────────────────────────────────────────
+deploy_phases:
+  - phase: 1
+    name: Namespaces and RBAC
+    description: Create gitlab and gitlab-runners namespaces, ServiceAccount, RBAC
+    resources:
+      - namespace.yaml
+      - runners/namespace.yaml
+      - runners/rbac.yaml
+
+  - phase: 2
+    name: Vault secrets
+    description: Seed Vault KV with root password, Redis password, Gitaly token, Praefect secrets, OIDC provider
+    vault_paths:
+      - services/gitlab/initial-root-password
+      - services/gitlab/redis
+      - services/gitlab/gitaly-secret
+      - services/gitlab/praefect-dbsecret
+      - services/gitlab/praefect-secret
+      - services/gitlab/oidc-secret
+      - ci/harbor-push
+
+  - phase: 3
+    name: External Secrets
+    description: Deploy ExternalSecret CRs — ESO syncs Vault secrets into K8s Secrets
+    resources:
+      - redis/external-secret.yaml
+      - gitaly/external-secret.yaml
+      - praefect/external-secret-dbsecret.yaml
+      - praefect/external-secret-token.yaml
+      - root/external-secret.yaml
+      - oidc/external-secret.yaml
+      - runners/external-secret-harbor-push.yaml
+
+  - phase: 4
+    name: PostgreSQL (CNPG)
+    description: Deploy CloudNativePG Cluster CR (3 instances, 1 primary + 2 replicas)
+    resources:
+      - cloudnativepg-cluster.yaml
+      - cloudnativepg-scheduled-backup.yaml
+
+  - phase: 5
+    name: Redis (OpsTree)
+    description: Deploy RedisReplication + RedisSentinel CRs (3+3 pods)
+    resources:
+      - redis/replication.yaml
+      - redis/sentinel.yaml
+
+  - phase: 6
+    name: Gateway API
+    description: Deploy Gateway and TCPRoute for HTTPS + SSH (port 2222) access
+    resources:
+      - gateway.yaml
+      - tcproute-ssh.yaml
+
+  - phase: 7
+    name: GitLab Helm install
+    description: >
+      helm install gitlab gitlab/gitlab -f values-rke2-prod.yaml
+      Deploys webservice, sidekiq, shell, kas, gitaly, praefect, minio,
+      toolbox, migrations, exporter. First install runs DB migrations (~15-30 min).
+    chart: gitlab/gitlab
+
+  - phase: 8
+    name: GitLab Runners
+    description: >
+      helm install 3 runner instances (shared, security, group) into gitlab-runners namespace.
+      Each uses Kubernetes executor on compute nodes.
+    chart: gitlab/gitlab-runner
+
+  - phase: 9
+    name: Monitoring and autoscalers
+    description: Deploy ServiceMonitors, PrometheusRules, Grafana dashboards, VolumeAutoscalers
+    resources:
+      - monitoring/
+      - volume-autoscalers.yaml
+
+  - phase: post-deploy
+    name: Post-deploy configuration
+    description: >
+      Manual steps after first deployment:
+      1. Upload GitLab Ultimate license via Admin > License
+      2. Configure Keycloak OIDC client for GitLab (redirect URI: https://gitlab.example.com/users/auth/openid_connect/callback)
+      3. Verify runner registration (Admin > Runners)
+      4. Seed CI templates into platform_services/gitlab-ci-templates repo

@@ -1,0 +1,95 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: minio-alerts
+  namespace: minio
+spec:
+  groups:
+    - name: minio-alerts
+      rules:
+        - alert: MinIODown
+          expr: up{job="minio"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/operations/monitoring/healthcheck-probe.html"
+            summary: "MinIO is down"
+            description: 'MinIO instance {{ "{{ $labels.instance  }}" }} has been unreachable for more than 5 minutes.'
+
+        - alert: MinIODiskAlmostFull
+          expr: (minio_node_disk_used_bytes / minio_node_disk_total_bytes) * 100 > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/operations/monitoring.html"
+            summary: "MinIO disk usage above 85%"
+            description: 'MinIO server {{ "{{ $labels.server }}" }} disk usage is {{ "{{ $value | humanizePercentage }}" }}% for more than 10 minutes.'
+
+        - alert: MinIOHighErrorRate
+          expr: >-
+            (sum(rate(minio_s3_requests_errors_total[5m])) / clamp_min(sum(rate(minio_s3_requests_total[5m])), 0.001) > 0.05)
+            and (sum(rate(minio_s3_requests_total[5m])) > 0.1)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/operations/monitoring.html"
+            summary: "MinIO S3 error rate above 5%"
+            description: 'MinIO S3 error rate is {{ "{{ $value | humanizePercentage }}" }} (>5%) for more than 10 minutes.'
+
+        # Issue #27: Detect S3 auth failures (403s) that went undetected for 26h
+        - alert: MinIOS3AuthFailures
+          expr: >-
+            sum(rate(minio_s3_requests_errors_total{api="s3",code="AccessDenied"}[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/administration/identity-access-management.html"
+            summary: "MinIO S3 authentication failures detected (403 AccessDenied)"
+            description: >-
+              MinIO is returning AccessDenied errors at {{ "{{ $value | humanize }}" }}/s.
+              This indicates service account credentials are invalid or missing.
+              Check Harbor and GitLab S3 access keys in Vault (minio/harbor-s3-access, minio/gitlab-s3-access).
+
+        - alert: MinIOS3AuthFailureRate
+          expr: >-
+            (sum(rate(minio_s3_requests_errors_total{api="s3",code=~"AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch"}[5m]))
+            / clamp_min(sum(rate(minio_s3_requests_total{api="s3"}[5m])), 0.001) > 0.01)
+            and (sum(rate(minio_s3_requests_total{api="s3"}[5m])) > 0.1)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/administration/identity-access-management.html"
+            summary: "MinIO S3 auth error rate above 1%"
+            description: >-
+              {{ "{{ $value | humanizePercentage }}" }} of S3 requests are failing with auth errors
+              (AccessDenied, InvalidAccessKeyId, or SignatureDoesNotMatch).
+              Verify service account credentials for all MinIO consumers.
+
+        - alert: MinIONodeOffline
+          expr: minio_cluster_nodes_offline_total > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/operations/monitoring/healthcheck-probe.html"
+            summary: "MinIO cluster has offline nodes"
+            description: >-
+              {{ "{{ $value }}" }} MinIO node(s) are offline in the distributed cluster.
+              Check StatefulSet pod status in the minio namespace.
+
+        - alert: MinIOClusterDegraded
+          expr: minio_cluster_nodes_online_total < 4
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            runbook_url: "https://min.io/docs/minio/linux/operations/monitoring/healthcheck-probe.html"
+            summary: "MinIO cluster is degraded (fewer than 4 nodes online)"
+            description: >-
+              Only {{ "{{ $value }}" }} of 4 expected MinIO nodes are online.
+              Erasure coding requires at least 3 nodes for read and 4 for write operations.

@@ -1,0 +1,43 @@
+crds:
+  createClusterExternalSecret: true
+  createClusterSecretStore: true
+  createPushSecret: true
+
+# HA: 2 replicas with leader election (built-in)
+replicaCount: 2
+nodeSelector:
+  workload-type: general
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: external-secrets
+
+webhook:
+  replicaCount: 2
+  nodeSelector:
+    workload-type: general
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: external-secrets-webhook
+
+certController:
+  replicaCount: 2
+  nodeSelector:
+    workload-type: general
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: external-secrets-cert-controller
+
+serviceMonitor:
+  enabled: true

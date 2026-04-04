@@ -1,0 +1,289 @@
+---
+# vault-unsealer: Continuously monitors Vault pods, auto-unseals them, and
+# self-heals Kubernetes auth when it goes stale after node disruptions.
+#
+# Reads unseal keys + root token from the vault-init-keys Secret (created by
+# vault-init Job). Every 30s: unseal any sealed pods. Every 5m: validate K8s
+# auth by attempting a login; if broken, reconfigure auth/kubernetes/config
+# using the root token and restart ESO to clear cached credentials.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-unsealer
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-unsealer
+  namespace: vault
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-unsealer
+  namespace: vault
+subjects:
+  - kind: ServiceAccount
+    name: vault-unsealer
+    namespace: vault
+roleRef:
+  kind: Role
+  name: vault-unsealer
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cross-namespace RBAC: allow vault-unsealer to restart ESO after auth repair
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-unsealer-eso-restart
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+    resourceNames: ["external-secrets"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-unsealer-eso-restart
+subjects:
+  - kind: ServiceAccount
+    name: vault-unsealer
+    namespace: vault
+roleRef:
+  kind: ClusterRole
+  name: vault-unsealer-eso-restart
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-unsealer
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault-unsealer
+    app.kubernetes.io/component: auto-unseal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-unsealer
+      app.kubernetes.io/component: auto-unseal
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-unsealer
+        app.kubernetes.io/component: auto-unseal
+    spec:
+      serviceAccountName: vault-unsealer
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vault-unsealer
+          image: ${IMAGE_ALPINE_K8S}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # vault-unsealer: Continuous auto-unseal loop for Vault pods.
+              # Checks seal status every 30 seconds and unseals with the first
+              # 3 keys from the vault-init-keys Secret.
+
+              NAMESPACE="vault"
+              PODS="vault-0 vault-1 vault-2"
+              CHECK_INTERVAL=30
+              AUTH_CHECK_INTERVAL=300
+              last_auth_check=0
+
+              log()  { echo "[$(date +%H:%M:%S)] $*"; }
+              warn() { echo "[$(date +%H:%M:%S)] WARN: $*" >&2; }
+
+              log "vault-unsealer starting — monitoring pods: ${PODS}"
+              log "K8s auth health check interval: ${AUTH_CHECK_INTERVAL}s"
+
+              while true; do
+                # Load unseal keys from Secret each iteration so we pick up
+                # any rotation without requiring a pod restart.
+                init_json_b64=$(kubectl get secret vault-init-keys \
+                  -n "${NAMESPACE}" \
+                  -o jsonpath='{.data.init\.json}' 2>/dev/null || true)
+
+                if [[ -z "${init_json_b64}" ]]; then
+                  warn "vault-init-keys Secret not found or empty — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                init_json=$(echo "${init_json_b64}" | base64 -d)
+                init_oneline=$(echo "${init_json}" | tr -d '\n ')
+
+                # Parse unseal keys using sed (no jq in alpine/k8s)
+                keys_csv=$(echo "${init_oneline}" | sed -n 's/.*"unseal_keys_hex" *:\[\([^]]*\)\].*/\1/p')
+                if [[ -z "${keys_csv}" ]]; then
+                  keys_csv=$(echo "${init_oneline}" | sed -n 's/.*"keys" *:\[\([^]]*\)\].*/\1/p')
+                fi
+
+                if [[ -z "${keys_csv}" ]]; then
+                  warn "Could not parse unseal keys from vault-init-keys — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                # Split CSV into array
+                mapfile -t UNSEAL_KEYS < <(echo "${keys_csv}" | tr ',' '\n' | tr -d '"' | tr -d ' ')
+
+                if [[ ${#UNSEAL_KEYS[@]} -lt 3 ]]; then
+                  warn "Need at least 3 unseal keys, got ${#UNSEAL_KEYS[@]} — retrying in ${CHECK_INTERVAL}s"
+                  sleep "${CHECK_INTERVAL}"
+                  continue
+                fi
+
+                # Parse root token for K8s auth health checks
+                root_token=$(echo "${init_oneline}" | sed -n 's/.*"root_token" *: *"\([^"]*\)".*/\1/p')
+
+                for pod in ${PODS}; do
+                  # Check if pod exists and is Running
+                  pod_phase=$(kubectl get pod -n "${NAMESPACE}" "${pod}" \
+                    -o jsonpath='{.status.phase}' 2>/dev/null || true)
+
+                  if [[ "${pod_phase}" != "Running" ]]; then
+                    continue
+                  fi
+
+                  # Check seal status (vault status exits 2 when sealed, so use || true)
+                  status_json=$(kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                    env VAULT_ADDR=http://127.0.0.1:8200 \
+                    vault status -format=json 2>/dev/null || true)
+
+                  if [[ -z "${status_json}" ]]; then
+                    continue
+                  fi
+
+                  sealed=$(echo "${status_json}" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+
+                  if [[ "${sealed}" == "true" ]]; then
+                    log "${pod} is sealed — unsealing..."
+                    for k in 0 1 2; do
+                      kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                        env VAULT_ADDR=http://127.0.0.1:8200 \
+                        vault operator unseal "${UNSEAL_KEYS[$k]}" \
+                        >/dev/null 2>&1 || true
+                    done
+
+                    # Verify unseal succeeded
+                    verify_json=$(kubectl exec -n "${NAMESPACE}" "${pod}" -- \
+                      env VAULT_ADDR=http://127.0.0.1:8200 \
+                      vault status -format=json 2>/dev/null || true)
+                    verify_sealed=$(echo "${verify_json}" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+
+                    if [[ "${verify_sealed}" == "false" ]]; then
+                      log "${pod} unsealed successfully"
+                    else
+                      warn "${pod} still sealed after unseal attempt"
+                    fi
+                  fi
+                done
+
+                # ================================================================
+                # Kubernetes auth health check
+                # After ensuring all pods are unsealed, verify K8s auth works.
+                # If auth is broken (stale after node disruption), reconfigure
+                # it using the root token and restart ESO.
+                # ================================================================
+                now=$(date +%s)
+                if (( now - last_auth_check >= AUTH_CHECK_INTERVAL )); then
+                  last_auth_check=${now}
+
+                  # Only check if vault-0 is running and unsealed
+                  v0_phase=$(kubectl get pod -n "${NAMESPACE}" vault-0 \
+                    -o jsonpath='{.status.phase}' 2>/dev/null || true)
+                  v0_status=$(kubectl exec -n "${NAMESPACE}" vault-0 -- \
+                    env VAULT_ADDR=http://127.0.0.1:8200 \
+                    vault status -format=json 2>/dev/null || true)
+                  v0_sealed=$(echo "${v0_status}" | sed -n 's/.*"sealed" *: *\([a-z]*\).*/\1/p')
+
+                  if [[ "${v0_phase}" == "Running" && "${v0_sealed}" == "false" ]]; then
+                    # Test K8s auth by attempting a login with the vault pod SA.
+                    # We use the eso-reader-database role (bound to external-secrets
+                    # SA in database namespace) with vault-0's own JWT. This SHOULD
+                    # fail with "service account" error if auth is healthy (wrong
+                    # SA for the role), but fails with "token review" or "could not
+                    # validate" if the token_reviewer_jwt is stale.
+                    auth_test=$(kubectl exec -n "${NAMESPACE}" vault-0 -- sh -c '
+                      VAULT_ADDR=http://127.0.0.1:8200
+                      export VAULT_ADDR
+                      JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                      vault write auth/kubernetes/login \
+                        role=eso-reader-database jwt="${JWT}" 2>&1
+                    ' 2>&1 || true)
+
+                    # Healthy auth: "service account name not authorized" (wrong SA)
+                    # Broken auth: "could not validate", "token review", "lookup failed"
+                    if echo "${auth_test}" | grep -qi "service account name not authorized"; then
+                      :  # Auth is healthy — wrong SA is the expected error
+                    elif echo "${auth_test}" | grep -qi "could not validate\|token review\|connection refused\|lookup failed\|unknown error"; then
+                      log "K8s auth check FAILED — reconfiguring auth/kubernetes/config..."
+
+                      if [[ -z "${root_token}" ]]; then
+                        warn "Cannot reconfigure K8s auth: root_token not available in vault-init-keys"
+                      else
+                        reconfig_result=$(kubectl exec -n "${NAMESPACE}" vault-0 -- sh -c "
+                          VAULT_ADDR=http://127.0.0.1:8200
+                          VAULT_TOKEN='${root_token}'
+                          export VAULT_ADDR VAULT_TOKEN
+                          vault write auth/kubernetes/config \
+                            kubernetes_host=https://kubernetes.default.svc:443 \
+                            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                            token_reviewer_jwt=@/var/run/secrets/kubernetes.io/serviceaccount/token 2>&1
+                        " 2>&1 || true)
+
+                        if echo "${reconfig_result}" | grep -qi "^Success\|^$"; then
+                          log "K8s auth reconfigured successfully — waiting 10s for propagation"
+                          sleep 10
+
+                          log "Restarting ESO deployment to refresh cached tokens..."
+                          kubectl rollout restart deployment/external-secrets \
+                            -n external-secrets 2>&1 || \
+                            warn "Failed to restart ESO — may need manual intervention"
+                          log "K8s auth self-healing complete"
+                        else
+                          warn "K8s auth reconfiguration failed: ${reconfig_result}"
+                        fi
+                      fi
+                    else
+                      # Unexpected response — log for debugging but don't act
+                      warn "K8s auth check returned unexpected response: ${auth_test}"
+                    fi
+                  fi
+                fi
+
+                sleep "${CHECK_INTERVAL}"
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
