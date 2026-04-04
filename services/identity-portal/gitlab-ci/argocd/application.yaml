@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-portal
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: identity-portal
+    app.kubernetes.io/part-of: platform-services
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.CHANGEME_DOMAIN/IDP/IdentityWebUI.git
+    targetRevision: deploy
+    path: k8s/overlays/rke2-prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity-portal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - ServerSideApply=true

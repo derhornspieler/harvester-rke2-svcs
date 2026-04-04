@@ -1,0 +1,157 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: harbor-oidc-secret
+  namespace: harbor
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: harbor-oidc-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: oidc-client-secret
+      remoteRef:
+        key: oidc/harbor
+        property: client-secret
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harbor-oidc-setup
+  namespace: harbor
+  annotations:
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app: harbor-oidc-setup
+    spec:
+      serviceAccountName: harbor-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: configure-oidc
+          image: ${IMAGE_CURL}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: HARBOR_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-admin-credentials
+                  key: HARBOR_ADMIN_PASSWORD
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-oidc-secret
+                  key: oidc-client-secret
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              # Wait for Harbor API to be ready
+              for i in $(seq 1 30); do
+                if curl -sf -o /dev/null http://harbor-core.harbor.svc.cluster.local/api/v2.0/health; then
+                  break
+                fi
+                echo "Waiting for Harbor API... ($i/30)"
+                sleep 10
+              done
+
+              # Configure OIDC auth (only works on first run — admin basic auth
+              # is disabled after OIDC mode is active, but the config persists)
+              curl -s -X PUT \
+                -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+                -H "Content-Type: application/json" \
+                http://harbor-core.harbor.svc.cluster.local/api/v2.0/configurations \
+                -d '{
+                  "auth_mode": "oidc_auth",
+                  "oidc_name": "Keycloak",
+                  "oidc_endpoint": "'"${OIDC_ISSUER_URL}"'",
+                  "oidc_client_id": "harbor",
+                  "oidc_client_secret": "'"${OIDC_CLIENT_SECRET}"'",
+                  "oidc_scope": "openid,profile,email,groups",
+                  "oidc_groups_claim": "groups",
+                  "oidc_admin_group": "'"${RBAC_GROUP_ADMINS}"'",
+                  "oidc_auto_onboard": true,
+                  "oidc_verify_cert": false,
+                  "oidc_user_claim": "preferred_username"
+                }' || true
+              echo "Harbor OIDC configuration applied"
+
+              # Create CI robot account (only works before OIDC mode is active,
+              # or on first deploy when admin basic auth still works)
+              ROBOT_NAME="ci-push"
+              EXISTING=$(curl -s -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+                http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots 2>/dev/null || echo "")
+
+              if echo "${EXISTING}" | grep -q "${ROBOT_NAME}"; then
+                echo "Robot account '${ROBOT_NAME}' already exists"
+              elif [ -n "${EXISTING}" ] && [ "${EXISTING}" != "" ]; then
+                ROBOT_RESP=$(curl -s -X POST \
+                  -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+                  -H "Content-Type: application/json" \
+                  http://harbor-core.harbor.svc.cluster.local/api/v2.0/robots \
+                  -d '{
+                    "name": "'"${ROBOT_NAME}"'",
+                    "description": "GitLab CI push account",
+                    "duration": -1,
+                    "level": "system",
+                    "permissions": [{
+                      "kind": "project",
+                      "namespace": "*",
+                      "access": [
+                        {"resource": "repository", "action": "push"},
+                        {"resource": "repository", "action": "pull"},
+                        {"resource": "artifact", "action": "read"},
+                        {"resource": "tag", "action": "create"},
+                        {"resource": "tag", "action": "list"}
+                      ]
+                    }]
+                  }' 2>/dev/null || echo "")
+
+                ROBOT_SECRET=$(echo "${ROBOT_RESP}" | sed -n 's/.*"secret":"\([^"]*\)".*/\1/p')
+                ROBOT_FULL_NAME=$(echo "${ROBOT_RESP}" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')
+
+                if [ -n "${ROBOT_SECRET}" ]; then
+                  echo "Robot account created: ${ROBOT_FULL_NAME}"
+
+                  # Store in Vault via harbor-init SA
+                  VAULT_ADDR="${VAULT_INTERNAL_URL}"
+                  SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  VAULT_TOKEN=$(curl -sk --request POST \
+                    --data "{\"jwt\": \"${SA_TOKEN}\", \"role\": \"bootstrap-keycloak-harbor\"}" \
+                    "${VAULT_ADDR}/v1/auth/kubernetes/login" | \
+                    sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+
+                  if [ -n "${VAULT_TOKEN}" ]; then
+                    curl -sk -X POST \
+                      -H "X-Vault-Token: ${VAULT_TOKEN}" \
+                      -H "Content-Type: application/json" \
+                      "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" \
+                      -d "{\"data\":{\"username\":\"${ROBOT_FULL_NAME}\",\"password\":\"${ROBOT_SECRET}\"}}"
+                    echo "Robot credentials stored in Vault"
+                  else
+                    echo "WARNING: Could not authenticate to Vault"
+                  fi
+                else
+                  echo "WARNING: Could not create robot account (OIDC mode may be active)"
+                fi
+              else
+                echo "WARNING: Could not query robots API (OIDC mode may be active)"
+              fi

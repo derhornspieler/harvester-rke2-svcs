@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-vault
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Services
+data:
+  vault-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [
+        {"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}
+      ],
+      "panels": [
+        {
+          "title": "Vault Metrics Info",
+          "type": "text",
+          "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+          "id": 13,
+          "options": {
+            "mode": "markdown",
+            "content": "### Vault HA Metrics\nVault standby nodes only serve metrics if `unauthenticated_metrics_access = true` is set in the telemetry stanza. If you see **DOWN** for standby instances, enable this in your Vault Helm values under `server.ha.config`. Barrier ops show combined `vault_barrier_get` + `vault_barrier_put` rates. Raft commit times and in-flight requests are sourced from `vault_raft_commitTime` and `vault_core_in_flight_requests` gauges."
+          }
+        },
+        {
+          "title": "Vault Seal Status",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 4},
+          "id": 1,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"type": "value", "options": {"0": {"text": "SEALED", "color": "red"}, "1": {"text": "UNSEALED", "color": "green"}}}]}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "vault_core_unsealed{job=\"vault\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Active Leader",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 4},
+          "id": 2,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"type": "value", "options": {"0": {"text": "STANDBY", "color": "blue"}, "1": {"text": "LEADER", "color": "green"}}}]}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "vault_core_active{job=\"vault\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Autopilot Health",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 4},
+          "id": 3,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"type": "value", "options": {"0": {"text": "UNHEALTHY", "color": "red"}, "1": {"text": "HEALTHY", "color": "green"}}}]}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "vault_autopilot_healthy{job=\"vault\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Vault Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 4},
+          "id": 4,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "up{job=\"vault\"}", "legendFormat": "{{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Active Leases",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 5000}, {"color": "red", "value": 10000}]}}},
+          "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "max(vault_expire_num_leases{job=\"vault\"})", "legendFormat": "Leases", "refId": "A"}]
+        },
+        {
+          "title": "Token Count",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 4},
+          "id": 6,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 5000}, {"color": "red", "value": 10000}]}, "noValue": "0"}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "max(vault_token_count{job=\"vault\"}) OR on() vector(0)", "legendFormat": "Tokens", "refId": "A"}]
+        },
+        {
+          "title": "Barrier Ops Rate",
+          "description": "Combined vault_barrier_get + vault_barrier_put rate. Requires unauthenticated_metrics_access = true on standby nodes.",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "(rate(vault_barrier_get{job=\"vault\"}[5m]) OR on() vector(0)) + (rate(vault_barrier_put{job=\"vault\"}[5m]) OR on() vector(0))", "legendFormat": "{{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Raft Commit p99",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "vault_raft_commitTime{quantile=\"0.99\",job=\"vault\"} OR on() vector(0)", "legendFormat": "p99 {{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Raft Commit Time",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "id": 9,
+          "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "vault_raft_commitTime{job=\"vault\"}", "legendFormat": "{{quantile}} {{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "Raft Leader Last Contact",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "id": 10,
+          "fieldConfig": {"defaults": {"unit": "ms", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "vault_raft_leader_lastContact{job=\"vault\"}", "legendFormat": "{{quantile}} {{pod}}", "refId": "A"}]
+        },
+        {
+          "title": "In-Flight Requests",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 24},
+          "id": 11,
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "vault_core_in_flight_requests{job=\"vault\"}", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Rollback Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 24},
+          "id": 14,
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "rate(vault_rollback_attempt_count{job=\"vault\"}[5m])", "legendFormat": "{{pod}}", "refId": "A"}
+          ]
+        },
+        {
+          "title": "Runtime Memory",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "id": 12,
+          "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "vault_runtime_alloc_bytes{job=\"vault\"}", "legendFormat": "alloc {{pod}}", "refId": "A"},
+            {"expr": "vault_runtime_sys_bytes{job=\"vault\"}", "legendFormat": "sys {{pod}}", "refId": "B"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["vault", "rke2", "hashicorp"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Vault Cluster Overview",
+      "uid": "vault-cluster-overview",
+      "version": 1,
+      "description": "HashiCorp Vault cluster monitoring dashboard for 3-replica HA deployment with Raft storage. Metrics scraped from /v1/sys/metrics?format=prometheus endpoint."
+    }

@@ -1,0 +1,353 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-firing-alerts
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Home
+data:
+  firing-alerts.json: |
+    {
+      "annotations": {"list": []},
+      "description": "Dedicated view of all currently firing Prometheus alerts with severity breakdown, details table, and history.",
+      "editable": true,
+      "id": null,
+      "links": [
+        {"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}
+      ],
+      "panels": [
+        {
+          "title": "Bootstrap Alerts",
+          "type": "text",
+          "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+          "id": 20,
+          "options": {
+            "mode": "markdown",
+            "content": "### Expected Post-Bootstrap Alerts\nDuring initial deployment, alerts may fire for services not yet deployed. These are expected and will auto-resolve once all phases complete:\n- **TargetDown / ServiceDown** for phases deployed after monitoring (Phase 3)\n- **CertificateExpiringSoon** before cert-manager issues initial certs\n- **PodNotReady** during rolling deployments\n\nIf alerts persist >30 minutes after full deploy, investigate."
+          }
+        },
+        {
+          "title": "Total Firing",
+          "description": "Total number of alerts currently in firing state",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 3},
+          "id": 1,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              },
+              "noValue": "0",
+              "mappings": []
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\"}) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Critical",
+          "description": "Critical severity alerts currently firing",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 3},
+          "id": 2,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": 1}
+                ]
+              },
+              "noValue": "0",
+              "mappings": []
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\",severity=\"critical\"}) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Warning",
+          "description": "Warning severity alerts currently firing",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 3},
+          "id": 3,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1}
+                ]
+              },
+              "noValue": "0",
+              "mappings": []
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\",severity=\"warning\"}) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Info",
+          "description": "Info severity alerts currently firing",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 3},
+          "id": 4,
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "blue", "value": 1}
+                ]
+              },
+              "noValue": "0",
+              "mappings": []
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\",severity=\"info\"}) OR on() vector(0)",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Alert Details",
+          "description": "All currently firing alerts with full label details",
+          "type": "table",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 7},
+          "id": 5,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "displayMode": "auto"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "severity"},
+                "properties": [
+                  {
+                    "id": "custom.displayMode",
+                    "value": "color-background-solid"
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {"type": "value", "options": {"critical": {"color": "red", "text": "CRITICAL"}, "warning": {"color": "orange", "text": "WARNING"}, "info": {"color": "blue", "text": "INFO"}}}
+                    ]
+                  },
+                  {"id": "custom.width", "value": 100}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "alertname"},
+                "properties": [
+                  {"id": "custom.width", "value": 250},
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "View in Alertmanager",
+                        "url": "https://alertmanager.CHANGEME_DOMAIN/#/alerts?filter=%7Balertname%3D%22${__value.text}%22%7D",
+                        "targetBlank": true
+                      },
+                      {
+                        "title": "Search Logs (Loki)",
+                        "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bjob%21%3D%5C%22%5C%22%7D%20%7C%3D%20%5C%22${__value.text}%5C%22%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "namespace"},
+                "properties": [
+                  {"id": "custom.width", "value": 120},
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Namespace Logs (Loki)",
+                        "url": "/explore?orgId=1&left=%7B%22datasource%22%3A%22loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bnamespace%3D%5C%22${__value.text}%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D",
+                        "targetBlank": true
+                      },
+                      {
+                        "title": "Namespace Pods",
+                        "url": "/d/node-deep-dive/node-deep-dive?orgId=1&var-node=All",
+                        "targetBlank": false
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "description"},
+                "properties": [
+                  {"id": "custom.width", "value": 400}
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "sortBy": [{"displayName": "Severity", "desc": true}],
+            "footer": {"show": true, "countRows": true, "reducer": ["count"]}
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "alertstate": true,
+                  "Value": true,
+                  "instance": true,
+                  "endpoint": true,
+                  "service": true,
+                  "container": true,
+                  "pod": true,
+                  "uid": true,
+                  "prometheus": true,
+                  "redis_connected_slaves": true
+                },
+                "indexByName": {
+                  "severity": 0,
+                  "alertname": 1,
+                  "namespace": 2,
+                  "job": 3,
+                  "description": 4,
+                  "node": 5
+                },
+                "renameByName": {
+                  "alertname": "Alert Name",
+                  "severity": "Severity",
+                  "namespace": "Namespace",
+                  "job": "Job",
+                  "description": "Description",
+                  "node": "Node"
+                }
+              }
+            }
+          ],
+          "targets": [
+            {
+              "expr": "ALERTS{alertstate=\"firing\"}",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "Alert History",
+          "description": "Number of firing alerts over time, grouped by alert name",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 17},
+          "id": 6,
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 20,
+                "lineWidth": 1,
+                "stacking": {"mode": "normal"},
+                "spanNulls": false,
+                "showPoints": "never"
+              }
+            }
+          },
+          "options": {
+            "tooltip": {"mode": "multi", "sort": "desc"},
+            "legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "max"]}
+          },
+          "targets": [
+            {
+              "expr": "count(ALERTS{alertstate=\"firing\"}) by (alertname)",
+              "legendFormat": "{{alertname}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "title": "",
+          "type": "text",
+          "gridPos": {"h": 4, "w": 24, "x": 0, "y": 25},
+          "id": 7,
+          "options": {
+            "mode": "markdown",
+            "content": "### Manage Alerts\n\n[Alertmanager UI](https://alertmanager.CHANGEME_DOMAIN) | [Create Silence](https://alertmanager.CHANGEME_DOMAIN/#/silences/new) | [View Silences](https://alertmanager.CHANGEME_DOMAIN/#/silences) | [Prometheus Alerts](https://prometheus.CHANGEME_DOMAIN/alerts) | [Back to Cluster Home](/d/home-overview/cluster-home?orgId=1)\n\n**Drilldown shortcuts:** Click any **Alert Name** to view it in Alertmanager or search Loki logs. Click any **Namespace** to open Loki Explore filtered to that namespace's logs.\n\n**To clear/reset alerts:** Alerts resolve automatically when the underlying condition clears. To immediately suppress an alert, click **Create Silence** above to open Alertmanager and create a silence matching the alert by name, severity, or label. Silences can be time-limited (e.g. during maintenance) or removed later from **View Silences**."
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["alerts", "home", "noc"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Firing Alerts",
+      "uid": "firing-alerts",
+      "version": 1
+    }

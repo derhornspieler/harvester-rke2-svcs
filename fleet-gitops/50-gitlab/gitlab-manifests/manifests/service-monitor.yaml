@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gitlab-exporter
+  namespace: gitlab
+spec:
+  namespaceSelector:
+    matchNames:
+      - gitlab
+  selector:
+    matchLabels:
+      app: gitlab-exporter
+  endpoints:
+    - port: http-metrics

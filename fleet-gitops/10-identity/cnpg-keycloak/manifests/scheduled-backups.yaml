@@ -1,0 +1,41 @@
+# Tiered backup schedule for keycloak-pg
+# Daily: 7-day recovery window | Weekly: 30-day rollback | Monthly: 90-day compliance
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: keycloak-pg-daily
+  namespace: database
+spec:
+  schedule: "0 0 3 * * *"  # 03:00 UTC daily
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: keycloak-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: keycloak-pg-weekly
+  namespace: database
+spec:
+  schedule: "0 0 4 * * 0"  # 04:00 UTC Sunday
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: keycloak-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: keycloak-pg-monthly
+  namespace: database
+spec:
+  schedule: "0 0 5 1 * *"  # 05:00 UTC 1st of month
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: keycloak-pg
+  method: barmanObjectStore

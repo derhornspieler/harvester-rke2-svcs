@@ -1,0 +1,22 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: keycloak-pg
+  namespace: database
+spec:
+  target:
+    selector:
+      matchLabels:
+        cnpg.io/cluster: keycloak-pg
+    controllerRef:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: keycloak-pg
+  prometheusURL: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+  thresholdPercent: 80
+  maxSize: 50Gi
+  increasePercent: 25
+  increaseMinimum: 5Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m

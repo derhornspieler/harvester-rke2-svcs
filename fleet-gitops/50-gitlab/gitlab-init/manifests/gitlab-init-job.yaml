@@ -1,0 +1,687 @@
+---
+# gitlab-init: Bootstrap Vault ESO roles, SecretStore, OIDC client, MinIO
+# buckets/user, and seed credentials for the gitlab namespace.
+#
+# Auth: K8s auth to Vault (bootstrap-keycloak-gitlab role). NO root token.
+# Requires: Vault unsealed, Keycloak running, MinIO running,
+#           keycloak-admin-bootstrap and minio-admin-bootstrap secrets.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gitlab-init
+  namespace: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab-init
+    app.kubernetes.io/component: bootstrap
+spec:
+  backoffLimit: 30
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitlab-init
+    spec:
+      serviceAccountName: gitlab-init
+      restartPolicy: OnFailure
+      nodeSelector:
+        workload-type: general
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: bootstrap-secrets
+          secret:
+            secretName: keycloak-admin-bootstrap
+        - name: minio-secrets
+          secret:
+            secretName: minio-admin-bootstrap
+        - name: vault-bin
+          emptyDir: {}
+        - name: mc-bin
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      initContainers:
+        - name: vault-bin
+          image: ${IMAGE_VAULT}
+          command: ["cp", "/bin/vault", "/vault-bin/vault"]
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+        - name: mc-bin
+          image: ${IMAGE_MINIO_MC}
+          command: ["cp", "/usr/bin/mc", "/mc-bin/mc"]
+          volumeMounts:
+            - name: mc-bin
+              mountPath: /mc-bin
+          securityContext:
+            # mc binary needs root to copy from its image
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+      containers:
+        - name: gitlab-init
+          image: ${IMAGE_ALPINE_K8S}
+          env:
+            - name: PATH
+              value: "/vault-bin:/mc-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            - name: HOME
+              value: "/tmp"
+            - name: VAULT_ADDR
+              value: "${VAULT_INTERNAL_URL}"
+            - name: KEYCLOAK_URL
+              value: "${KEYCLOAK_INTERNAL_URL}"
+            - name: MINIO_ENDPOINT
+              value: "${MINIO_INTERNAL_URL}"
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-admin-bootstrap
+                  key: minio-root-password
+          command: ["/bin/bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              # gitlab-init: ESO roles, SecretStore, OIDC client, MinIO buckets/user,
+              # GitLab service credentials (Gitaly, Praefect, Redis, DB, Runner).
+              # Idempotent -- safe to re-run.
+
+              DOMAIN="${DOMAIN}"
+              KC_REALM="${KEYCLOAK_REALM}"
+
+              ###################################################################
+              # Inlined helper functions (no init-lib.sh dependency)
+              ###################################################################
+
+              log() { echo "[$(date +%H:%M:%S)] $*" >&2; }
+
+              vault_k8s_login() {
+                local role="$1"
+                local sa_token
+                sa_token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                  role="${role}" jwt="${sa_token}")
+                export VAULT_TOKEN
+                log "[INFO] Authenticated to Vault as role: ${role}"
+              }
+
+              vault_get_or_generate() {
+                local path="$1"
+                local property="$2"
+                local length="${3:-32}"
+                local existing
+                existing=$(vault kv get -field="${property}" "kv/${path}" 2>/dev/null || true)
+                if [[ -n "${existing}" ]]; then
+                  echo "${existing}"
+                  return 0
+                fi
+                head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c "${length}" || true
+              }
+
+              vault_kv_put() {
+                local path="$1"
+                shift
+                vault kv put "kv/${path}" "$@"
+                log "[INFO] Written to kv/${path}"
+              }
+
+              vault_bind_eso_roles() {
+                local namespace="$1"
+                local sa_names="eso-secrets,external-secrets"
+
+                vault write "auth/kubernetes/role/eso-reader-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-reader-${namespace}" \
+                  ttl=1h
+
+                vault write "auth/kubernetes/role/eso-writer-${namespace}" \
+                  bound_service_account_names="${sa_names}" \
+                  bound_service_account_namespaces="${namespace}" \
+                  policies="eso-writer-${namespace}" \
+                  ttl=1h
+
+                log "[INFO] Bound ESO roles for namespace: ${namespace}"
+              }
+
+              vault_create_secretstore() {
+                local namespace="$1"
+                local vault_url="${VAULT_ADDR}"
+
+                kubectl apply -f - <<SSEOF
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-backend
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-reader-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              ---
+              apiVersion: external-secrets.io/v1
+              kind: SecretStore
+              metadata:
+                name: vault-writer
+                namespace: ${namespace}
+              spec:
+                provider:
+                  vault:
+                    server: "${vault_url}"
+                    path: kv
+                    version: v2
+                    auth:
+                      kubernetes:
+                        mountPath: kubernetes
+                        role: "eso-writer-${namespace}"
+                        serviceAccountRef:
+                          name: external-secrets
+              SSEOF
+                log "[INFO] Created SecretStores (reader + writer) in namespace: ${namespace}"
+              }
+
+              wait_for_keycloak() {
+                local keycloak_url="${KEYCLOAK_URL}"
+                local max_attempts="${1:-60}"
+                local interval="${2:-10}"
+
+                log "[INFO] Waiting for Keycloak to be ready at ${keycloak_url}..."
+                for i in $(seq 1 "${max_attempts}"); do
+                  http_code=$(curl -s --http1.1 -o /dev/null -w "%{http_code}" \
+                    "${keycloak_url}/realms/master/.well-known/openid-configuration" 2>/dev/null || echo "000")
+                  if [[ "${http_code}" == "200" ]]; then
+                    log "[INFO] Keycloak is ready (attempt ${i})"
+                    return 0
+                  fi
+                  if (( i % 6 == 0 )); then
+                    log "[INFO] Keycloak not ready yet (HTTP ${http_code}), attempt ${i}/${max_attempts}..."
+                  fi
+                  sleep "${interval}"
+                done
+                log "[ERROR] Keycloak not ready after ${max_attempts} attempts"
+                return 1
+              }
+
+              keycloak_create_oidc_client() {
+                local client_id="$1"
+                local redirect_uri="$2"
+                local pkce="${3:-S256}"
+                local keycloak_url="${KEYCLOAK_URL}"
+                local admin_pass
+                admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
+
+                # Get admin token
+                local token
+                token=$(curl -s --http1.1 -X POST \
+                  "${keycloak_url}/realms/master/protocol/openid-connect/token" \
+                  --data-urlencode "grant_type=password" \
+                  --data-urlencode "client_id=admin-cli" \
+                  --data-urlencode "username=admin" \
+                  --data-urlencode "password=${admin_pass}" \
+                  | jq -r '.access_token')
+
+                if [[ -z "${token}" || "${token}" == "null" ]]; then
+                  log "[ERROR] Failed to get Keycloak admin token"
+                  return 1
+                fi
+
+                local realm="${KC_REALM}"
+                local api="${keycloak_url}/admin/realms/${realm}/clients"
+
+                # Check if client exists
+                local existing_id
+                existing_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                  "${api}?clientId=${client_id}" \
+                  | jq -r '.[0].id // empty' 2>/dev/null || true)
+
+                # Generate or retrieve client secret
+                local client_secret
+                client_secret=$(vault_get_or_generate "oidc/${client_id}" "client-secret")
+                local cookie_secret
+                cookie_secret=$(vault_get_or_generate "oidc/${client_id}" "cookie-secret" 16)
+
+                # Build client JSON with explicit post.logout.redirect.uris wildcard
+                local post_logout
+                post_logout="${redirect_uri%/*}/*"
+
+                local client_json
+                client_json=$(jq -n \
+                  --arg clientId "${client_id}" \
+                  --arg secret "${client_secret}" \
+                  --arg redirectUri "${redirect_uri}" \
+                  --arg postLogout "${post_logout}" \
+                  '{
+                    clientId: $clientId,
+                    enabled: true,
+                    protocol: "openid-connect",
+                    publicClient: false,
+                    secret: $secret,
+                    redirectUris: [$redirectUri],
+                    webOrigins: ["+"],
+                    standardFlowEnabled: true,
+                    directAccessGrantsEnabled: false,
+                    attributes: {
+                      "post.logout.redirect.uris": $postLogout
+                    }
+                  }')
+
+                # Add PKCE attribute if enabled
+                if [[ "${pkce}" == "S256" ]]; then
+                  client_json=$(echo "${client_json}" | jq '.attributes["pkce.code.challenge.method"] = "S256"')
+                fi
+
+                if [[ -n "${existing_id}" ]]; then
+                  curl -s --http1.1 -X PUT -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    "${api}/${existing_id}" -d "${client_json}" >/dev/null
+                  log "[INFO] Updated OIDC client: ${client_id}"
+                else
+                  curl -s --http1.1 -X POST -H "Authorization: Bearer ${token}" \
+                    -H "Content-Type: application/json" \
+                    "${api}" -d "${client_json}" >/dev/null
+                  log "[INFO] Created OIDC client: ${client_id}"
+                fi
+
+                # Store in Vault
+                vault_kv_put "oidc/${client_id}" \
+                  client-secret="${client_secret}" \
+                  cookie-secret="${cookie_secret}"
+              }
+
+              keycloak_assign_groups_scope() {
+                local client_id="$1"
+                local keycloak_url="${KEYCLOAK_URL}"
+                local admin_pass
+                admin_pass=$(cat /secrets/keycloak-admin-password 2>/dev/null || echo "${KEYCLOAK_ADMIN_PASS:-}")
+                local realm="${KC_REALM}"
+                local max_wait=300
+                local elapsed=0
+
+                # Wait for groups scope to exist (created by keycloak-config job)
+                log "[INFO] Waiting for 'groups' client scope in Keycloak..."
+                local token scope_id
+                while [[ "${elapsed}" -lt "${max_wait}" ]]; do
+                  token=$(curl -s --http1.1 -X POST \
+                    "${keycloak_url}/realms/master/protocol/openid-connect/token" \
+                    --data-urlencode "grant_type=password" \
+                    --data-urlencode "client_id=admin-cli" \
+                    --data-urlencode "username=admin" \
+                    --data-urlencode "password=${admin_pass}" \
+                    | jq -r '.access_token' 2>/dev/null || echo "")
+
+                  if [[ -n "${token}" && "${token}" != "null" ]]; then
+                    scope_id=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                      "${keycloak_url}/admin/realms/${realm}/client-scopes" \
+                      | jq -r '.[] | select(.name=="groups") | .id' 2>/dev/null || echo "")
+                    [[ -n "${scope_id}" ]] && break
+                  fi
+
+                  elapsed=$((elapsed + 10))
+                  log "[INFO] groups scope not found yet (${elapsed}/${max_wait}s)..."
+                  sleep 10
+                done
+
+                if [[ -z "${scope_id:-}" ]]; then
+                  log "[ERROR] groups client scope not found after ${max_wait}s — OIDC group-based access will fail"
+                  return 1
+                fi
+
+                local client_uuid
+                client_uuid=$(curl -s --http1.1 -H "Authorization: Bearer ${token}" \
+                  "${keycloak_url}/admin/realms/${realm}/clients?clientId=${client_id}" \
+                  | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+
+                if [[ -z "${client_uuid}" ]]; then
+                  log "[ERROR] Client ${client_id} not found in Keycloak"
+                  return 1
+                fi
+
+                curl -s --http1.1 -o /dev/null \
+                  -X PUT "${keycloak_url}/admin/realms/${realm}/clients/${client_uuid}/default-client-scopes/${scope_id}" \
+                  -H "Authorization: Bearer ${token}"
+                log "[INFO] Assigned groups scope to ${client_id}"
+              }
+
+              minio_setup_alias() {
+                mc alias set myminio "${MINIO_ENDPOINT}" "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" --api S3v4
+                log "[INFO] MinIO alias configured"
+              }
+
+              minio_create_bucket() {
+                local bucket="$1"
+                mc mb --ignore-existing "myminio/${bucket}"
+                log "[INFO] Ensured bucket exists: ${bucket}"
+              }
+
+              minio_create_service_user() {
+                local user_name="$1"
+                local bucket_prefix="$2"
+                local vault_path="$3"
+
+                # Check if credentials already exist in Vault
+                local access_key secret_key
+                access_key=$(vault kv get -field=accesskey "kv/${vault_path}" 2>/dev/null || true)
+                secret_key=$(vault kv get -field=secretkey "kv/${vault_path}" 2>/dev/null || true)
+
+                if [[ -z "${access_key}" || -z "${secret_key}" ]]; then
+                  # Generate new credentials if none in Vault
+                  access_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20 || true)
+                  secret_key=$(head -c 256 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 40 || true)
+                  log "[INFO] Generated new MinIO credentials for: ${user_name}"
+                fi
+
+                # Always reconcile: mc admin user add is idempotent (creates or updates)
+                mc admin user add myminio "${access_key}" "${secret_key}"
+
+                # Ensure scoped IAM policy exists and is attached
+                local policy_json
+                policy_json=$(jq -n \
+                  --arg prefix "${bucket_prefix}" \
+                  '{
+                    Version: "2012-10-17",
+                    Statement: [{
+                      Effect: "Allow",
+                      Action: ["s3:*"],
+                      Resource: [
+                        ("arn:aws:s3:::" + $prefix),
+                        ("arn:aws:s3:::" + $prefix + "/*")
+                      ]
+                    }]
+                  }')
+
+                echo "${policy_json}" | mc admin policy create myminio "${user_name}-policy" /dev/stdin 2>/dev/null \
+                  || log "[INFO] Policy ${user_name}-policy already exists"
+                mc admin policy attach myminio "${user_name}-policy" --user "${access_key}" 2>/dev/null \
+                  || log "[INFO] Policy ${user_name}-policy already attached"
+
+                # Verify the user can actually authenticate (catches lost IAM after migration)
+                local verify_dir
+                verify_dir=$(mktemp -d /tmp/mc-verify-XXXXXX)
+                if MC_CONFIG_DIR="${verify_dir}" mc alias set verify-test "${MINIO_ENDPOINT}" "${access_key}" "${secret_key}" --api S3v4 >/dev/null 2>&1 && \
+                   MC_CONFIG_DIR="${verify_dir}" mc ls verify-test/ >/dev/null 2>&1; then
+                  log "[INFO] MinIO user authentication verified for: ${user_name}"
+                else
+                  log "[WARN] MinIO user cannot authenticate after creation — retrying: ${user_name}"
+                  mc admin user remove myminio "${access_key}" 2>/dev/null || true
+                  mc admin user add myminio "${access_key}" "${secret_key}"
+                  mc admin policy attach myminio "${user_name}-policy" --user "${access_key}" 2>/dev/null \
+                    || log "[INFO] Policy ${user_name}-policy already attached"
+                  # Final verification — fail the job if still broken
+                  if MC_CONFIG_DIR="${verify_dir}" mc alias set verify-test "${MINIO_ENDPOINT}" "${access_key}" "${secret_key}" --api S3v4 >/dev/null 2>&1 && \
+                     MC_CONFIG_DIR="${verify_dir}" mc ls verify-test/ >/dev/null 2>&1; then
+                    log "[INFO] MinIO user authentication verified after retry for: ${user_name}"
+                  else
+                    log "[ERROR] MinIO user still cannot authenticate after retry: ${user_name}"
+                    rm -rf "${verify_dir}"
+                    return 1
+                  fi
+                fi
+                rm -rf "${verify_dir}"
+
+                # Store in Vault (accesskey/secretkey — matches ExternalSecret property names)
+                vault_kv_put "${vault_path}" \
+                  accesskey="${access_key}" \
+                  secretkey="${secret_key}"
+
+                log "[INFO] Reconciled MinIO IAM user: ${user_name}"
+              }
+
+              ###################################################################
+              # Main logic
+              ###################################################################
+
+              # --- Authenticate to Vault via K8s auth ---
+              vault_k8s_login "bootstrap-keycloak-gitlab"
+
+              # --- Vault policies for gitlab namespace ---
+              log "[INFO] Creating Vault policies for gitlab namespace..."
+              vault policy write eso-reader-gitlab - <<'POLICY'
+              path "kv/data/services/gitlab" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/gitlab/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/gitlab" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/gitlab/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/oidc/gitlab" {
+                capabilities = ["read"]
+              }
+              path "kv/data/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/database/gitlab-postgresql" {
+                capabilities = ["read"]
+              }
+              POLICY
+
+              vault policy write eso-writer-gitlab - <<'POLICY'
+              path "kv/data/services/gitlab" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/data/services/gitlab/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/gitlab" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/metadata/services/gitlab/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              path "kv/data/oidc/gitlab" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/oidc/gitlab" {
+                capabilities = ["read", "delete"]
+              }
+              path "kv/data/services/database/gitlab-postgresql" {
+                capabilities = ["create", "read", "update"]
+              }
+              path "kv/metadata/services/database/gitlab-postgresql" {
+                capabilities = ["read", "delete"]
+              }
+              POLICY
+
+              # --- Vault policies for gitlab-runners namespace ---
+              log "[INFO] Creating Vault policies for gitlab-runners namespace..."
+              vault policy write eso-reader-gitlab-runners - <<'POLICY'
+              path "kv/data/services/ci/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/metadata/services/ci/*" {
+                capabilities = ["read", "list"]
+              }
+              path "kv/data/services/harbor/ci-robot" {
+                capabilities = ["read"]
+              }
+              path "kv/metadata/services/harbor/ci-robot" {
+                capabilities = ["read"]
+              }
+              POLICY
+
+              vault policy write eso-writer-gitlab-runners - <<'POLICY'
+              path "kv/data/services/ci/*" {
+                capabilities = ["create", "read", "update", "list"]
+              }
+              path "kv/metadata/services/ci/*" {
+                capabilities = ["create", "update", "read", "list", "delete"]
+              }
+              POLICY
+
+              # --- Bind ESO reader/writer roles for gitlab namespace ---
+              vault_bind_eso_roles "gitlab"
+
+              # --- Bind ESO roles for gitlab-runners namespace ---
+              vault write "auth/kubernetes/role/eso-reader-gitlab-runners" \
+                bound_service_account_names="external-secrets,eso-secrets" \
+                bound_service_account_namespaces="gitlab-runners" \
+                policies="eso-reader-gitlab-runners" \
+                ttl=1h
+
+              vault write "auth/kubernetes/role/eso-writer-gitlab-runners" \
+                bound_service_account_names="external-secrets,eso-secrets" \
+                bound_service_account_namespaces="gitlab-runners" \
+                policies="eso-writer-gitlab-runners" \
+                ttl=1h
+
+              log "[INFO] Bound ESO roles for namespace: gitlab-runners"
+
+              # --- Create namespace SecretStores ---
+              vault_create_secretstore "gitlab"
+
+              # --- Wait for Keycloak to be ready ---
+              wait_for_keycloak
+
+              # --- Create GitLab OIDC client in Keycloak (PKCE DISABLED) ---
+              log "[INFO] Creating GitLab OIDC client..."
+              keycloak_create_oidc_client "gitlab" \
+                "https://gitlab.${DOMAIN}/users/auth/openid_connect/callback" \
+                "disabled"
+              log "[INFO] GitLab OIDC client created"
+              keycloak_assign_groups_scope "gitlab"
+
+              # --- MinIO: setup alias, create buckets, create service user ---
+              log "[INFO] Configuring MinIO for GitLab..."
+              minio_setup_alias
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_LFS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_ARTIFACTS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_UPLOADS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_PACKAGES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_PAGES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_MR_DIFFS}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_TERRAFORM}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_CI_SECURE_FILES}"
+              minio_create_bucket "${MINIO_BUCKET_GITLAB_DEPENDENCY_PROXY}"
+              minio_create_service_user "gitlab-sa" "gitlab-*" "services/gitlab/minio-storage"
+              log "[INFO] MinIO configuration complete"
+
+              # --- Generate and store Gitaly token ---
+              log "[INFO] Seeding Gitaly credentials..."
+              GITALY_TOKEN=$(vault_get_or_generate "services/gitlab/gitaly-secret" "token" 64)
+              vault_kv_put "services/gitlab/gitaly-secret" \
+                token="${GITALY_TOKEN}"
+
+              # --- Generate and store Praefect token ---
+              log "[INFO] Seeding Praefect credentials..."
+              PRAEFECT_TOKEN=$(vault_get_or_generate "services/gitlab/praefect-secret" "token" 64)
+              vault_kv_put "services/gitlab/praefect-secret" \
+                token="${PRAEFECT_TOKEN}"
+
+              # --- Generate and store Praefect DB secret ---
+              log "[INFO] Seeding Praefect DB credentials..."
+              PRAEFECT_DB_SECRET=$(vault_get_or_generate "services/gitlab/praefect-dbsecret" "secret" 32)
+              vault_kv_put "services/gitlab/praefect-dbsecret" \
+                secret="${PRAEFECT_DB_SECRET}"
+
+              # --- Generate and store Redis password ---
+              log "[INFO] Seeding Redis credentials..."
+              REDIS_PASSWORD=$(vault_get_or_generate "services/gitlab/redis" "password" 32)
+              vault_kv_put "services/gitlab/redis" \
+                password="${REDIS_PASSWORD}"
+
+              # --- Generate and store GitLab DB password ---
+              log "[INFO] Seeding gitlab-postgresql database credentials..."
+              DB_PASSWORD=$(vault_get_or_generate "services/database/gitlab-postgresql" "password" 32)
+              vault_kv_put "services/database/gitlab-postgresql" \
+                username="gitlab" \
+                password="${DB_PASSWORD}"
+
+              # --- Generate and store Runner registration token ---
+              log "[INFO] Seeding Runner registration token..."
+              RUNNER_TOKEN=$(vault_get_or_generate "services/gitlab/runner-token" "token" 32)
+              vault_kv_put "services/gitlab/runner-token" \
+                token="${RUNNER_TOKEN}"
+
+              # --- Generate and store shell-secret ---
+              log "[INFO] Seeding shell secret..."
+              SHELL_SECRET=$(vault_get_or_generate "services/gitlab/shell-secret" "secret" 64)
+              vault_kv_put "services/gitlab/shell-secret" \
+                secret="${SHELL_SECRET}"
+
+              # --- Generate and store workhorse-secret ---
+              log "[INFO] Seeding workhorse secret..."
+              WORKHORSE_SECRET=$(vault_get_or_generate "services/gitlab/workhorse-secret" "secret" 64)
+              vault_kv_put "services/gitlab/workhorse-secret" \
+                secret="${WORKHORSE_SECRET}"
+
+              # --- Generate and store kas-secret ---
+              log "[INFO] Seeding KAS secret..."
+              KAS_SECRET=$(vault_get_or_generate "services/gitlab/kas-secret" "secret" 64)
+              vault_kv_put "services/gitlab/kas-secret" \
+                secret="${KAS_SECRET}"
+
+              # --- Generate and store registry-secret ---
+              log "[INFO] Seeding registry secret..."
+              REGISTRY_SECRET=$(vault_get_or_generate "services/gitlab/registry-secret" "secret" 64)
+              vault_kv_put "services/gitlab/registry-secret" \
+                secret="${REGISTRY_SECRET}"
+
+              # --- Generate and store initial-root-password ---
+              log "[INFO] Seeding initial root password..."
+              ROOT_PASS=$(vault_get_or_generate "services/gitlab/initial-root-password" "password" 32)
+              vault_kv_put "services/gitlab/initial-root-password" \
+                password="${ROOT_PASS}"
+
+              log "[INFO] gitlab-init complete"
+          volumeMounts:
+            - name: bootstrap-secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: minio-secrets
+              mountPath: /minio-secrets
+              readOnly: true
+            - name: vault-bin
+              mountPath: /vault-bin
+              readOnly: true
+            - name: mc-bin
+              mountPath: /mc-bin
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi

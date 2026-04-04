@@ -1,0 +1,68 @@
+# Argo Workflows Helm Values
+# Domain tokens are replaced at deploy time by _subst_changeme()
+
+## ---- CRDs (Workflow, WorkflowTemplate, CronWorkflow, etc.) ----
+## Install via Helm templates so CRDs are updated on upgrade.
+## full: false uses minified CRDs bundled in templates (~OK for airgapped).
+## full: true spawns a Job that downloads ~7.4MB from GitHub — breaks airgapped.
+crds:
+  install: true
+  keep: true
+  full: false
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-workflows-controller
+            topologyKey: kubernetes.io/hostname
+  metricsConfig:
+    enabled: true
+
+server:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argo-workflows-server
+            topologyKey: kubernetes.io/hostname
+  # auth-mode=server disables Argo's built-in authentication.
+  # This is intentional: the Argo Workflows UI is protected by OAuth2-proxy
+  # (ForwardAuth via Traefik middleware), which handles OIDC authentication
+  # against Keycloak before any request reaches the Argo server.
+  # See: services/argo/argo-workflows/oauth2-proxy.yaml
+  #      services/argo/argo-workflows/middleware-oauth2-proxy.yaml
+  extraArgs:
+    - --auth-mode=server
+  # readOnlyRootFilesystem is false (chart default) because the argo-server
+  # writes temporary files at runtime. This is managed by the upstream Helm
+  # chart and cannot be overridden via values alone without breaking the server.
+
+workflow:
+  serviceAccount:
+    create: true
+    name: argo-workflow
+
+  rbac:
+    create: true

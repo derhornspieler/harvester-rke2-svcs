@@ -1,0 +1,64 @@
+# Microservice pipeline pattern
+# Include this for a complete build-test-scan-deploy pipeline
+#
+# Required variables (set in your .gitlab-ci.yml):
+#   DEPLOY_TEAM — team directory in platform-deployments (e.g. forge)
+#   DEPLOY_APP  — app directory (e.g. forge-core), defaults to CI_PROJECT_NAME
+#
+# All credentials fetched from Vault at runtime — no CI variables needed.
+#
+# Usage in .gitlab-ci.yml:
+#   include:
+#     - project: 'infra_and_platform_services/harvester-rke2-svcs'
+#       ref: main
+#       file:
+#         - '/services/gitlab/ci-templates/stages.yml'
+#         - '/services/gitlab/ci-templates/patterns/microservice.yml'
+#   variables:
+#     DEPLOY_TEAM: forge
+#     DEPLOY_APP: forge-core
+
+include:
+  - local: '/base.yml'
+  - local: '/jobs/lint.yml'
+  - local: '/jobs/build.yml'
+  - local: '/jobs/test.yml'
+  - local: '/jobs/scan.yml'
+  - local: '/jobs/deploy.yml'
+  - local: '/jobs/promote.yml'
+
+secret-detection:
+  extends: .scan:gitleaks
+
+hadolint:
+  extends: .lint:hadolint
+
+build:
+  extends: .build:kaniko
+
+image-scan:
+  extends: .scan:trivy-image
+  needs:
+    - build
+
+sbom:
+  extends: .scan:sbom
+  needs:
+    - build
+
+deploy:dev:
+  extends: .deploy:platform-deployments
+  variables:
+    DEPLOY_ENV: dev
+    DEPLOY_BRANCH: dev
+  needs:
+    - build
+    - image-scan
+
+promote:staged:
+  extends: .deploy:promote-staged
+  needs:
+    - deploy:dev
+
+promote:prod:
+  extends: .deploy:promote-prod

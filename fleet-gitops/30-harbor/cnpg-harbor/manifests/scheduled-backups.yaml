@@ -1,0 +1,41 @@
+# Tiered backup schedule for harbor-pg
+# Daily: 7-day recovery window | Weekly: 30-day rollback | Monthly: 90-day compliance
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: harbor-pg-daily
+  namespace: database
+spec:
+  schedule: "0 30 3 * * *"  # 03:30 UTC daily
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: harbor-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: harbor-pg-weekly
+  namespace: database
+spec:
+  schedule: "0 30 4 * * 0"  # 04:30 UTC Sunday
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: harbor-pg
+  method: barmanObjectStore
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: harbor-pg-monthly
+  namespace: database
+spec:
+  schedule: "0 30 5 1 * *"  # 05:30 UTC 1st of month
+  backupOwnerReference: self
+  immediate: true
+  cluster:
+    name: harbor-pg
+  method: barmanObjectStore

@@ -1,0 +1,848 @@
+# =============================================================================
+# GitLab CI — harvester-rke2-svcs
+# =============================================================================
+# Full platform deployment pipeline:
+#   lint → validate → build → push → deploy → post-deploy → sync
+#
+# Lint runs on MRs and main. Deploy stages are manual (click play).
+# All credentials fetched from Vault via JWT auth — no CI variables
+# except the group-level DOMAIN variable.
+# =============================================================================
+
+stages:
+  - lint
+  - operator-test
+  - operator-build
+  - operator-scan
+  # Disabled: CI deploy broke cluster by deploying ALL groups instead of targeted.
+  # Use workstation deploy.sh --skip-charts --group <group> until CI is fixed.
+  # - build
+  # - validate
+  # - push
+  # - deploy
+  - sync
+
+variables:
+  GIT_SSL_CAINFO: /etc/ssl/certs/vault-root-ca.pem
+  CURL_CA_BUNDLE: /etc/ssl/certs/vault-root-ca.pem
+  DOMAIN: "example.com"
+  HARBOR_PROXY: harbor.${DOMAIN}
+  HARBOR_DEV_REGISTRY: harbor.dev.${DOMAIN}
+  HARBOR_PROD_REGISTRY: harbor.${DOMAIN}
+  VAULT_ADDR: "https://vault.${DOMAIN}"
+
+default:
+  tags:
+    - kubernetes
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.${DOMAIN}
+
+# ---------------------------------------------------------------------------
+# Lint: shellcheck on all shell scripts
+# ---------------------------------------------------------------------------
+shellcheck:
+  stage: lint
+  image: docker.io/alpine:3.23
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apk add --no-cache shellcheck bash
+  script:
+    - |
+      echo "Running shellcheck on all .sh files..."
+      ERRORS=0
+      while IFS= read -r -d '' file; do
+        if ! shellcheck -x -S warning "${file}"; then
+          ERRORS=$((ERRORS + 1))
+        fi
+      done < <(find scripts/ fleet-gitops/ -name '*.sh' -not -path '.git/*' -not -path '*/rendered/*' -print0)
+      echo "shellcheck complete: ${ERRORS} file(s) with issues"
+      if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
+
+# ---------------------------------------------------------------------------
+# Lint: yamllint on fleet-gitops and services YAML
+# ---------------------------------------------------------------------------
+yamllint:
+  stage: lint
+  image: docker.io/alpine:3.23
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  before_script:
+    - apk add --no-cache yamllint
+  script:
+    - yamllint -c .yamllint.yml fleet-gitops/ services/
+
+# ---------------------------------------------------------------------------
+# Lint: helm lint on all Fleet Helm values
+# ---------------------------------------------------------------------------
+helm-lint:
+  stage: lint
+  image: docker.io/alpine/helm:3.17.3
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      set +e
+      echo "Running helm lint on Fleet bundles with values.yaml..."
+      ERRORS=0
+      SKIPPED=0
+      for values_file in $(find fleet-gitops/ -name 'values.yaml' -type f -not -path '*/rendered/*'); do
+        bundle_dir=$(dirname "${values_file}")
+        fleet_yaml="${bundle_dir}/fleet.yaml"
+        if [ ! -f "${fleet_yaml}" ]; then
+          continue
+        fi
+        # Extract chart name from fleet.yaml (helm.chart field)
+        chart=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'chart:' | head -1 | awk '{print $2}' | tr -d '"' || true)
+        repo=$(grep -A5 '^helm:' "${fleet_yaml}" | grep 'repo:' | head -1 | awk '{print $2}' | tr -d '"' || true)
+        if [ -z "${chart}" ] || [ -z "${repo}" ]; then
+          echo "SKIP: ${values_file} (no helm chart/repo in fleet.yaml)"
+          SKIPPED=$((SKIPPED + 1))
+          continue
+        fi
+        # OCI charts can't be added as repos — skip them
+        case "${chart}" in oci://*) echo "SKIP: ${values_file} (OCI chart)"; SKIPPED=$((SKIPPED + 1)); continue ;; esac
+        echo "Linting: ${chart} (${values_file})"
+        repo_name="lint-$(echo "${chart}" | tr '/' '-')"
+        if helm repo add "${repo_name}" "${repo}" --force-update 2>/dev/null; then
+          if ! helm lint "${repo_name}/${chart}" -f "${values_file}" 2>&1; then
+            ERRORS=$((ERRORS + 1))
+          fi
+        else
+          echo "SKIP: could not add repo ${repo} (air-gapped or auth required)"
+          SKIPPED=$((SKIPPED + 1))
+        fi
+      done
+      echo "helm lint complete: ${ERRORS} error(s), ${SKIPPED} skipped"
+      if [ "${ERRORS}" -gt 0 ]; then exit 1; fi
+
+# ===========================================================================
+# Operator CI — Build, test, scan, push custom operators
+# ===========================================================================
+# Buildah for builds (ADR-1: Kaniko bypasses containerd registry mirrors).
+# Triggered on changes to operators/ directory.
+# Test + build on MRs and main. Push to Harbor only on main.
+# GitHub release assets created in sync-to-github stage.
+# ===========================================================================
+
+# --- Shared Buildah setup (Vault JWT → Harbor creds, registry mirrors) ---
+.buildah-setup:
+  image: quay.io/buildah/stable:v1.43.0
+  variables:
+    STORAGE_DRIVER: vfs
+    REGISTRY_AUTH_FILE: /tmp/auth.json
+  before_script:
+    - |
+      cat > /etc/containers/registries.conf <<REGISTRIES
+      unqualified-search-registries = ["docker.io"]
+
+      [[registry]]
+      prefix = "docker.io"
+      location = "${HARBOR_PROXY}/docker.io"
+
+      [[registry]]
+      prefix = "gcr.io"
+      location = "${HARBOR_PROXY}/gcr.io"
+
+      [[registry]]
+      prefix = "ghcr.io"
+      location = "${HARBOR_PROXY}/ghcr.io"
+
+      [[registry]]
+      prefix = "quay.io"
+      location = "${HARBOR_PROXY}/quay.io"
+
+      [[registry]]
+      prefix = "registry.k8s.io"
+      location = "${HARBOR_PROXY}/registry.k8s.io"
+      REGISTRIES
+    - |
+      if [ -f /etc/ssl/certs/vault-root-ca.pem ]; then
+        cp /etc/ssl/certs/vault-root-ca.pem /etc/pki/ca-trust/source/anchors/ 2>/dev/null || true
+        update-ca-trust 2>/dev/null || true
+      fi
+    - |
+      VAULT_TOKEN=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        --request POST \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" | \
+        sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+      if [ -z "${VAULT_TOKEN}" ]; then
+        echo "ERROR: Failed to authenticate to Vault"
+        exit 1
+      fi
+      HARBOR_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot")
+      HARBOR_CI_USER=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+      HARBOR_CI_PASSWORD=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+      if [ -z "${HARBOR_CI_USER}" ] || [ -z "${HARBOR_CI_PASSWORD}" ]; then
+        echo "ERROR: Failed to fetch Harbor credentials from Vault"
+        exit 1
+      fi
+      echo "Harbor credentials loaded from Vault (user: ${HARBOR_CI_USER})"
+      echo "${VAULT_TOKEN}" > /tmp/vault-token
+    - buildah login -u "${HARBOR_CI_USER}" -p "${HARBOR_CI_PASSWORD}" "${HARBOR_DEV_REGISTRY}"
+
+# --- Operator change detection rules ---
+.operator-storage-autoscaler-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "operators/storage-autoscaler/**"
+
+.operator-node-labeler-rules:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - "operators/node-labeler/**"
+
+# ---------------------------------------------------------------------------
+# Operator Lint
+# ---------------------------------------------------------------------------
+golangci-lint:storage-autoscaler:
+  stage: lint
+  image: docker.io/golangci/golangci-lint:v2.7.2-alpine
+  script:
+    - cd operators/storage-autoscaler
+    - golangci-lint run --timeout 5m ./...
+  rules:
+    - !reference [.operator-storage-autoscaler-rules, rules]
+
+golangci-lint:node-labeler:
+  stage: lint
+  image: docker.io/golangci/golangci-lint:v2.7.2-alpine
+  script:
+    - cd operators/node-labeler
+    - golangci-lint run --timeout 5m ./...
+  rules:
+    - !reference [.operator-node-labeler-rules, rules]
+
+# ---------------------------------------------------------------------------
+# Operator Test
+# ---------------------------------------------------------------------------
+go-test:storage-autoscaler:
+  stage: operator-test
+  image: docker.io/library/golang:1.26
+  script:
+    - cd operators/storage-autoscaler
+    - go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+    - export KUBEBUILDER_ASSETS="$(setup-envtest use --bin-dir /tmp/envtest -p path)"
+    - go test -v -race -coverprofile=cover.out $(go list ./... | grep -v /e2e)
+    - go tool cover -func=cover.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  rules:
+    - !reference [.operator-storage-autoscaler-rules, rules]
+
+go-test:node-labeler:
+  stage: operator-test
+  image: docker.io/library/golang:1.25.7-alpine
+  script:
+    - apk add --no-cache gcc musl-dev
+    - cd operators/node-labeler
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go tool cover -func=coverage.out
+  coverage: '/total:\s+\(statements\)\s+(\d+\.\d+)%/'
+  rules:
+    - !reference [.operator-node-labeler-rules, rules]
+
+# ---------------------------------------------------------------------------
+# Operator Build (Buildah)
+# ---------------------------------------------------------------------------
+build:storage-autoscaler:
+  extends: .buildah-setup
+  stage: operator-build
+  variables:
+    OPERATOR_IMAGE: ${HARBOR_DEV_REGISTRY}/library/storage-autoscaler
+    PROD_IMAGE: ${HARBOR_PROD_REGISTRY}/library/storage-autoscaler
+  needs:
+    - job: go-test:storage-autoscaler
+      optional: true
+    - job: golangci-lint:storage-autoscaler
+      optional: true
+  script:
+    - |
+      VERSION=$(cat operators/storage-autoscaler/VERSION 2>/dev/null | tr -d '[:space:]' || echo "${CI_COMMIT_SHORT_SHA}")
+      if [ -z "${VERSION}" ] || [ "${VERSION}" = "" ]; then
+        VERSION="${CI_COMMIT_SHORT_SHA}"
+      fi
+      echo "Building storage-autoscaler:${VERSION}"
+      buildah bud --layers \
+        -f operators/storage-autoscaler/Dockerfile \
+        -t "${OPERATOR_IMAGE}:${VERSION}" \
+        -t "${OPERATOR_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        operators/storage-autoscaler/
+      echo "Image built: ${OPERATOR_IMAGE}:${VERSION}"
+      # Push to dev Harbor
+      buildah push "${OPERATOR_IMAGE}:${VERSION}"
+      echo "Pushed to dev: ${OPERATOR_IMAGE}:${VERSION}"
+      # Push to production Harbor (main only, robot$helm-sync)
+      if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+        SAVED_TOKEN=$(cat /tmp/vault-token 2>/dev/null || echo "")
+        PROD_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+          -H "X-Vault-Token: ${SAVED_TOKEN}" \
+          "${VAULT_ADDR}/v1/kv/data/services/harbor/helm-sync") || true
+        PROD_USER=$(echo "${PROD_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+        PROD_PASS=$(echo "${PROD_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+        if [ -n "${PROD_USER}" ] && [ -n "${PROD_PASS}" ]; then
+          buildah login -u "${PROD_USER}" -p "${PROD_PASS}" "${HARBOR_PROD_REGISTRY}"
+          buildah tag "${OPERATOR_IMAGE}:${VERSION}" "${PROD_IMAGE}:${VERSION}"
+          buildah push "${PROD_IMAGE}:${VERSION}"
+          echo "Pushed to prod: ${PROD_IMAGE}:${VERSION}"
+        else
+          echo "WARNING: Could not fetch helm-sync credentials, skipping prod push"
+        fi
+      fi
+  rules:
+    - !reference [.operator-storage-autoscaler-rules, rules]
+
+build:node-labeler:
+  extends: .buildah-setup
+  stage: operator-build
+  variables:
+    OPERATOR_IMAGE: ${HARBOR_DEV_REGISTRY}/library/node-labeler
+    PROD_IMAGE: ${HARBOR_PROD_REGISTRY}/library/node-labeler
+  needs:
+    - job: go-test:node-labeler
+      optional: true
+    - job: golangci-lint:node-labeler
+      optional: true
+  script:
+    - |
+      VERSION=$(cat operators/node-labeler/VERSION 2>/dev/null | tr -d '[:space:]' || echo "${CI_COMMIT_SHORT_SHA}")
+      if [ -z "${VERSION}" ] || [ "${VERSION}" = "" ]; then
+        VERSION="${CI_COMMIT_SHORT_SHA}"
+      fi
+      echo "Building node-labeler:${VERSION}"
+      buildah bud --layers \
+        -f operators/node-labeler/Dockerfile \
+        -t "${OPERATOR_IMAGE}:${VERSION}" \
+        -t "${OPERATOR_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        operators/node-labeler/
+      echo "Image built: ${OPERATOR_IMAGE}:${VERSION}"
+      # Push to dev Harbor
+      buildah push "${OPERATOR_IMAGE}:${VERSION}"
+      echo "Pushed to dev: ${OPERATOR_IMAGE}:${VERSION}"
+      # Push to production Harbor (main only, robot$helm-sync)
+      if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+        SAVED_TOKEN=$(cat /tmp/vault-token 2>/dev/null || echo "")
+        PROD_CREDS=$(curl -sf --cacert /etc/ssl/certs/vault-root-ca.pem \
+          -H "X-Vault-Token: ${SAVED_TOKEN}" \
+          "${VAULT_ADDR}/v1/kv/data/services/harbor/helm-sync") || true
+        PROD_USER=$(echo "${PROD_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+        PROD_PASS=$(echo "${PROD_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+        if [ -n "${PROD_USER}" ] && [ -n "${PROD_PASS}" ]; then
+          buildah login -u "${PROD_USER}" -p "${PROD_PASS}" "${HARBOR_PROD_REGISTRY}"
+          buildah tag "${OPERATOR_IMAGE}:${VERSION}" "${PROD_IMAGE}:${VERSION}"
+          buildah push "${PROD_IMAGE}:${VERSION}"
+          echo "Pushed to prod: ${PROD_IMAGE}:${VERSION}"
+        else
+          echo "WARNING: Could not fetch helm-sync credentials, skipping prod push"
+        fi
+      fi
+  rules:
+    - !reference [.operator-node-labeler-rules, rules]
+
+# ---------------------------------------------------------------------------
+# Operator Scan (Trivy)
+# ---------------------------------------------------------------------------
+trivy:storage-autoscaler:
+  stage: operator-scan
+  image:
+    name: aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c
+    entrypoint: [""]
+  variables:
+    OPERATOR_IMAGE: ${HARBOR_DEV_REGISTRY}/library/storage-autoscaler
+  needs:
+    - job: build:storage-autoscaler
+  script:
+    - |
+      VAULT_RESP=$(wget -qO- --no-check-certificate \
+        --header="Content-Type: application/json" \
+        --post-data="{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" 2>/dev/null || echo "")
+      VAULT_TOKEN=$(echo "${VAULT_RESP}" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+      HARBOR_CREDS=$(wget -qO- --no-check-certificate \
+        --header="X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" 2>/dev/null || echo "")
+      export TRIVY_USERNAME=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+      export TRIVY_PASSWORD=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+      VERSION=$(cat operators/storage-autoscaler/VERSION 2>/dev/null | tr -d '[:space:]' || echo "latest")
+      trivy image --severity HIGH,CRITICAL --exit-code 1 --format table "${OPERATOR_IMAGE}:${VERSION}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+trivy:node-labeler:
+  stage: operator-scan
+  image:
+    name: aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c
+    entrypoint: [""]
+  variables:
+    OPERATOR_IMAGE: ${HARBOR_DEV_REGISTRY}/library/node-labeler
+  needs:
+    - job: build:node-labeler
+  script:
+    - |
+      VAULT_RESP=$(wget -qO- --no-check-certificate \
+        --header="Content-Type: application/json" \
+        --post-data="{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" 2>/dev/null || echo "")
+      VAULT_TOKEN=$(echo "${VAULT_RESP}" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+      HARBOR_CREDS=$(wget -qO- --no-check-certificate \
+        --header="X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" 2>/dev/null || echo "")
+      export TRIVY_USERNAME=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+      export TRIVY_PASSWORD=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+      VERSION=$(cat operators/node-labeler/VERSION 2>/dev/null | tr -d '[:space:]' || echo "latest")
+      trivy image --severity HIGH,CRITICAL --exit-code 1 --format table "${OPERATOR_IMAGE}:${VERSION}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ---------------------------------------------------------------------------
+# Build: Compute next BUNDLE_VERSION and detect changed groups
+# DISABLED — CI full deploy broke cluster; use workstation deploy until fixed
+# ---------------------------------------------------------------------------
+.compute-version:
+  stage: build
+  image: docker.io/alpine:3.23
+  before_script:
+    - apk add --no-cache git bash
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - |
+      # Auto-increment BUNDLE_VERSION from git tags
+      git fetch --tags origin 2>/dev/null || true
+      LATEST_TAG=$(git tag -l 'bundle-v*' --sort=-v:refname | head -1)
+      if [ -z "${LATEST_TAG}" ]; then
+        NEXT_VERSION="1.0.0"
+      else
+        CURRENT="${LATEST_TAG#bundle-v}"
+        MAJOR=$(echo "${CURRENT}" | cut -d. -f1)
+        MINOR=$(echo "${CURRENT}" | cut -d. -f2)
+        PATCH=$(echo "${CURRENT}" | cut -d. -f3)
+        NEXT_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+      fi
+      echo "BUNDLE_VERSION=${NEXT_VERSION}"
+      git tag "bundle-v${NEXT_VERSION}"
+      git push origin "bundle-v${NEXT_VERSION}" || echo "WARNING: could not push tag"
+
+      # Detect changed groups
+      CHANGED=$(bash fleet-gitops/scripts/detect-changed-groups.sh 2>/dev/null || echo "ALL")
+      echo "CHANGED_GROUPS=$(echo "${CHANGED}" | tr '\n' ',' | sed 's/,$//')"
+
+# ---------------------------------------------------------------------------
+# Validate: Render templates and check for production mismatches
+# DISABLED — see .compute-version
+# ---------------------------------------------------------------------------
+.validate-render:
+  stage: validate
+  image: docker.io/alpine/k8s:1.32.4
+  needs: [shellcheck, yamllint, helm-lint]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.example.com
+  variables:
+    VAULT_ADDR: "https://vault.example.com"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - |
+      cd fleet-gitops
+      bash scripts/ci-build-env.sh
+      bash scripts/render-templates.sh
+      echo ""
+      echo "--- Running validation checks ---"
+      bash scripts/validate-rendered.sh
+
+# ---------------------------------------------------------------------------
+# Push: Package and push Fleet bundles to Harbor OCI
+# DISABLED — see .compute-version
+# ---------------------------------------------------------------------------
+.push-bundles:
+  stage: push
+  image: docker.io/alpine/k8s:1.32.4
+  needs: [validate-render]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.example.com
+  variables:
+    VAULT_ADDR: "https://vault.example.com"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+  script:
+    - |
+      cd fleet-gitops
+      bash scripts/ci-build-env.sh
+      bash scripts/render-templates.sh
+      bash scripts/push-bundles.sh
+
+# ---------------------------------------------------------------------------
+# Push: Pull upstream Helm charts and re-push to Harbor (manual, rare)
+# DISABLED — see .compute-version
+# ---------------------------------------------------------------------------
+.push-charts:
+  stage: push
+  image: docker.io/alpine/k8s:1.32.4
+  needs: [validate-render]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.example.com
+  variables:
+    VAULT_ADDR: "https://vault.example.com"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+  script:
+    - |
+      cd fleet-gitops
+      bash scripts/ci-build-env.sh
+      bash scripts/push-charts.sh
+
+# ---------------------------------------------------------------------------
+# Deploy: Create/update Fleet HelmOps on Rancher (manual trigger)
+# DISABLED — see .compute-version
+# ---------------------------------------------------------------------------
+.deploy-fleet:
+  stage: deploy
+  image: docker.io/alpine/k8s:1.32.4
+  needs: [push-bundles]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.example.com
+  variables:
+    VAULT_ADDR: "https://vault.example.com"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+  script:
+    - |
+      cd fleet-gitops
+      bash scripts/ci-build-env.sh
+
+      # Detect changed groups from git diff
+      CHANGED=$(bash scripts/detect-changed-groups.sh 2>/dev/null || echo "ALL")
+      CHANGED_GROUPS=$(echo "${CHANGED}" | tr '\n' ',' | sed 's/,$//')
+
+      if [ "${CHANGED_GROUPS}" = "ALL" ] || [ "${FORCE_FULL_DEPLOY:-}" = "true" ]; then
+        echo "Deploying ALL groups..."
+        bash scripts/deploy-fleet-helmops.sh --ci-mode
+      else
+        echo "Deploying changed groups: ${CHANGED_GROUPS}"
+        IFS=',' read -ra GROUPS <<< "${CHANGED_GROUPS}"
+        for group in "${GROUPS[@]}"; do
+          echo "--- Deploying group: ${group} ---"
+          bash scripts/deploy-fleet-helmops.sh --ci-mode --group "${group}"
+        done
+      fi
+
+      echo ""
+      echo "--- Fleet Status ---"
+      bash scripts/deploy-fleet-helmops.sh --status || true
+      echo ""
+      echo "Monitor in Rancher: Continuous Delivery > App Bundles"
+
+.deploy-fleet-full:
+  stage: deploy
+  image: docker.io/alpine/k8s:1.32.4
+  needs: [push-bundles]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://gitlab.example.com
+  variables:
+    VAULT_ADDR: "https://vault.example.com"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+  script:
+    - |
+      cd fleet-gitops
+      bash scripts/ci-build-env.sh
+      echo "Full deploy — all groups..."
+      bash scripts/deploy-fleet-helmops.sh --ci-mode
+      echo ""
+      bash scripts/deploy-fleet-helmops.sh --status || true
+
+# ---------------------------------------------------------------------------
+# Sync: Sanitized push to GitHub mirror (on push to main)
+# ---------------------------------------------------------------------------
+# Replaces PII (domain, usernames, org) with generic placeholders and removes
+# sensitive files before pushing to the public GitHub mirror.
+# Sanitized push to GitHub + CI status verification.
+# All credentials fetched from Vault via JWT auth — no GitLab CI variables needed.
+# Vault path: kv/services/ci/github-mirror (api-token, mirror-url, mirror-repo, ssh-private-key)
+sync-to-github:
+  stage: sync
+  image: docker.io/alpine:3.23
+  needs:
+    - shellcheck
+    - yamllint
+    - helm-lint
+    - job: build:storage-autoscaler
+      optional: true
+    - job: build:node-labeler
+      optional: true
+    - job: trivy:storage-autoscaler
+      optional: true
+    - job: trivy:node-labeler
+      optional: true
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_success
+  before_script:
+    - apk add --no-cache git openssh-client python3 curl jq findutils
+    - git config --global user.name "GitLab Mirror"
+    - git config --global user.email "mirror@ci.local"
+  script:
+    - |
+      # --- Authenticate to Vault ---
+      VAULT_RESP=$(curl -s -w "\n%{http_code}" \
+        --request POST \
+        --data "{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" 2>&1)
+      VAULT_HTTP=$(echo "${VAULT_RESP}" | tail -1)
+      VAULT_BODY=$(echo "${VAULT_RESP}" | sed '$d')
+      if [ "${VAULT_HTTP}" != "200" ]; then
+        echo "ERROR: Vault JWT auth failed (HTTP ${VAULT_HTTP})"
+        exit 1
+      fi
+      VAULT_TOKEN=$(echo "${VAULT_BODY}" | jq -r '.auth.client_token')
+      echo "Vault auth successful"
+
+      # --- Fetch GitHub credentials from Vault ---
+      GH_CREDS=$(curl -s \
+        -H "X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/ci/github-mirror")
+      GH_SSH_KEY=$(echo "${GH_CREDS}" | jq -r '.data.data["ssh-private-key"]')
+      GH_USER=$(echo "${GH_CREDS}" | jq -r '.data.data["github-user"] // "derhornspieler"')
+      PROJECT_NAME=$(basename "${CI_PROJECT_PATH}")
+      GITHUB_MIRROR_URL="git@github.com:${GH_USER}/${PROJECT_NAME}.git"
+      GITHUB_REPO="${GH_USER}/${PROJECT_NAME}"
+      GITHUB_API_TOKEN=$(echo "${GH_CREDS}" | jq -r '.data.data["api-token"]')
+      echo "GitHub mirror target: ${GITHUB_MIRROR_URL}"
+
+      # --- Set up SSH ---
+      mkdir -p ~/.ssh
+      echo "${GH_SSH_KEY}" > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+      # ================================================================
+      # Shadow repo approach: create a clean snapshot with NO history.
+      # GitHub only ever sees one commit — no diffs, no filter traces.
+      # ================================================================
+      WORK_DIR="/tmp/github-shadow"
+      rm -rf "${WORK_DIR}"
+      mkdir -p "${WORK_DIR}"
+
+      # Clone source (shallow — we only need the file tree)
+      git clone --branch main --depth 1 "${CI_REPOSITORY_URL}" /tmp/source
+      cd /tmp/source
+
+      # --- Remove sensitive files before copying ---
+      rm -rf \
+        .gitlab-ci.yml \
+        .claude/ memory/ docs/plans/ docs/superpowers/ \
+        fleet-gitops/60-cicd-onboard/onboard-forge/ \
+        fleet-gitops/60-cicd-onboard/onboard-identity-portal/ \
+        fleet-gitops/.env fleet-gitops/.env.example \
+        fleet-gitops/.env.rke2-prod fleet-gitops/.env.rke2-dev \
+        fleet-gitops/root-ca.pem \
+        fleet-gitops/.gitlab-license fleet-gitops/result.gitlab-license fleet-gitops/public.key \
+        scripts/github-sanitize.sh \
+        CLAUDE.md GIT_LOG.txt
+
+      # --- Copy clean tree to shadow repo ---
+      cp -a . "${WORK_DIR}/"
+
+      # --- Replace PII in all text files ---
+      cd "${WORK_DIR}"
+      find . -type f \
+        -not -path './.git/*' \
+        -not -name '*.png' -not -name '*.jpg' -not -name '*.ico' \
+        -not -name '*.woff*' -not -name '*.ttf' \
+        -not -name '*.zip' -not -name '*.tar.*' -not -name '*.gz' \
+        | while IFS= read -r f; do
+          sed -i \
+            -e 's/aegisgroup\.ch/example.com/g' \
+            -e 's/Example Org/Example Org/g' \
+            -e 's/alice\.morgan/admin.user/g' \
+            -e 's/Platform Admin/Platform Admin/g' \
+            -e 's/frank\.jones/dev.user/g' \
+            -e 's/Senior Developer/Senior Developer/g' \
+            "$f" 2>/dev/null || true
+        done
+
+      # --- Strip sync-to-github from .gitlab-ci.yml if it was kept ---
+      # (it was already deleted above, but in case GitHub Actions CI exists)
+
+      # --- Create orphan commit (no history) ---
+      rm -rf .git
+      git init
+      git checkout -b main
+      git add -A
+      git commit -m "Platform services for RKE2 cluster
+
+      Vault, cert-manager, Keycloak, Harbor, ArgoCD, GitLab, Prometheus, Grafana, Loki.
+      See README.md for architecture and deployment guide."
+
+      # --- Force push single commit to GitHub ---
+      git remote add github "${GITHUB_MIRROR_URL}"
+      git push github main --force
+      echo "Shadow repo pushed to GitHub (single commit, no history)"
+
+      # --- Create GitHub releases for operator images ---
+      if [ -n "${GITHUB_API_TOKEN:-}" ]; then
+        cd /tmp/source
+        unset CURL_CA_BUNDLE
+        GH_API="https://api.github.com/repos/${GITHUB_REPO}"
+        GH_AUTH="Authorization: token ${GITHUB_API_TOKEN}"
+
+        for operator_dir in operators/storage-autoscaler operators/node-labeler; do
+          OP_NAME=$(basename "${operator_dir}")
+          # Extract version from VERSION file or fall back to commit SHA
+          OP_VERSION=$(cat "${operator_dir}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "")
+          if [ -z "${OP_VERSION}" ]; then
+            OP_VERSION="${CI_COMMIT_SHORT_SHA}"
+          fi
+          TAG_NAME="${OP_NAME}-${OP_VERSION}"
+
+          # Find matching tarball
+          TARBALL=$(ls operators/images/${OP_NAME}-${OP_VERSION}-*.tar.gz 2>/dev/null | head -1)
+          if [ -z "${TARBALL}" ]; then
+            echo "No tarball found for ${OP_NAME} ${OP_VERSION}, skipping release"
+            continue
+          fi
+
+          echo "Creating GitHub release: ${TAG_NAME}"
+
+          # Check if release already exists
+          EXISTING=$(curl -s -H "${GH_AUTH}" "${GH_API}/releases/tags/${TAG_NAME}" 2>/dev/null | jq -r '.id // empty')
+          if [ -n "${EXISTING}" ] && [ "${EXISTING}" != "null" ]; then
+            echo "Release ${TAG_NAME} already exists (id: ${EXISTING}), updating assets"
+            RELEASE_ID="${EXISTING}"
+          else
+            # Create release
+            RESP=$(curl -s -w "\n%{http_code}" -X POST -H "${GH_AUTH}" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"${TAG_NAME}\",\"name\":\"${OP_NAME} ${OP_VERSION}\",\"body\":\"Operator image release for ${OP_NAME} ${OP_VERSION}\",\"draft\":false}" \
+              "${GH_API}/releases")
+            HTTP_CODE=$(echo "${RESP}" | tail -1)
+            BODY=$(echo "${RESP}" | sed '$d')
+            RELEASE_ID=$(echo "${BODY}" | jq -r '.id // empty')
+            if [ -z "${RELEASE_ID}" ] || [ "${RELEASE_ID}" = "null" ] || [ "${HTTP_CODE}" != "201" ]; then
+              echo "WARNING: Failed to create release ${TAG_NAME} (HTTP ${HTTP_CODE})"
+              echo "${BODY}" | jq -r '.message // .errors // .' 2>/dev/null || true
+              continue
+            fi
+            echo "Created release ${TAG_NAME} (id: ${RELEASE_ID})"
+          fi
+
+          # Upload tarball as release asset
+          ASSET_NAME=$(basename "${TARBALL}")
+          echo "Uploading ${ASSET_NAME} to release ${TAG_NAME}"
+          UPLOAD_RESP=$(curl -s -w "\n%{http_code}" -X POST -H "${GH_AUTH}" \
+            -H "Content-Type: application/gzip" \
+            --data-binary "@${TARBALL}" \
+            "https://uploads.github.com/repos/${GITHUB_REPO}/releases/${RELEASE_ID}/assets?name=${ASSET_NAME}")
+          UPLOAD_CODE=$(echo "${UPLOAD_RESP}" | tail -1)
+          if [ "${UPLOAD_CODE}" = "201" ]; then
+            echo "Uploaded ${ASSET_NAME}"
+          else
+            echo "WARNING: Failed to upload ${ASSET_NAME} (HTTP ${UPLOAD_CODE})"
+          fi
+        done
+
+        # --- Upload Grafana plugin to its own release ---
+        PLUGIN_FILE=$(ls fleet-gitops/plugins/grafana-lokiexplore-app-*.zip 2>/dev/null | head -1)
+        if [ -n "${PLUGIN_FILE}" ]; then
+          PLUGIN_VER=$(echo "${PLUGIN_FILE}" | sed -n 's/.*grafana-lokiexplore-app-\(.*\)\.zip/\1/p')
+          PLUGIN_TAG="grafana-lokiexplore-app-v${PLUGIN_VER}"
+          echo "Creating GitHub release: ${PLUGIN_TAG}"
+
+          EXISTING=$(curl -s -H "${GH_AUTH}" "${GH_API}/releases/tags/${PLUGIN_TAG}" 2>/dev/null | jq -r '.id // empty')
+          if [ -n "${EXISTING}" ] && [ "${EXISTING}" != "null" ]; then
+            echo "Release ${PLUGIN_TAG} already exists (id: ${EXISTING})"
+            RELEASE_ID="${EXISTING}"
+          else
+            RESP=$(curl -s -w "\n%{http_code}" -X POST -H "${GH_AUTH}" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"${PLUGIN_TAG}\",\"name\":\"Grafana Logs Drilldown ${PLUGIN_VER}\",\"body\":\"Grafana Loki Explore plugin v${PLUGIN_VER}\"}" \
+              "${GH_API}/releases")
+            HTTP_CODE=$(echo "${RESP}" | tail -1)
+            BODY=$(echo "${RESP}" | sed '$d')
+            RELEASE_ID=$(echo "${BODY}" | jq -r '.id // empty')
+            if [ -n "${RELEASE_ID}" ] && [ "${RELEASE_ID}" != "null" ] && [ "${HTTP_CODE}" = "201" ]; then
+              echo "Created release ${PLUGIN_TAG} (id: ${RELEASE_ID})"
+            else
+              echo "WARNING: Failed to create release ${PLUGIN_TAG} (HTTP ${HTTP_CODE})"
+              RELEASE_ID=""
+            fi
+          fi
+
+          if [ -n "${RELEASE_ID}" ]; then
+            ASSET_NAME=$(basename "${PLUGIN_FILE}")
+            echo "Uploading ${ASSET_NAME}"
+            UPLOAD_RESP=$(curl -s -w "\n%{http_code}" -X POST -H "${GH_AUTH}" \
+              -H "Content-Type: application/zip" \
+              --data-binary "@${PLUGIN_FILE}" \
+              "https://uploads.github.com/repos/${GITHUB_REPO}/releases/${RELEASE_ID}/assets?name=${ASSET_NAME}")
+            UPLOAD_CODE=$(echo "${UPLOAD_RESP}" | tail -1)
+            if [ "${UPLOAD_CODE}" = "201" ]; then
+              echo "Uploaded ${ASSET_NAME}"
+            else
+              echo "WARNING: Failed to upload ${ASSET_NAME} (HTTP ${UPLOAD_CODE})"
+            fi
+          fi
+        fi
+      fi
+
+      # --- Wait for GitHub Actions CI ---
+      if [ -z "${GITHUB_API_TOKEN:-}" ]; then
+        echo "No GitHub API token — skipping CI check"
+        exit 0
+      fi
+
+      unset CURL_CA_BUNDLE
+      GH_API="https://api.github.com/repos/${GITHUB_REPO}"
+      GH_AUTH="Authorization: token ${GITHUB_API_TOKEN}"
+      echo "Waiting for GitHub Actions..."
+      sleep 15
+
+      MAX_WAIT=300
+      ELAPSED=0
+      while [ "${ELAPSED}" -lt "${MAX_WAIT}" ]; do
+        RUN_ID=$(curl -sf -H "${GH_AUTH}" \
+          "${GH_API}/actions/runs?branch=main&per_page=1" | \
+          jq -r '.workflow_runs[0].id // empty')
+        if [ -n "${RUN_ID}" ]; then
+          STATUS=$(curl -sf -H "${GH_AUTH}" "${GH_API}/actions/runs/${RUN_ID}" | jq -r '.status')
+          CONCLUSION=$(curl -sf -H "${GH_AUTH}" "${GH_API}/actions/runs/${RUN_ID}" | jq -r '.conclusion // "null"')
+          if [ "${STATUS}" = "completed" ]; then break; fi
+          echo "GitHub CI: ${STATUS} (${ELAPSED}/${MAX_WAIT}s)..."
+        fi
+        sleep 15
+        ELAPSED=$((ELAPSED + 15))
+      done
+
+      if [ -z "${RUN_ID:-}" ]; then
+        echo "INFO: No GitHub Actions run found — this is expected for shadow repos"
+      elif [ "${CONCLUSION}" = "success" ]; then
+        echo "GitHub CI passed (run ${RUN_ID})"
+      elif [ "${STATUS}" != "completed" ]; then
+        echo "INFO: GitHub CI did not complete within ${MAX_WAIT}s — continuing"
+      else
+        echo "WARNING: GitHub CI failed (run ${RUN_ID}, conclusion: ${CONCLUSION})"
+      fi

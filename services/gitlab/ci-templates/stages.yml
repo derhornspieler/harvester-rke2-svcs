@@ -1,0 +1,13 @@
+# Standard CI/CD stages — include in every pipeline
+stages:
+  - provision
+  - pre-check
+  - lint
+  - test
+  - build
+  - scan
+  - push
+  - deploy-staging
+  - integration-test
+  - deploy-production
+  - post-deploy

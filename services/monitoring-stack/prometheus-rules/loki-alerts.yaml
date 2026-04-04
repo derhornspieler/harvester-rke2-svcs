@@ -1,0 +1,37 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: loki-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: loki-alerts
+      rules:
+        - alert: LokiHighIngestionLatency
+          expr: histogram_quantile(0.99, sum(rate(loki_request_duration_seconds_bucket{route=~"/loki/api/v1/push"}[5m])) by (le)) > 5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Loki ingestion latency is high"
+            description: "Loki push latency p99 is above 5 seconds."
+
+        - alert: LokiIngestionErrors
+          expr: sum(rate(loki_request_duration_seconds_count{route=~"/loki/api/v1/push", status_code=~"5.."}[5m])) / clamp_min(sum(rate(loki_request_duration_seconds_count{route=~"/loki/api/v1/push"}[5m])), 0.001) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Loki ingestion error rate is elevated"
+            description: "More than 1% of Loki push requests are returning 5xx errors."
+
+        - alert: LokiStorageAlmostFull
+          expr: (loki_ingester_memory_chunks / 100000) * 100 > 80
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Loki ingester chunk count is high"
+            description: "Loki ingester chunk count exceeding 80% of 100k limit."

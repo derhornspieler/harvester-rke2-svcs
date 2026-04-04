@@ -1,0 +1,29 @@
+# Production promotion templates
+
+.promote:tag-image:
+  stage: deploy-production
+  image:
+    name: gcr.io/go-containerregistry/crane:v0.21.1
+    entrypoint: [""]
+  variables:
+    PROMOTE_TAG: ""
+  script:
+    # Fetch Harbor credentials from Vault
+    - |
+      VAULT_RESP=$(wget -qO- --no-check-certificate \
+        --header="Content-Type: application/json" \
+        --post-data="{\"jwt\": \"${VAULT_ID_TOKEN}\", \"role\": \"gitlab-ci\"}" \
+        "${VAULT_ADDR}/v1/auth/jwt/login" 2>/dev/null || echo "")
+      VAULT_TOKEN=$(echo "${VAULT_RESP}" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')
+      HARBOR_CREDS=$(wget -qO- --no-check-certificate \
+        --header="X-Vault-Token: ${VAULT_TOKEN}" \
+        "${VAULT_ADDR}/v1/kv/data/services/harbor/ci-robot" 2>/dev/null || echo "")
+      HARBOR_CI_USER=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')
+      HARBOR_CI_PASSWORD=$(echo "${HARBOR_CREDS}" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+    - crane auth login "${HARBOR_REGISTRY}" -u "${HARBOR_CI_USER}" -p "${HARBOR_CI_PASSWORD}"
+    - crane tag "${IMAGE_FULL}" "${PROMOTE_TAG:-v${CI_PIPELINE_IID}}"
+    - crane tag "${IMAGE_FULL}" "production"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+/'
+    - if: '$CI_COMMIT_BRANCH == "deploy"'
+      when: manual

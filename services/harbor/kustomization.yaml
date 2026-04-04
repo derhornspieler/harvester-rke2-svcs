@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  # MinIO
+  - minio/namespace.yaml
+  - minio/external-secret.yaml
+  - minio/pvc.yaml
+  - minio/deployment.yaml
+  - minio/service.yaml
+  - minio/job-create-buckets.yaml
+  # PostgreSQL CNPG
+  - postgres/external-secret.yaml
+  - postgres/harbor-pg-cluster.yaml
+  - postgres/harbor-pg-scheduled-backup.yaml
+  # Harbor credentials (ESO → Vault, used by Helm existingSecret refs)
+  - external-secrets.yaml
+  # Valkey Redis Sentinel
+  - valkey/external-secret.yaml
+  - valkey/replication.yaml
+  - valkey/sentinel.yaml
+  # Ingress
+  - gateway.yaml
+  - httproute.yaml
+  # Scaling
+  - hpa-core.yaml
+  - hpa-registry.yaml
+  - hpa-trivy.yaml
+  # Volume autoscalers (PVC expansion)
+  - volume-autoscalers.yaml
+  # Monitoring
+  - monitoring/

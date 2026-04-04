@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: harbor-valkey
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - harbor
+  selector:
+    matchLabels:
+      app: harbor-redis
+  endpoints:
+    - port: redis-exporter
+      targetPort: 9121
+      interval: 30s

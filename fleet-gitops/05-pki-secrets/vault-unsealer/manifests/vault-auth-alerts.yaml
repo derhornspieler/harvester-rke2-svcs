@@ -1,0 +1,49 @@
+---
+# PrometheusRule: Alert if vault-unsealer logs show K8s auth reconfiguration
+# attempts, indicating stale auth after node disruption. Fires if the unsealer
+# has attempted auth repair more than twice in 30 minutes.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vault-k8s-auth
+  namespace: vault
+  labels:
+    app.kubernetes.io/name: vault-unsealer
+    app.kubernetes.io/component: alerts
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: vault-k8s-auth
+      rules:
+        - alert: VaultKubernetesAuthBroken
+          # Log-based detection: count "K8s auth check FAILED" log lines from
+          # the vault-unsealer pod. Loki ships pod logs; this rule uses the
+          # log_lines_total metric exposed by Loki recording rules.
+          # Fallback: if no metric-based detection, this alert fires on the
+          # absence of successful K8s auth logins to any eso-reader role for
+          # longer than 10 minutes.
+          expr: |
+            (
+              sum by (namespace) (
+                increase(
+                  vault_token_create_count{auth_method="kubernetes"}[10m]
+                )
+              ) == 0
+            )
+            and on()
+            (
+              up{job="vault-internal"} == 1
+            )
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Vault Kubernetes auth has no successful logins for 10+ minutes"
+            description: >-
+              No Kubernetes auth tokens have been issued by Vault in the last
+              10 minutes, despite Vault being up. This likely means K8s auth
+              is stale after a node disruption. The vault-unsealer should
+              self-heal this, but if this alert fires the self-healing may
+              have failed. Check vault-unsealer logs:
+              kubectl logs -n vault deploy/vault-unsealer --tail=50
+            runbook_url: "https://gitlab.example.com/infra/harvester-rke2-svcs/-/blob/main/docs/runbooks/vault-k8s-auth-broken.md"

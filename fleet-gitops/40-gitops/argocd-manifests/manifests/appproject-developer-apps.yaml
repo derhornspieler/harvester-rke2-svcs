@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: developer-apps
+  namespace: argocd
+spec:
+  description: Restricted project for developer applications (app-* namespaces only)
+  sourceRepos:
+    - "https://gitlab.${DOMAIN}/platform/platform-deployments.git"
+  destinations:
+    - namespace: "app-*"
+      server: "https://kubernetes.default.svc"
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

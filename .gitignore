@@ -1,0 +1,66 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfplan
+tfplan_*
+terraform.tfvars
+*.auto.tfvars
+
+# Secrets & credentials
+vault-init.json
+vault-init.json.*
+scripts/.env
+scripts/.gitlab-api-token
+scripts/oidc-client-secrets.json
+scripts/harbor-robot-credentials.json
+scripts/.deploy-keys/
+*-root-ca-key.pem
+
+# Kubeconfig files
+*.kubeconfig
+kubeconfig-*.yaml
+
+# Build artifacts and dependencies
+**/bin/
+cover.out
+node_modules/
+
+# Cache
+.kube/
+
+# OS & editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+.project
+.settings/
+.nfs*
+
+# Environment files — tracked in GitLab (source of truth), excluded from GitHub mirror
+# Only .env.example is committed as a template; actual .env files with credentials
+# are tracked in GitLab but excluded from the GitHub shadow repo by the mirror script.
+# NOTE: fleet-gitops/.env and .env.* are active deployment configs (gitignored for safety)
+fleet-gitops/.env
+fleet-gitops/.env.*
+!fleet-gitops/.env.example
+
+# AI coding assistants (agents, memory, settings — local dev tools)
+.claude/
+CLAUDE.md
+.claude-*
+claude-*
+agent-memory*/
+
+# Project memory (local context)
+memory/
+services/pki/roots/root-ca.srl
+
+# Design/planning docs (local only)
+docs/plans/

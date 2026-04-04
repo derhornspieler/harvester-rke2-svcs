@@ -1,0 +1,42 @@
+# fleet-deploy-tools — CI runner image for Fleet GitOps deployments
+#
+# Contains all tools needed by render-templates.sh, push-bundles.sh,
+# push-charts.sh, and deploy-fleet-helmops.sh.
+#
+# Build:
+#   buildah bud -t harbor.dev.<DOMAIN>/library/fleet-deploy-tools:v1.0.0 \
+#     -f fleet-gitops/ci/Dockerfile.tools .
+#
+# Push:
+#   buildah push harbor.dev.<DOMAIN>/library/fleet-deploy-tools:v1.0.0
+
+FROM docker.io/alpine:3.21
+
+# Core utilities
+RUN apk add --no-cache \
+    bash curl jq git openssh-client \
+    python3 py3-yaml \
+    openssl gettext coreutils \
+    ca-certificates
+
+# Helm
+RUN curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz \
+    | tar -xzC /usr/local/bin --strip-components=1 linux-amd64/helm
+
+# kubectl
+RUN curl -fsSLo /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/v1.32.4/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl
+
+# Vault CLI
+RUN curl -fsSLo /tmp/vault.zip \
+    "https://releases.hashicorp.com/vault/1.21.2/vault_1.21.2_linux_amd64.zip" \
+    && unzip -q /tmp/vault.zip -d /usr/local/bin/ \
+    && rm /tmp/vault.zip
+
+# Non-root user
+RUN adduser -D -u 65532 ci-runner
+USER 65532
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash"]

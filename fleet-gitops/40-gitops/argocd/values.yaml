@@ -1,0 +1,256 @@
+# ArgoCD Helm values for target cluster (HA)
+# Chart: argo/argo-cd
+#
+# Deploy:
+#   kubectl apply -f services/argo/argocd/namespace.yaml
+#   helm install argocd argo/argo-cd -n argocd \
+#     -f services/argo/argocd/argocd-values.yaml --wait
+#
+# Post-deploy (IngressRoute + TLS certificate + repo secret):
+#   kubectl apply -f services/argo/argocd/secret-repo.yaml \
+#                 -f services/argo/argocd/certificate.yaml \
+#                 -f services/argo/argocd/ingressroute.yaml
+#
+# Get initial admin password:
+#   kubectl -n argocd get secret argocd-initial-admin-secret \
+#     -o jsonpath='{.data.password}' | base64 -d
+
+## ---- CRDs (Application, AppProject, ApplicationSet) ----
+## Install via Helm templates so CRDs are updated on upgrade.
+## Required for airgapped — avoids Helm crds/ directory (install-only).
+crds:
+  install: true
+  keep: true
+
+global:
+  nodeSelector:
+    workload-type: general
+  domain: ${ARGOCD_FQDN}
+
+# ArgoCD config overrides
+configs:
+  ## Do not create argocd-secret — ESO manages it (ExternalSecret with Merge
+  ## policy injects OIDC client secret). Without this, Fleet reports "Modified"
+  ## because the secret isn't owned by the Helm release.
+  secret:
+    createSecret: false
+  cm:
+    # Server-Side Diff uses K8s field ownership to ignore controller-managed fields.
+    # Eliminates need for manual ignoreDifferences (Rollouts, ESO, Gateway API, HPA).
+    server.side.diff: "true"
+    timeout.reconciliation: 180s
+    timeout.reconciliation.jitter: 60s
+    # Match Keycloak SSO session idle timeout (ssoSessionIdleTimeout=28800)
+    users.session.duration: 8h
+    url: https://${ARGOCD_FQDN}
+    oidc.config: |
+      name: Keycloak
+      issuer: ${OIDC_ISSUER_URL}
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+      requestedIDTokenClaims:
+        groups:
+          essential: true
+      logoutURL: ${OIDC_ISSUER_URL}/protocol/openid-connect/logout?client_id=argocd&post_logout_redirect_uri=https%3A%2F%2F${ARGOCD_FQDN}%2Fauth%2Flogin
+      enablePKCEAuthentication: false
+      rootCA: |
+${ROOT_CA_PEM_INDENT8}
+  rbac:
+    policy.csv: |
+      g, ${RBAC_GROUP_ADMINS}, role:admin
+      g, ${RBAC_GROUP_INFRA}, role:admin
+      g, ${RBAC_GROUP_SENIOR_DEVS}, role:readonly
+      g, ${RBAC_GROUP_DEVS}, role:readonly
+    policy.default: role:readonly
+    policy.matchMode: glob
+    scopes: "[groups]"
+  params:
+    # TLS terminated at Traefik — run server in plaintext mode
+    server.insecure: true
+  # Trust platform CA for OIDC (Keycloak) and repo connections (GitLab)
+  tls:
+    certificates:
+      ${KEYCLOAK_FQDN}: |
+${ROOT_CA_PEM_INDENT8}
+      ${GITLAB_FQDN}: |
+${ROOT_CA_PEM_INDENT8}
+
+## Controller (Application Controller)
+controller:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-application-controller
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## Server (API + UI)
+server:
+  replicas: 2
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 50
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-server
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+  # Disable built-in ingress — using Traefik IngressRoute
+  ingress:
+    enabled: false
+
+## Repo Server
+repoServer:
+  replicas: 2
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 50
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: argocd-repo-server
+            topologyKey: kubernetes.io/hostname
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## ApplicationSet Controller
+applicationSet:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false
+
+## Redis HA (required for HA ArgoCD) — using Valkey image
+redis-ha:
+  enabled: true
+
+  image:
+    repository: ${IMAGE_VALKEY_REPO}
+    tag: ${IMAGE_VALKEY_TAG}
+
+  replicas: 3
+
+  haproxy:
+    enabled: true
+    image:
+      repository: ${IMAGE_HAPROXY_REPO}
+      tag: ${IMAGE_HAPROXY_TAG}
+    affinity: |
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: redis-ha-haproxy
+              topologyKey: kubernetes.io/hostname
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  redis:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  sentinel:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+  persistentVolume:
+    enabled: true
+    size: 8Gi
+    storageClass: ${STORAGE_CLASS}
+
+  nodeSelector:
+    workload-type: general
+
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: redis-ha
+            topologyKey: kubernetes.io/hostname
+
+# Disable single-instance Redis (using redis-ha instead)
+redis:
+  enabled: false
+
+## Dex (SSO) — disabled, using direct OIDC with Keycloak
+dex:
+  enabled: false
+
+## Notifications — disabled for now
+notifications:
+  enabled: false
