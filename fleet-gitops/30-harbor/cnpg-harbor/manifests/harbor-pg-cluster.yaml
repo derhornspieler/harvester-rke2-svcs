@@ -1,0 +1,66 @@
+# CloudNativePG Cluster for Harbor
+# Requires: CNPG operator in cnpg-system namespace (already deployed)
+# Creates: PostgreSQL cluster with 'registry' database (instance count via CNPG_INSTANCES_HARBOR)
+# Harbor 2.14 only needs one database — Notary was removed in v2.9
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: harbor-pg
+  namespace: database
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  instances: ${CNPG_INSTANCES_HARBOR}
+  imageName: ${IMAGE_POSTGRESQL_16}
+
+  bootstrap:
+    initdb:
+      database: ${HARBOR_DB_NAME}
+      owner: harbor
+      secret:
+        name: harbor-pg-credentials
+      dataChecksums: true
+      localeCollate: "en_US.UTF-8"
+      localeCType: "en_US.UTF-8"
+
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      work_mem: "4MB"
+      maintenance_work_mem: "64MB"
+      wal_buffers: "8MB"
+      random_page_cost: "1.1"
+      log_min_duration_statement: "500"
+
+  storage:
+    size: ${CNPG_STORAGE_HARBOR}
+    storageClass: ${STORAGE_CLASS}
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  affinity:
+    nodeSelector:
+      workload-type: database
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  monitoring:
+    enablePodMonitor: true
+
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://${MINIO_BUCKET_CNPG_BACKUPS}/harbor-pg"
+      endpointURL: "${MINIO_INTERNAL_URL}"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+    retentionPolicy: "90d"

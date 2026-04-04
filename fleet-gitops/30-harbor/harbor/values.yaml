@@ -1,0 +1,226 @@
+# Harbor Helm Chart Values — HA Deployment
+# Chart: oci://registry-1.docker.io/goharbor/harbor-helm (v1.18.x → Harbor 2.14.x)
+# Context: ${FLEET_TARGET_CLUSTER}
+#
+# Prerequisites (deploy before Harbor):
+#   1. MinIO in minio namespace (S3 storage)
+#   2. CNPG harbor-pg in database namespace (PostgreSQL HA)
+#   3. Valkey Sentinel in harbor namespace (cache + job queue, via Redis Operator)
+#
+# Install:
+#   helm install harbor oci://registry-1.docker.io/goharbor/harbor-helm \
+#     -n harbor -f harbor-values.yaml --version 1.18.2
+#
+# IMPORTANT: Traefik readTimeout must be increased to 600s for large image pushes.
+# See traefik-timeout-helmchartconfig.yaml or update cluster.tf chart_values.
+
+# --- Expose (ClusterIP for Traefik IngressRoute) ---
+expose:
+  type: clusterIP
+  tls:
+    enabled: false  # TLS termination at Traefik + cert-manager/vault-issuer
+  clusterIP:
+    name: harbor
+    ports:
+      httpPort: 80
+
+externalURL: ${HARBOR_EXTERNAL_URL}
+
+# --- Admin (from ESO → Vault kv/services/harbor) ---
+existingSecretAdminPassword: harbor-admin-credentials
+existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+
+# --- S3 Storage (MinIO) ---
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  imageChartStorage:
+    type: s3
+    disableredirect: true  # REQUIRED for MinIO (no client redirect support)
+    s3:
+      region: ${S3_REGION}
+      bucket: ${MINIO_BUCKET_HARBOR}
+      regionendpoint: ${MINIO_INTERNAL_URL}
+      rootdirectory: /registry
+      v4auth: true
+      secure: false
+      existingSecret: harbor-s3-credentials
+
+# --- External Database (CNPG, creds from ESO → Vault kv/services/harbor) ---
+database:
+  type: external
+  external:
+    host: "${HARBOR_DB_HOST}"
+    port: "5432"
+    username: "harbor"
+    coreDatabase: "${HARBOR_DB_NAME}"
+    sslmode: "require"
+    existingSecret: harbor-db-credentials
+
+# --- External Redis (Sentinel via OpsTree Redis Operator, creds from ESO → Vault) ---
+redis:
+  type: external
+  external:
+    sentinelMasterSet: "${REDIS_MASTER_NAME}"
+    addr: "${HARBOR_REDIS_SENTINEL}"
+    # Password injected at deploy time from downstream K8s secret by deploy-fleet-helmops.sh
+    # (Fleet's Helm rendering doesn't support lookup() for existingSecret)
+    password: "PLACEHOLDER_REPLACED_AT_DEPLOY"  # gitleaks:allow (injected at deploy time from Vault)
+    coreDatabaseIndex: "0"
+    jobserviceDatabaseIndex: "1"
+    registryDatabaseIndex: "2"
+    trivyAdapterIndex: "5"
+
+# --- Core (API server, auth, token service) ---
+core:
+  replicas: 2  # Match HPA min to prevent Fleet drift detection
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                component: core
+            topologyKey: kubernetes.io/hostname
+
+# --- Portal (Web UI) ---
+portal:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                component: portal
+            topologyKey: kubernetes.io/hostname
+
+# --- Registry (Docker distribution — image blob handling) ---
+registry:
+  replicas: 2  # Match HPA min to prevent Fleet drift detection
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
+  registry:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+  controller:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                component: registry
+            topologyKey: kubernetes.io/hostname
+
+# --- JobService (async tasks: replication, GC, scans) ---
+jobservice:
+  replicas: 2
+  podAnnotations:
+    deploy-version: "${BUNDLE_VERSION}"
+  maxJobWorkers: 10
+  jobLoggers:
+    - database  # Not filesystem — required for multi-replica HA
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                component: jobservice
+            topologyKey: kubernetes.io/hostname
+
+# --- Trivy (vulnerability scanner) ---
+trivy:
+  enabled: false
+  # replicas managed by HPA (hpa-trivy.yaml)
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits: {}
+  nodeSelector:
+    workload-type: general
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                component: trivy
+            topologyKey: kubernetes.io/hostname
+
+# --- Exporter (Prometheus metrics) ---
+exporter:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector:
+    workload-type: general
+
+# --- Metrics ---
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+
+# --- Nginx (reverse proxy) ---
+nginx:
+  nodeSelector:
+    workload-type: general
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# --- Disabled Components ---
+notary:
+  enabled: false
+chartmuseum:
+  enabled: false
+internalTLS:
+  enabled: false
+
+# --- Update Strategy ---
+updateStrategy:
+  type: RollingUpdate
+
+# --- Cache (Redis-backed layer caching) ---
+cache:
+  enabled: true
+  expireHours: 24

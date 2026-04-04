@@ -1,0 +1,169 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # -------------------------------------------------------------------
+  # Secret Scanning
+  # -------------------------------------------------------------------
+  gitleaks:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # -------------------------------------------------------------------
+  # ShellCheck
+  # -------------------------------------------------------------------
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -not -path '*/rendered/*' \
+            | xargs shellcheck --severity=warning
+
+  # -------------------------------------------------------------------
+  # YAML Lint
+  # -------------------------------------------------------------------
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install yamllint
+      - name: Run yamllint
+        run: yamllint -c .github/linters/.yamllint.yml services/ fleet-gitops/
+
+  # -------------------------------------------------------------------
+  # JSON Lint
+  # -------------------------------------------------------------------
+  jsonlint:
+    name: JSON Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON files
+        run: |
+          find . -name '*.json' \
+            -not -path './.git/*' \
+            -not -path './node_modules/*' \
+            -not -path './.claude/*' \
+            | while read -r f; do
+                if ! python3 -m json.tool "$f" > /dev/null 2>&1; then
+                  echo "INVALID: $f"
+                  python3 -m json.tool "$f"
+                  exit 1
+                fi
+              done
+          echo "All JSON files valid"
+
+  # -------------------------------------------------------------------
+  # Markdown Lint
+  # -------------------------------------------------------------------
+  markdownlint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v22
+        with:
+          config: .github/linters/.markdownlint.yml
+          globs: |
+            **/*.md
+            !.github/**
+
+  # -------------------------------------------------------------------
+  # Kustomize Validate
+  # -------------------------------------------------------------------
+  kustomize:
+    name: Kustomize Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kustomize
+        run: |
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz" \
+            -o kustomize.tar.gz
+          tar xzf kustomize.tar.gz
+          sudo mv kustomize /usr/local/bin/
+      # Bundle 1: PKI & Secrets
+      - name: Build Vault
+        run: kustomize build services/vault/
+      - name: Build Vault monitoring
+        run: kustomize build services/vault/monitoring/
+      - name: Build cert-manager
+        run: kustomize build services/cert-manager/
+      - name: Build cert-manager monitoring
+        run: kustomize build services/cert-manager/monitoring/
+      - name: Build external-secrets
+        run: kustomize build services/external-secrets/
+      - name: Build external-secrets monitoring
+        run: kustomize build services/external-secrets/monitoring/
+      # Bundle 2: Identity
+      - name: Build Keycloak
+        run: kustomize build services/keycloak/
+      - name: Build Keycloak monitoring
+        run: kustomize build services/keycloak/monitoring/
+      # Bundle 3: Monitoring
+      - name: Build monitoring-stack
+        run: kustomize build services/monitoring-stack/
+      - name: Build monitoring-stack prometheus-rules
+        run: kustomize build services/monitoring-stack/prometheus-rules/
+      - name: Build monitoring-stack service-monitors
+        run: kustomize build services/monitoring-stack/service-monitors/
+      - name: Build Cilium
+        run: kustomize build services/cilium/
+      - name: Build Hubble
+        run: kustomize build services/hubble/
+      - name: Build Traefik dashboard
+        run: kustomize build services/traefik-dashboard/
+      # Bundle 4: Harbor
+      - name: Build Harbor
+        run: kustomize build services/harbor/
+      - name: Build Harbor monitoring
+        run: kustomize build services/harbor/monitoring/
+      # Bundle 5: GitOps
+      - name: Build Argo
+        run: kustomize build services/argo/
+      - name: Build Argo monitoring
+        run: kustomize build services/argo/monitoring/
+      # Bundle 6: GitLab
+      - name: Build GitLab
+        run: kustomize build services/gitlab/
+      - name: Build GitLab runners
+        run: kustomize build services/gitlab/runners/
+      - name: Build GitLab monitoring
+        run: kustomize build services/gitlab/monitoring/
+
+  # -------------------------------------------------------------------
+  # SAST — Semgrep
+  # -------------------------------------------------------------------
+  semgrep:
+    name: SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.156.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: semgrep scan --config auto --exclude 'examples' .
+        continue-on-error: true
+        env:
+          SEMGREP_RULES: auto

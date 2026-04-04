@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-minio-data
+  namespace: backup
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ${STORAGE_CLASS}
+  resources:
+    requests:
+      # Initial size — VolumeAutoscaler manages growth to 2Ti.
+      # resource-policy: keep prevents Fleet from deleting/recreating.
+      storage: ${BACKUP_MINIO_PVC_SIZE}

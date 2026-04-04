@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-minio
+  namespace: minio
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Services
+data:
+  minio-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "id": null,
+      "links": [
+        {"title": "Back to Home", "url": "/d/home-overview/cluster-home?orgId=1", "icon": "external link", "targetBlank": true, "type": "link"}
+      ],
+      "panels": [
+        {
+          "title": "MinIO Up",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}]}},
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "max(up{job=\"minio\"})", "legendFormat": "MinIO", "refId": "A"}]
+        },
+        {
+          "title": "Disk Used %",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 85}]}}},
+          "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(minio_node_drive_used_bytes{job=\"minio\"}) / sum(minio_node_drive_total_bytes{job=\"minio\"}) * 100", "legendFormat": "Disk Used", "refId": "A"}]
+        },
+        {
+          "title": "Total Objects",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}},
+          "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(minio_bucket_usage_object_total{job=\"minio\"})", "legendFormat": "Total Objects", "refId": "A"}]
+        },
+        {
+          "title": "Total Storage Used",
+          "type": "stat",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "fieldConfig": {"defaults": {"unit": "bytes", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 53687091200}, {"color": "red", "value": 107374182400}]}}},
+          "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{"expr": "sum(minio_bucket_usage_total_bytes{job=\"minio\"})", "legendFormat": "Total Used", "refId": "A"}]
+        },
+        {
+          "title": "S3 Request Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "id": 5,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "rate(minio_s3_requests_total{job=\"minio\"}[5m])", "legendFormat": "{{ "{{api}}" }}", "refId": "A"}]
+        },
+        {
+          "title": "S3 Error Rate",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "id": 6,
+          "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [{"expr": "rate(minio_s3_requests_errors_total{job=\"minio\"}[5m])", "legendFormat": "{{ "{{api}}" }}", "refId": "A"}]
+        },
+        {
+          "title": "S3 Request Latency",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "id": 7,
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum by (le, api) (rate(minio_s3_requests_ttfb_seconds_bucket{job=\"minio\"}[5m])))", "legendFormat": "p50 {{ "{{api}}" }}", "refId": "A"},
+            {"expr": "histogram_quantile(0.90, sum by (le, api) (rate(minio_s3_requests_ttfb_seconds_bucket{job=\"minio\"}[5m])))", "legendFormat": "p90 {{ "{{api}}" }}", "refId": "B"},
+            {"expr": "histogram_quantile(0.99, sum by (le, api) (rate(minio_s3_requests_ttfb_seconds_bucket{job=\"minio\"}[5m])))", "legendFormat": "p99 {{ "{{api}}" }}", "refId": "C"}
+          ]
+        },
+        {
+          "title": "Disk I/O",
+          "type": "timeseries",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "id": 8,
+          "fieldConfig": {"defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+          "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+          "targets": [
+            {"expr": "rate(minio_node_io_read_bytes{job=\"minio\"}[5m])", "legendFormat": "read", "refId": "A"},
+            {"expr": "rate(minio_node_io_write_bytes{job=\"minio\"}[5m])", "legendFormat": "write", "refId": "B"}
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["minio", "harbor", "s3"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "MinIO Overview",
+      "uid": "minio-overview",
+      "version": 1,
+      "description": "MinIO S3-compatible object storage monitoring dashboard. Provides visibility into disk usage, S3 API request rates, error rates, latency percentiles, and disk I/O for the Harbor backend."
+    }

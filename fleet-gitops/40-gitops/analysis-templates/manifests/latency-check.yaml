@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: latency-check
+spec:
+  args:
+    - name: service-name
+    - name: namespace
+      value: default
+    - name: max-latency-ms
+      value: "500"
+  metrics:
+    - name: p99-latency
+      interval: 30s
+      count: 5
+      successCondition: "result[0] < asFloat(args.max-latency-ms)"
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: ${PROMETHEUS_INTERNAL_URL}
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{service="{{ "{{args.service-name}}" }}",namespace="{{ "{{args.namespace}}" }}"}[2m])) by (le)
+            ) * 1000

@@ -1,0 +1,11 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: grafana-pg-daily
+  namespace: database
+spec:
+  schedule: "0 30 2 * * *"  # 02:30 UTC daily (after keycloak@02:15, before gitlab@03:00)
+  backupOwnerReference: self
+  cluster:
+    name: grafana-pg
+  method: barmanObjectStore

@@ -1,0 +1,106 @@
+## CloudNativePG -- Production PostgreSQL Cluster for GitLab
+##
+## Architecture:
+##   1. CNPG OPERATOR (controller) -- manages PostgreSQL lifecycle
+##   2. POSTGRESQL DATABASE (operand) -- N instances (1 primary + N-1 replicas, via CNPG_INSTANCES_GITLAB)
+##
+## Services created by CNPG (auto-generated):
+##   - gitlab-postgresql-rw   -- read-write (always points to primary)
+##   - gitlab-postgresql-ro   -- read-only  (load-balanced across replicas)
+##   - gitlab-postgresql-r    -- any        (all instances)
+
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: gitlab-postgresql
+  namespace: database
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app: gitlab
+    component: postgresql
+spec:
+  ## 3 instances = 1 primary + 2 streaming replicas (quorum-based HA)
+  ## Default: 3 instances = 1 primary + 2 streaming replicas (quorum-based HA)
+  instances: ${CNPG_INSTANCES_GITLAB}
+
+  imageName: ${IMAGE_POSTGRESQL_17}
+
+  storage:
+    size: ${CNPG_STORAGE_GITLAB}
+
+  postgresql:
+    parameters:
+      max_connections: "400"
+      shared_buffers: "2GB"
+      effective_cache_size: "6GB"
+      work_mem: "32MB"
+      maintenance_work_mem: "512MB"
+      wal_buffers: "64MB"
+      max_wal_size: "2GB"
+      min_wal_size: "512MB"
+      checkpoint_completion_target: "0.9"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      log_min_duration_statement: "1000"
+      log_checkpoints: "on"
+      log_connections: "on"
+      log_disconnections: "on"
+      log_lock_waits: "on"
+      autovacuum_max_workers: "4"
+      autovacuum_naptime: "30s"
+
+  ## Required extensions for GitLab + Praefect database
+  bootstrap:
+    initdb:
+      database: ${GITLAB_DB_NAME}
+      owner: gitlab
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        - CREATE EXTENSION IF NOT EXISTS btree_gist;
+        - CREATE EXTENSION IF NOT EXISTS plpgsql;
+        - CREATE EXTENSION IF NOT EXISTS amcheck;
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+        - CREATE USER praefect;
+        - CREATE DATABASE praefect OWNER praefect;
+
+  ## Managed role for Praefect -- password synced from Vault via ESO
+  managed:
+    roles:
+      - name: praefect
+        ensure: present
+        login: true
+        createdb: false
+        superuser: false
+        passwordSecret:
+          name: praefect-pg-credentials
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+    nodeSelector:
+      workload-type: database
+
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://${MINIO_BUCKET_CNPG_BACKUPS}/gitlab-postgresql"
+      endpointURL: "${MINIO_INTERNAL_URL}"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+    retentionPolicy: "90d"
+
+  enableSuperuserAccess: false

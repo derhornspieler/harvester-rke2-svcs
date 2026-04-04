@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap-dashboard-argocd.yaml
+  - configmap-dashboard-argo-rollouts.yaml
+  - configmap-dashboard-argo-workflows.yaml
+  - service-monitor-argocd.yaml
+  - service-monitor-argo-rollouts.yaml
+  - service-monitor-argo-workflows.yaml
+  - argocd-alerts.yaml

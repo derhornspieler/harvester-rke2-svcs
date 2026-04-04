@@ -1,0 +1,62 @@
+# OpsTree Redis Operator — RedisReplication CRD for Harbor
+# Provides: 3-replica Redis replication (1 master + 2 replicas)
+# Requires: redis-operator in redis-operator-system namespace
+#
+# Naming: CRD name "harbor-redis" → operator creates:
+#   StatefulSet: harbor-redis        Pods: harbor-redis-{0,1,2}
+#   Service:     harbor-redis        Headless: harbor-redis-headless
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: harbor-redis
+  namespace: harbor
+spec:
+  clusterSize: 3
+  kubernetesConfig:
+    image: ${IMAGE_REDIS}
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    redisSecret:
+      name: harbor-valkey-credentials
+      key: password
+  redisExporter:
+    enabled: true
+    image: ${IMAGE_REDIS_EXPORTER}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: ${STORAGE_CLASS}
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+  nodeSelector:
+    workload-type: database
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # Redis needs to write RDB/AOF to data volume path
+    capabilities:
+      drop: ["ALL"]
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: harbor-redis
+            topologyKey: kubernetes.io/hostname

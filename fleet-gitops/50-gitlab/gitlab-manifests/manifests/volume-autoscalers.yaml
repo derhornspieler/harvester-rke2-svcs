@@ -1,0 +1,88 @@
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-pg
+  namespace: database
+spec:
+  target:
+    selector:
+      matchLabels:
+        cnpg.io/cluster: gitlab-postgresql
+    controllerRef:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: gitlab-postgresql
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 200Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-0
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitlab-gitaly-default-0
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-1
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitlab-gitaly-default-1
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitaly-2
+  namespace: gitlab
+spec:
+  target:
+    pvcName: repo-data-gitlab-gitaly-default-2
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 300Gi
+  increasePercent: 25
+  increaseMinimum: 10Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m
+---
+apiVersion: autoscaling.volume-autoscaler.io/v1alpha1
+kind: VolumeAutoscaler
+metadata:
+  name: gitlab-redis
+  namespace: gitlab
+spec:
+  target:
+    selector:
+      matchLabels:
+        app: gitlab-redis
+  prometheusURL: ${PROMETHEUS_INTERNAL_URL}
+  thresholdPercent: 80
+  maxSize: 50Gi
+  increasePercent: 25
+  increaseMinimum: 2Gi
+  pollInterval: 120s
+  cooldownPeriod: 10m

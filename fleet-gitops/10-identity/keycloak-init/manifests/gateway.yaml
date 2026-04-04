@@ -1,0 +1,29 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: keycloak
+  namespace: keycloak
+  annotations:
+    cert-manager.io/cluster-issuer: vault-issuer
+    cert-manager.io/duration: "720h"
+    cert-manager.io/renew-before: "168h"
+spec:
+  gatewayClassName: ${GATEWAY_CLASS}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 8443
+      hostname: ${KEYCLOAK_FQDN}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: ${KEYCLOAK_TLS_SECRET}
+      allowedRoutes:
+        namespaces:
+          from: Same
